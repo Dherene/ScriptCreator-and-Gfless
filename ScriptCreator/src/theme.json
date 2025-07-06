@@ -1,0 +1,107 @@
+{
+    "theme": {
+        "name": "default-dark",
+        "version": "1.0",
+        
+        "syntax": [
+            {
+                "default": {
+                    "color": "#9CDCFE",
+                    "paper-color": "#201c1c"
+                }
+            },
+            {
+                "keyword": {
+                    "color": "#C586C0",
+                    "paper-color": "#201c1c"
+                }
+            },
+            {
+                "classes": {
+                    "color": "#4EC9B0",
+                    "paper-color": "#201c1c"
+                }
+            },
+            {
+                "functions": {
+                    "color": "#DCDCAA",
+                    "paper-color": "#201c1c"
+                }
+            },
+            {
+                "function_def": {
+                    "color": "#DCDCAA",
+                    "paper-color": "#201c1c"
+                }
+            },
+            {
+                "string": {
+                    "color": "#CE9178",
+                    "paper-color": "#201c1c"
+                }
+            },
+            {
+                "types": {
+                    "color": "#DCDCAA",
+                    "paper-color": "#201c1c"
+                }
+            },
+            {
+                "keyargs": {
+                    "color": "#c678dd",
+                    "paper-color": "#201c1c"
+                }
+            },
+            {
+                "brackets_1": {
+                    "color": "#ffd700",
+                    "paper-color": "#201c1c"
+                }
+            },
+            {
+                "brackets_2": {
+                    "color": "#d95fa1",
+                    "paper-color": "#201c1c"
+                }
+            },
+            {
+                "brackets_3": {
+                    "color": "#179fff",
+                    "paper-color": "#201c1c"
+                }
+            },
+            {
+                "comments": {
+                    "color": "#6A9955",
+                    "paper-color": "#201c1c"
+                }
+            },
+            {
+                "constants": {
+                    "color": "#B5CEA8",
+                    "paper-color": "#201c1c"
+                }
+            },
+            {
+                "player":{
+                    "color": "orange",
+                    "paper-color": "#201c1c"
+                }
+            },
+            {
+                "class_and_func":
+                {
+                    "color": "#569CD6",
+                    "paper-color": "#201c1c"
+                }
+            },
+            {
+                "operators":
+                {
+                    "color": "#D4D4D4",
+                    "paper-color": "#201c1c"
+                }
+            }
+        ]
+    }
+}
