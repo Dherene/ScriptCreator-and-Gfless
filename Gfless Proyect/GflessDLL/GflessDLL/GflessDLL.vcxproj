@@ -148,6 +148,7 @@
     <ClCompile Include="Hook.cpp" />
     <ClCompile Include="NosmallDisabler.cpp" />
     <ClCompile Include="PatternScanner.cpp" />
+    <ClCompile Include="GflessDLLExports.cpp" />	
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="GameStructures\NostaleString.h" />
@@ -157,6 +158,7 @@
     <ClInclude Include="GameStructures\TLBSWidget.h" />
     <ClInclude Include="GameStructures\TLBSWidgetList.h" />
     <ClInclude Include="GameStructures\TNTNewServerSelectWidget2.h" />
+    <ClInclude Include="GflessDLLExports.h" />
     <ClInclude Include="Hook.h" />
     <ClInclude Include="NosmallDisabler.h" />
     <ClInclude Include="PatternScanner.h" />

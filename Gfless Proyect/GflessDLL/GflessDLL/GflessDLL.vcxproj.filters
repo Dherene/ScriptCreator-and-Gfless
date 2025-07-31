@@ -40,6 +40,9 @@
       <Filter>Archivos de origen</Filter>
     </ClCompile>
     <ClCompile Include="NosmallDisabler.cpp">
+    <ClCompile Include="GflessDLLExports.cpp">
+      <Filter>Archivos de origen</Filter>
+    </ClCompile>
       <Filter>Archivos de origen</Filter>
     </ClCompile>
   </ItemGroup>
@@ -72,6 +75,9 @@
       <Filter>Archivos de encabezado</Filter>
     </ClInclude>
     <ClInclude Include="NosmallDisabler.h">
+    <ClInclude Include="GflessDLLExports.h">
+      <Filter>Archivos de encabezado</Filter>
+    </ClInclude>
       <Filter>Archivos de encabezado</Filter>
     </ClInclude>
   </ItemGroup>
