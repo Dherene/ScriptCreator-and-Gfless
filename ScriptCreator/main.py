@@ -614,6 +614,11 @@ class MyWindow(QMainWindow):
         clearConsoleAction.triggered.connect(self.clear_console)
         consoleMenu.addAction(clearConsoleAction)
 
+        serverMenu = menubar.addMenu('Server Config')
+        serverAction = QAction('Select Server', self)
+        serverAction.triggered.connect(self.open_server_config)
+        serverMenu.addAction(serverAction)
+
         # initialize tabs
         self.refresh()
         self.tray_icon.show()
@@ -636,6 +641,11 @@ class MyWindow(QMainWindow):
     def setLightTheme(self):
         setLightTheme()
         self.settings.setValue("colorTheme", 1)
+
+    def open_server_config(self):
+        from server_config import ServerConfigDialog
+        dialog = ServerConfigDialog(parent=self)
+        dialog.exec_()
 
     def exit_application(self, event):
         self.settings.setValue("windowScreenGeometry", self.saveGeometry())

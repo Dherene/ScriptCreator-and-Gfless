@@ -8,6 +8,7 @@ from calculatefieldlocation import calculate_field_location, calculate_point_B_p
 import random
 
 from PyQt5 import QtWidgets
+import gfless_api
 
 # player class which can be reused in other standalone apis
 class Player:
@@ -409,6 +410,10 @@ class Player:
         max_val = str(max_val)[:5]
 
         return random.randint(float(min_val)*decimals, float(max_val)*decimals)/decimals
+
+    def auto_login(self, lang: int, server: int, channel: int, character: int):
+        """Reconnect using gfless_api login sequence."""
+        gfless_api.login(lang, server, channel, character)
 
     def queries(self, delay=1, player_info = True, inventory = True, skills = True, entities = True):
         time.sleep(delay)

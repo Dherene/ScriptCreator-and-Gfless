@@ -2,6 +2,7 @@ from PyQt5.QtWidgets import QPushButton, QTableView, QFileDialog, QTableWidgetIt
 from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtGui import QFont, QFontMetricsF, QColor, QIcon
 import os
+import gfless_api
 
 class ConditionReview(QDialog):
     def __init__(self, player, script, condition_type, cond_modifier, cond_creator, replace_index = None, cond_name = None):
@@ -371,7 +372,13 @@ class ConditionCreator(QDialog):
         new_min_wait = QLineEdit("0.75")
         new_max_wait_label = QLabel("max:")
         new_max_wait = QLineEdit("1.5")
-        elements_list = ["wait", "walk_to_point", "send_packet", "recv_packet", "start_bot", "stop_bot", "continue_bot", "load_settings", "attack", "player_skill", "player_walk", "pets_walk", "start_minigame_bot", "stop_minigame_bot", "use_item","python_code", "delete_condition"]
+        elements_list = [
+            "wait", "walk_to_point", "send_packet", "recv_packet",
+            "start_bot", "stop_bot", "continue_bot", "load_settings",
+            "attack", "player_skill", "player_walk", "pets_walk",
+            "start_minigame_bot", "stop_minigame_bot", "use_item",
+            "auto_login", "python_code", "delete_condition"
+        ]
         for i in range(1, 101):
             elements_list.append(f"attr{i}")
         new_action_combobox.setStyleSheet("QComboBox { combobox-popup: 0; }")
@@ -491,6 +498,31 @@ class ConditionCreator(QDialog):
             self.action_widgets[index].append(new_item_vnum_label)
             self.action_widgets[index].append(new_item_vnum)
             self.action_widgets[index].append(new_inventory_type)
+        elif condition == "auto_login":
+            lang_label = QLabel("lang:")
+            lang_edit = QLineEdit("0")
+            server_label = QLabel("server:")
+            server_edit = QLineEdit("0")
+            channel_label = QLabel("channel:")
+            channel_edit = QLineEdit("0")
+            char_label = QLabel("char:")
+            char_edit = QLineEdit("0")
+
+            widgets = [
+                (lang_label, 0, 2), (lang_edit, 0, 3),
+                (server_label, 0, 4), (server_edit, 0, 5),
+                (channel_label, 1, 2), (channel_edit, 1, 3),
+                (char_label, 1, 4), (char_edit, 1, 5)
+            ]
+            for w, r, c in widgets:
+                group_box_layout.addWidget(w, r, c)
+
+            self.action_widgets[index].extend([
+                lang_label, lang_edit,
+                server_label, server_edit,
+                channel_label, channel_edit,
+                char_label, char_edit
+            ])
         elif condition == "python_code":
             new_equals_label = QLabel("=")
             new_python_code = QLineEdit()
@@ -686,6 +718,12 @@ class ConditionCreator(QDialog):
                 script += f'self.api.{actions_array[i][0]}({actions_array[i][1]}, {actions_array[i][2]})'
             elif actions_array[i][0] == "use_item":
                 script += f'self.use_item({int(actions_array[i][1])}, "{actions_array[i][2]}")'
+            elif actions_array[i][0] == "auto_login":
+                script += (
+                    f'gfless_api.login('
+                    f'int({actions_array[i][1]}), int({actions_array[i][2]}), '
+                    f'int({actions_array[i][3]}), int({actions_array[i][4]}))'
+                )
             elif actions_array[i][0] == "python_code":
                 script += f'{actions_array[i][1]}'
             elif actions_array[i][0] == "delete_condition":
