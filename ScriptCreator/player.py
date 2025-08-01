@@ -2,6 +2,7 @@ import time
 import json
 import phoenix
 import threading
+from typing import Optional
 from getports import returnCorrectPort
 from path import loadMap, findPath
 from calculatefieldlocation import calculate_field_location, calculate_point_B_position
@@ -411,9 +412,9 @@ class Player:
 
         return random.randint(float(min_val)*decimals, float(max_val)*decimals)/decimals
 
-    def auto_login(self, lang: int, server: int, channel: int, character: int):
+    def auto_login(self, lang: int, server: int, channel: int, character: int, *, pid: Optional[int] = None, exe_name: str = "NostaleClientX.exe"):
         """Reconnect using gfless_api login sequence."""
-        gfless_api.login(lang, server, channel, character)
+        gfless_api.login(lang, server, channel, character, pid=pid, exe_name=exe_name)
 
     def queries(self, delay=1, player_info = True, inventory = True, skills = True, entities = True):
         time.sleep(delay)

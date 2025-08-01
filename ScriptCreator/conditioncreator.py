@@ -507,12 +507,15 @@ class ConditionCreator(QDialog):
             channel_edit = QLineEdit("0")
             char_label = QLabel("char:")
             char_edit = QLineEdit("0")
+            pid_label = QLabel("pid:")
+            pid_edit = QLineEdit("0")
 
             widgets = [
                 (lang_label, 0, 2), (lang_edit, 0, 3),
                 (server_label, 0, 4), (server_edit, 0, 5),
                 (channel_label, 1, 2), (channel_edit, 1, 3),
-                (char_label, 1, 4), (char_edit, 1, 5)
+                (char_label, 1, 4), (char_edit, 1, 5),
+                (pid_label, 2, 2), (pid_edit, 2, 3)
             ]
             for w, r, c in widgets:
                 group_box_layout.addWidget(w, r, c)
@@ -521,7 +524,8 @@ class ConditionCreator(QDialog):
                 lang_label, lang_edit,
                 server_label, server_edit,
                 channel_label, channel_edit,
-                char_label, char_edit
+                char_label, char_edit,
+                pid_label, pid_edit
             ])
         elif condition == "python_code":
             new_equals_label = QLabel("=")
@@ -722,7 +726,8 @@ class ConditionCreator(QDialog):
                 script += (
                     f'gfless_api.login('
                     f'int({actions_array[i][1]}), int({actions_array[i][2]}), '
-                    f'int({actions_array[i][3]}), int({actions_array[i][4]}))'
+                    f'int({actions_array[i][3]}), int({actions_array[i][4]}), '
+                    f'pid=int({actions_array[i][5]}))'
                 )
             elif actions_array[i][0] == "python_code":
                 script += f'{actions_array[i][1]}'
