@@ -1,12 +1,17 @@
-import ctypes
 import os
 import sys
 import time
 import subprocess
+import ctypes
 from typing import Optional
+import threading
 
 import psutil
 from PyQt5.QtCore import QSettings
+import win32pipe
+import win32file
+import win32security
+import pywintypes
 
 
 def _get_dll_path() -> str:
@@ -19,12 +24,23 @@ def _get_dll_path() -> str:
 
 
 def _get_injector_path() -> str:
-    """Return the path to Injector.exe next to the executable (even in PyInstaller)."""
+    """Return the path to ``Injector.exe`` searching common locations."""
+    candidates = []
     if getattr(sys, "frozen", False):
-        base = sys._MEIPASS if hasattr(sys, "_MEIPASS") else os.path.dirname(sys.executable)
-    else:
-        base = os.path.dirname(__file__)
-    return os.path.abspath(os.path.join(base, "Injector.exe"))
+        # when packaged with PyInstaller ``sys.executable`` points to the exe
+        candidates.append(os.path.join(os.path.dirname(sys.executable), "Injector.exe"))
+        if hasattr(sys, "_MEIPASS"):
+            candidates.append(os.path.join(sys._MEIPASS, "Injector.exe"))  # type: ignore[attr-defined]
+
+    # source tree or one-folder mode
+    candidates.append(os.path.join(os.path.dirname(__file__), "Injector.exe"))
+
+    for path in candidates:
+        if os.path.exists(path):
+            return os.path.abspath(path)
+
+    # fallback to the first candidate for error reporting
+    return os.path.abspath(candidates[0])
 
 
 def _find_game_process(pid: Optional[int] = None, exe_name: str = "NostaleClientX.exe") -> Optional[psutil.Process]:
@@ -44,8 +60,6 @@ def _find_game_process(pid: Optional[int] = None, exe_name: str = "NostaleClient
             continue
     return None
 
-
-_dll = ctypes.CDLL(_get_dll_path())
 
 def is_dll_injected(pid: Optional[int] = None, exe_name: str = "NostaleClientX.exe", dll_name: str = "gfless.dll") -> bool:
     """Return True if the DLL is loaded in the specified process."""
@@ -79,46 +93,91 @@ def inject_dll(pid: Optional[int] = None, exe_name: str = "NostaleClientX.exe") 
         subprocess.run(cmd, check=True)
     except subprocess.CalledProcessError:
         return False
+    except OSError as exc:
+        if getattr(exc, "winerror", None) == 740:
+            # elevation required, retry via ShellExecute
+            params = f"{proc.pid} \"{dll_path}\""
+            print("Requesting elevated Injector.exe...")
+            ctypes.windll.shell32.ShellExecuteW(None, "runas", injector, params, None, 1)
+        else:
+            raise
 
     # give the process a moment to load the DLL
     time.sleep(1)
-    return is_dll_injected(proc.pid if proc else None, exe_name, os.path.basename(dll_path))
+    return True
 
 
-def ensure_injected(pid: Optional[int] = None, exe_name: str = "NostaleClientX.exe") -> bool:
-    """Ensure gfless.dll is injected, injecting if necessary."""
-    if is_dll_injected(pid, exe_name):
+def ensure_injected(
+    pid: Optional[int] = None,
+    exe_name: str = "NostaleClientX.exe",
+    *,
+    force: bool = False,
+) -> bool:
+    """Inject gfless.dll if needed.
+
+    Parameters
+    ----------
+    force:
+        When ``True`` the DLL is injected even if already loaded. This is
+        useful when changing login parameters because the game only applies
+        them immediately after injection.
+    """
+
+    if not force and is_dll_injected(pid, exe_name):
         print("gfless.dll already injected")
         return True
+
     print("Injecting gfless.dll...")
     if inject_dll(pid, exe_name):
         print("gfless.dll injected successfully")
         return True
+
     print("Failed to inject gfless.dll")
     return False
 
 
 def _settings() -> QSettings:
-    """Return QSettings object used for persistent config."""
-    return QSettings('PBapi', 'Script Creator')
+    """Return ``QSettings`` for the same registry keys as Gfless.
+
+    The original launcher is a 32‑bit application and therefore stores
+    its settings under ``Wow6432Node`` on 64‑bit systems.  When running a
+    64‑bit Python build we need to explicitly open this path so that both
+    applications read and write the very same values.
+    """
+
+    wow_path = (
+        r"HKEY_CURRENT_USER\Software\Wow6432Node\Hatz Nostale\Gfless Client"
+    )
+    s = QSettings(wow_path, QSettings.NativeFormat)
+    # If the key does not exist (e.g. 32‑bit Python), fall back to the
+    # standard location.
+    if not s.childKeys() and not s.childGroups():
+        s = QSettings(r"HKEY_CURRENT_USER\Software\Hatz Nostale\Gfless Client",
+                       QSettings.NativeFormat)
+    return s
 
 
 def save_config(lang: int, server: int, channel: int, character: int) -> None:
-    """Persist selected server parameters."""
+    """Persist selected server parameters using the same keys as Gfless."""
     s = _settings()
-    s.setValue("serverLanguage", lang)
-    s.setValue("server", server)
-    s.setValue("channel", channel)
-    s.setValue("character", character)
+    s.beginGroup("MainWindow")
+    s.setValue("default_serverlocation", lang)
+    s.setValue("default_server", server)
+    s.setValue("default_channel", channel)
+    s.setValue("default_character", character)
+    s.endGroup()
+    s.sync()
 
 
 def load_config() -> tuple[int, int, int, int]:
     """Load saved server parameters."""
     s = _settings()
-    lang = int(s.value("serverLanguage", 0))
-    server = int(s.value("server", 0))
-    channel = int(s.value("channel", 0))
-    character = int(s.value("character", 0))
+    s.beginGroup("MainWindow")
+    lang = int(s.value("default_serverlocation", 0))
+    server = int(s.value("default_server", 0))
+    channel = int(s.value("default_channel", 0))
+    character = int(s.value("default_character", 0))
+    s.endGroup()
     return lang, server, channel, character
 
 
@@ -127,41 +186,131 @@ def login_from_config(delay: float = 1.0, *, pid: Optional[int] = None, exe_name
     lang, server, channel, character = load_config()
     login(lang, server, channel, character, delay=delay, pid=pid, exe_name=exe_name)
 
-_dll.Gfless_SelectLanguage.argtypes = [ctypes.c_int]
-_dll.Gfless_SelectServer.argtypes = [ctypes.c_int]
-_dll.Gfless_SelectChannel.argtypes = [ctypes.c_int]
-_dll.Gfless_SelectCharacter.argtypes = [ctypes.c_int]
-_dll.Gfless_ClickStart.argtypes = []
+PIPE_NAME = r"\\.\pipe\GflessClient"
 
-def select_language(lang: int):
-    """Select game language."""
-    _dll.Gfless_SelectLanguage(lang)
+def _terminate_login_servers() -> None:
+    """Terminate any known processes that could own ``PIPE_NAME``."""
+    # GflessClient.exe is the official launcher that also provides this pipe.
+    names = {"gflessclient.exe"}
+    for proc in psutil.process_iter(["pid", "name"]):
+        try:
+            if proc.info["name"] and proc.info["name"].lower() in names \
+                    and proc.pid != os.getpid():
+                proc.terminate()
+                proc.wait(2)
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired):
+            continue
 
-def select_server(server: int):
-    """Select game server."""
-    _dll.Gfless_SelectServer(server)
 
-def select_channel(channel: int):
-    """Select game channel."""
-    _dll.Gfless_SelectChannel(channel)
+def _create_pipe() -> Optional[int]:
+    """Return a handle to ``PIPE_NAME`` or ``None`` if another server is running."""
+    sa = win32security.SECURITY_ATTRIBUTES()
+    sd = win32security.SECURITY_DESCRIPTOR()
+    # allow Everyone to connect so an elevated process can access the pipe
+    sd.SetSecurityDescriptorDacl(True, None, False)
+    sa.SECURITY_DESCRIPTOR = sd
 
-def select_character(char_index: int):
-    """Select character slot."""
-    _dll.Gfless_SelectCharacter(char_index)
+    try:
+        return win32pipe.CreateNamedPipe(
+            PIPE_NAME,
+            win32pipe.PIPE_ACCESS_DUPLEX,
+            win32pipe.PIPE_TYPE_BYTE
+            | win32pipe.PIPE_READMODE_BYTE
+            | win32pipe.PIPE_WAIT,
+            1,
+            255,
+            255,
+            0,
+            sa,
+        )
+    except pywintypes.error as exc:
+        if exc.winerror == 5:
+            _terminate_login_servers()
+            time.sleep(0.5)
+            try:
+                return win32pipe.CreateNamedPipe(
+                    PIPE_NAME,
+                    win32pipe.PIPE_ACCESS_DUPLEX,
+                    win32pipe.PIPE_TYPE_BYTE
+                    | win32pipe.PIPE_READMODE_BYTE
+                    | win32pipe.PIPE_WAIT,
+                    1,
+                    255,
+                    255,
+                    0,
+                    sa,
+                )
+            except pywintypes.error as exc2:
+                if exc2.winerror == 5:
+                    return None
+                raise
+        raise
 
-def click_start():
-    """Click start button after character selection."""
-    _dll.Gfless_ClickStart()
+
+def _serve_pipe(
+    pipe: int,
+    lang: int,
+    server: int,
+    channel: int,
+    character: int,
+    *,
+    auto_login: bool = True,
+    disable_nosmall: bool = False,
+) -> None:
+    """Respond to ``gfless.dll`` login requests on ``pipe``."""
+    try:
+        win32pipe.ConnectNamedPipe(pipe, None)
+        while True:
+            try:
+                data = win32file.ReadFile(pipe, 255)[1].decode("ascii")
+            except pywintypes.error:
+                break
+            parts = data.strip().split()
+            if len(parts) != 2:
+                win32file.WriteFile(pipe, b"0")
+                continue
+            command = parts[1]
+            if command == "DisableNosmall":
+                win32file.WriteFile(pipe, b"1" if disable_nosmall else b"0")
+            elif command == "AutoLogin":
+                win32file.WriteFile(pipe, b"1" if auto_login else b"0")
+            elif command == "ServerLanguage":
+                win32file.WriteFile(pipe, str(lang).encode())
+            elif command == "Server":
+                win32file.WriteFile(pipe, str(server).encode())
+            elif command == "Channel":
+                win32file.WriteFile(pipe, str(channel).encode())
+            elif command == "Character":
+                win32file.WriteFile(pipe, str(character).encode())
+            else:
+                win32file.WriteFile(pipe, b"0")
+    finally:
+        win32file.CloseHandle(pipe)
 
 def login(lang: int, server: int, channel: int, character: int, delay: float = 1.0, *, pid: Optional[int] = None, exe_name: str = "NostaleClientX.exe"):
-    """Login sequence using the exported DLL functions."""
-    ensure_injected(pid, exe_name)
-    select_language(lang)
-    time.sleep(delay)
-    select_server(server)
-    time.sleep(delay)
-    select_channel(channel)
-    time.sleep(delay)
-    select_character(character)
-    time.sleep(delay)
-    click_start()
+    """Inject the DLL and respond to its login parameter requests.
+
+    The character index provided is zero-based as used by the UI. The DLL
+    expects values from 1 to 4, so we adjust it automatically.
+    """
+
+    # the DLL expects characters numbered from 1, while the UI uses 0..3
+    character += 1
+
+    pipe = _create_pipe()
+    if pipe is None:
+        raise RuntimeError(
+            "Another Gfless instance is providing login parameters "
+            "and could not be closed automatically."
+        )
+
+    server_thread = threading.Thread(
+        target=_serve_pipe,
+        args=(pipe, lang, server, channel, character),
+        daemon=True,
+    )
+    server_thread.start()
+
+    # Force re-injection each time so the new parameters take effect
+    ensure_injected(pid, exe_name, force=True)
+    server_thread.join(timeout=10)

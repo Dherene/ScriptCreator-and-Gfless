@@ -13,6 +13,7 @@ class ServerConfigDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Server Configuration")
 
+        # ``pid`` is stored separately so we use our own settings object
         self.settings = QSettings('PBapi', 'Script Creator')
 
         layout = QVBoxLayout(self)
@@ -63,16 +64,20 @@ class ServerConfigDialog(QDialog):
         char = self.char_combo.currentIndex()
 
         gfless_api.save_config(lang, server, channel, char)
+        # persist the last used PID for convenience
         self.settings.setValue("pid", pid_text)
 
-        gfless_api.login(lang, server, channel, char, pid=pid)
+        try:
+            gfless_api.login(lang, server, channel, char, pid=pid)
+        except RuntimeError as exc:
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "Login failed", str(exc))
+            return
+
         self.accept()
 
     def load_settings(self):
-        lang = int(self.settings.value("serverLanguage", 0))
-        server = int(self.settings.value("server", 0))
-        channel = int(self.settings.value("channel", 0))
-        char = int(self.settings.value("character", 0))
+        lang, server, channel, char = gfless_api.load_config()
         pid = self.settings.value("pid", "")
 
         self.lang_combo.setCurrentIndex(lang)
