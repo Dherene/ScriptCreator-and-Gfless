@@ -1,6 +1,6 @@
 @echo off
-set "DIST_DIR=C:\Users\valde\OneDrive\Escritorio\ScriptTSgroup\dist"
-set "SRC_DIR=C:\Users\valde\OneDrive\Escritorio\ScriptTSgroup\"
+set "DIST_DIR=C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\ScriptCreator\dist"
+set "SRC_DIR=C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\ScriptCreator\"
 
 
 

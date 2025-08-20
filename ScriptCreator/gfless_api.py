@@ -15,12 +15,23 @@ import pywintypes
 
 
 def _get_dll_path() -> str:
-    """Return the path to gfless.dll, accounting for PyInstaller."""
-    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        base = sys._MEIPASS  # type: ignore[attr-defined]
-    else:
-        base = os.path.dirname(__file__)
-    return os.path.abspath(os.path.join(base, "gfless.dll"))
+    """Return the path to ``gfless.dll`` searching common locations."""
+    candidates = []
+    if getattr(sys, "frozen", False):
+        # when packaged with PyInstaller ``sys.executable`` points to the exe
+        candidates.append(os.path.join(os.path.dirname(sys.executable), "gfless.dll"))
+        if hasattr(sys, "_MEIPASS"):
+            candidates.append(os.path.join(sys._MEIPASS, "gfless.dll"))  # type: ignore[attr-defined]
+
+    # source tree or one-folder mode
+    candidates.append(os.path.join(os.path.dirname(__file__), "gfless.dll"))
+
+    for path in candidates:
+        if os.path.exists(path):
+            return os.path.abspath(path)
+
+    # fallback to the first candidate for error reporting
+    return os.path.abspath(candidates[0])
 
 
 def _get_injector_path() -> str:
@@ -340,7 +351,13 @@ def login(lang: int, server: int, channel: int, character: int, delay: float = 1
     # the DLL expects characters numbered from 1, while the UI uses 0..3
     character += 1
 
-    pipe = _create_pipe()
+    try:
+        pipe = _create_pipe()
+    except pywintypes.error as exc:
+        if exc.winerror == 231:
+            update_login(lang, server, channel, character, pid)
+            return
+        raise
     if pipe is None:
         raise RuntimeError(
             "Another Gfless instance is providing login parameters "
@@ -360,4 +377,58 @@ def login(lang: int, server: int, channel: int, character: int, delay: float = 1
             if not ensure_injected(pid, exe_name):
                 raise RuntimeError("Failed to inject gfless.dll")
     finally:
-        server_thread.join(timeout=10)
+         server_thread.join(timeout=10)
+
+
+def update_login(
+    lang: int,
+    server: int,
+    channel: int,
+    character: int,
+    *,
+    pid: Optional[int] = None,
+    exe_name: str = "NostaleClientX.exe",
+) -> None:
+    """Update login parameters reusing an existing ``gfless.dll`` injection.
+
+    Parameters
+    ----------
+    lang:
+        Language/region index to log in.
+    server:
+        Server index within ``lang``.
+    channel:
+        Channel index within ``server``.
+    character:
+        Character slot index (0-based) as used by the UI.
+    pid:
+        Optional process ID of the game client. Use this when running
+        multiple clients simultaneously.
+    exe_name:
+        Executable name to locate the client process when ``pid`` is not
+        provided.
+
+    This helper allows script conditions (for example after receiving
+    ``svrlist``) to switch server, channel or character without forcing a
+    new DLL injection.
+    """
+    # the DLL expects characters numbered from 1, while the UI uses 0..3
+    character += 1
+
+    pipe = _create_pipe()
+    if pipe is None:
+        raise RuntimeError(
+            "Another Gfless instance is providing login parameters "
+            "and could not be closed automatically."
+        )
+
+    server_thread = threading.Thread(
+        target=_serve_pipe,
+        args=(pipe, lang, server, channel, character),
+        daemon=True,
+    )
+    server_thread.start()
+
+    # Reuse existing injection so the new parameters take effect
+    ensure_injected(pid, exe_name, force=False)
+    server_thread.join(timeout=10)
