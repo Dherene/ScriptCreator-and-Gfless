@@ -14,6 +14,10 @@ import win32security
 import pywintypes
 
 
+_current_pipe: Optional[int] = None
+_server_thread: Optional[threading.Thread] = None
+
+
 def _get_dll_path() -> str:
     """Return the path to ``gfless.dll`` searching common locations."""
     candidates = []
@@ -298,7 +302,10 @@ def _serve_pipe(
             else:
                 win32file.WriteFile(pipe, b"0")
     finally:
-        win32file.CloseHandle(pipe)
+        try:
+            win32file.CloseHandle(pipe)
+        except pywintypes.error:
+            pass
 
 
 def _send_relogin_command() -> None:
@@ -328,6 +335,23 @@ def _send_relogin_command() -> None:
     finally:
         win32file.CloseHandle(handle)
 
+
+def close_login_pipe() -> None:
+    """Close the active login pipe and stop its thread if running."""
+    global _current_pipe, _server_thread
+    if _current_pipe is None:
+        return
+    pipe = _current_pipe
+    thread = _server_thread
+    _current_pipe = None
+    _server_thread = None
+    try:
+        win32file.CloseHandle(pipe)
+    except Exception:
+        pass
+    if thread is not None and thread.is_alive():
+        thread.join(timeout=0.1)
+
 def login(lang: int, server: int, channel: int, character: int, delay: float = 1.0, *, pid: Optional[int] = None, exe_name: str = "NostaleClientX.exe"):
     """Inject the DLL and respond to its login parameter requests.
 
@@ -342,7 +366,23 @@ def login(lang: int, server: int, channel: int, character: int, delay: float = 1
         pipe = _create_pipe()
     except pywintypes.error as exc:
         if exc.winerror == 231:
-            update_login(lang, server, channel, character, pid)
+            try:
+                # ``update_login`` expects a 0-based character index and keyword-only ``pid``
+                update_login(
+                    lang,
+                    server,
+                    channel,
+                    character - 1,
+                    pid=pid,
+                    exe_name=exe_name,
+                )
+            except pywintypes.error as exc2:
+                if exc2.winerror == 231:
+                    raise RuntimeError(
+                        "Another Gfless instance is providing login parameters "
+                        "and could not be closed automatically."
+                    ) from exc2
+                raise
             return
         raise
     if pipe is None:
@@ -356,6 +396,9 @@ def login(lang: int, server: int, channel: int, character: int, delay: float = 1
         args=(pipe, lang, server, channel, character),
         daemon=True,
     )
+    global _current_pipe, _server_thread
+    _current_pipe = pipe
+    _server_thread = server_thread
     server_thread.start()
     try:
         if is_dll_injected(pid, exe_name):
@@ -365,6 +408,11 @@ def login(lang: int, server: int, channel: int, character: int, delay: float = 1
                 raise RuntimeError("Failed to inject gfless.dll")
     finally:
         server_thread.join(timeout=10)
+        if server_thread.is_alive():
+            close_login_pipe()
+        else:
+            _current_pipe = None
+            _server_thread = None
 
 
 def update_login(
@@ -402,7 +450,21 @@ def update_login(
     # the DLL expects characters numbered from 1, while the UI uses 0..3
     character += 1
 
-    pipe = _create_pipe()
+    for attempt in range(5):
+        try:
+            pipe = _create_pipe()
+            break
+        except pywintypes.error as exc:
+            if exc.winerror != 231:
+                raise
+            _terminate_login_servers()
+            time.sleep(0.5)
+    else:
+        raise RuntimeError(
+            "Could not create Gfless pipe after several attempts; "
+            "another instance may be running."
+        )
+
     if pipe is None:
         raise RuntimeError(
             "Another Gfless instance is providing login parameters "
@@ -414,8 +476,16 @@ def update_login(
         args=(pipe, lang, server, channel, character),
         daemon=True,
     )
+    global _current_pipe, _server_thread
+    _current_pipe = pipe
+    _server_thread = server_thread
     server_thread.start()
 
     # Reuse existing injection so the new parameters take effect
     ensure_injected(pid, exe_name, force=False)
     server_thread.join(timeout=10)
+    if server_thread.is_alive():
+        close_login_pipe()
+    else:
+        _current_pipe = None
+        _server_thread = None

@@ -8,6 +8,7 @@ from path import loadMap, findPath
 from calculatefieldlocation import calculate_field_location, calculate_point_B_position
 import random
 import subprocess
+import gfless_api
 try:
     import psutil
 except ImportError:  # psutil is optional but recommended
@@ -98,6 +99,8 @@ class Player:
                 if json_msg["type"] == phoenix.Type.packet_send.value:
                     packet = json_msg["packet"]
                     splitPacket = packet.split()
+                    if splitPacket[0] == "select":
+                        gfless_api.close_login_pipe()
                     #print(f"[SEND]: {packet}")
                     if splitPacket[0] == "walk":
                         self.pos_x, self.pos_y = int(splitPacket[1]), int(splitPacket[2])

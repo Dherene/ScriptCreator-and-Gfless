@@ -3,8 +3,31 @@
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QLabel, QComboBox, QPushButton, QLineEdit
 )
-from PyQt5.QtCore import QSettings
+from PyQt5.QtCore import QSettings, QThread, pyqtSignal
 import gfless_api
+
+
+class _LoginWorker(QThread):
+    """Background worker that performs the login without blocking the UI."""
+
+    success = pyqtSignal()
+    error = pyqtSignal(str)
+
+    def __init__(self, lang, server, channel, char, pid, parent=None):
+        super().__init__(parent)
+        self.lang = lang
+        self.server = server
+        self.channel = channel
+        self.char = char
+        self.pid = pid
+
+    def run(self):
+        try:
+            gfless_api.login(self.lang, self.server, self.channel, self.char, pid=self.pid)
+        except Exception as exc:  # capture any exception to notify the UI
+            self.error.emit(str(exc))
+        else:
+            self.success.emit()
 
 class ServerConfigDialog(QDialog):
     """Dialog to select language, server, channel and character."""
@@ -49,9 +72,9 @@ class ServerConfigDialog(QDialog):
         self.pid_edit.setPlaceholderText("auto")
         layout.addWidget(self.pid_edit)
 
-        confirm_button = QPushButton("Confirm")
-        confirm_button.clicked.connect(self.apply)
-        layout.addWidget(confirm_button)
+        self.confirm_button = QPushButton("Confirm")
+        self.confirm_button.clicked.connect(self.apply)
+        layout.addWidget(self.confirm_button)
 
         self.load_settings()
 
@@ -67,14 +90,12 @@ class ServerConfigDialog(QDialog):
         # persist the last used PID for convenience
         self.settings.setValue("pid", pid_text)
 
-        try:
-            gfless_api.login(lang, server, channel, char, pid=pid)
-        except RuntimeError as exc:
-            from PyQt5.QtWidgets import QMessageBox
-            QMessageBox.critical(self, "Login failed", str(exc))
-            return
-
-        self.accept()
+        self.confirm_button.setEnabled(False)
+        self.thread = _LoginWorker(lang, server, channel, char, pid, self)
+        self.thread.success.connect(self.accept)
+        self.thread.error.connect(self._login_failed)
+        self.thread.finished.connect(lambda: self.confirm_button.setEnabled(True))
+        self.thread.start()
 
     def load_settings(self):
         lang, server, channel, char = gfless_api.load_config()
@@ -86,3 +107,9 @@ class ServerConfigDialog(QDialog):
         self.char_combo.setCurrentIndex(char)
         if pid:
             self.pid_edit.setText(str(pid))
+
+    def _login_failed(self, message: str) -> None:
+        """Handle a failed background login."""
+        from PyQt5.QtWidgets import QMessageBox
+
+        QMessageBox.critical(self, "Login failed", message)
