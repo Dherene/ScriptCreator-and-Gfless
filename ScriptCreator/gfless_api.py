@@ -86,6 +86,8 @@ def inject_dll(pid: Optional[int] = None, exe_name: str = "NostaleClientX.exe") 
 
     if not os.path.exists(injector):
         raise FileNotFoundError("Injector.exe not found")
+    if not os.path.exists(dll_path):
+        raise FileNotFoundError("gfless.dll not found")
 
     cmd = [injector, str(proc.pid), dll_path]
     print("Running injector:", " ".join(f'"{c}"' if ' ' in c else c for c in cmd))
@@ -287,6 +289,47 @@ def _serve_pipe(
     finally:
         win32file.CloseHandle(pipe)
 
+
+def update_login(
+    lang: int,
+    server: int,
+    channel: int,
+    character: int,
+    pid: Optional[int] = None,
+) -> None:
+    """Send a ``Relogin`` command through ``PIPE_NAME``.
+
+    The injected DLL listens on this pipe for commands.  When it receives
+    ``Relogin`` it will connect back and request the current login
+    parameters, which are served by ``login``.
+
+    Parameters are accepted for API symmetry but currently unused.
+
+    Raises
+    ------
+    RuntimeError
+        If the pipe cannot be reached.
+    """
+
+    try:
+        handle = win32file.CreateFile(
+            PIPE_NAME,
+            win32file.GENERIC_WRITE,
+            0,
+            None,
+            win32file.OPEN_EXISTING,
+            0,
+            None,
+        )
+    except pywintypes.error as exc:
+        raise RuntimeError(
+            "Could not connect to Gfless pipe; is the DLL injected?"
+        ) from exc
+    try:
+        win32file.WriteFile(handle, b"0 Relogin")
+    finally:
+        win32file.CloseHandle(handle)
+
 def login(lang: int, server: int, channel: int, character: int, delay: float = 1.0, *, pid: Optional[int] = None, exe_name: str = "NostaleClientX.exe"):
     """Inject the DLL and respond to its login parameter requests.
 
@@ -310,7 +353,11 @@ def login(lang: int, server: int, channel: int, character: int, delay: float = 1
         daemon=True,
     )
     server_thread.start()
-
-    # Force re-injection each time so the new parameters take effect
-    ensure_injected(pid, exe_name, force=True)
-    server_thread.join(timeout=10)
+    try:
+        if is_dll_injected(pid, exe_name):
+            update_login(lang, server, channel, character, pid)
+        else:
+            if not ensure_injected(pid, exe_name):
+                raise RuntimeError("Failed to inject gfless.dll")
+    finally:
+        server_thread.join(timeout=10)

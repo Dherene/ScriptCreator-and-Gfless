@@ -22,7 +22,7 @@ if not "%LICENSE_KEY%"=="" (
 )
 
 REM === COMPILAR CON PYINSTALLER ===
-py -3.9-32 -m PyInstaller main.py --noconfirm --clean --console --icon=ico.ico --name="Script Creator" --onefile --distpath "%DIST_DIR%"
+py -3.9-32 -m PyInstaller main.py --noconfirm --clean --console --icon=ico.ico --name="Script Creator" --onefile --distpath "%DIST_DIR%" --add-binary "%SRC_DIR%\%DLL_NAME%;."
 
 REM === COPIAR ARCHIVOS DE LICENCIA A DIST ===
 if exist licenses.json copy /Y licenses.json "%DIST_DIR%\licenses.json" >nul

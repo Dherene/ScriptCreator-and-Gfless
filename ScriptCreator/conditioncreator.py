@@ -501,6 +501,7 @@ class ConditionCreator(QDialog):
             self.action_widgets[index].append(new_item_vnum)
             self.action_widgets[index].append(new_inventory_type)
         elif condition == "auto_login":
+            # Arguments match gfless_api.update_login(lang, server, channel, character, pid)
             lang_label = QLabel("lang:")
             lang_edit = QLineEdit("0")
             server_label = QLabel("server:")
@@ -743,7 +744,8 @@ class ConditionCreator(QDialog):
                 script += f'self.use_item({int(actions_array[i][1])}, "{actions_array[i][2]}")'
             elif actions_array[i][0] == "auto_login":
                 script += (
-                    f'gfless_api.login('
+                    "# update_login(lang, server, channel, character, pid)\n"
+                    f'gfless_api.update_login('
                     f'int({actions_array[i][1]}), int({actions_array[i][2]}), '
                     f'int({actions_array[i][3]}), int({actions_array[i][4]}), '
                     f'pid=int({actions_array[i][5]}))'
