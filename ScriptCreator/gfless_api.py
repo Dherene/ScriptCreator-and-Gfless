@@ -301,25 +301,12 @@ def _serve_pipe(
         win32file.CloseHandle(pipe)
 
 
-def update_login(
-    lang: int,
-    server: int,
-    channel: int,
-    character: int,
-    pid: Optional[int] = None,
-) -> None:
+def _send_relogin_command() -> None:
     """Send a ``Relogin`` command through ``PIPE_NAME``.
 
-    The injected DLL listens on this pipe for commands.  When it receives
-    ``Relogin`` it will connect back and request the current login
-    parameters, which are served by ``login``.
-
-    Parameters are accepted for API symmetry but currently unused.
-
-    Raises
-    ------
-    RuntimeError
-        If the pipe cannot be reached.
+    The injected DLL listens on this pipe for commands. When it receives
+    ``Relogin`` it will reconnect to request the current login parameters,
+    which are served by ``login`` or ``update_login``.
     """
 
     try:
@@ -372,12 +359,12 @@ def login(lang: int, server: int, channel: int, character: int, delay: float = 1
     server_thread.start()
     try:
         if is_dll_injected(pid, exe_name):
-            update_login(lang, server, channel, character, pid)
+            _send_relogin_command()
         else:
             if not ensure_injected(pid, exe_name):
                 raise RuntimeError("Failed to inject gfless.dll")
     finally:
-         server_thread.join(timeout=10)
+        server_thread.join(timeout=10)
 
 
 def update_login(
