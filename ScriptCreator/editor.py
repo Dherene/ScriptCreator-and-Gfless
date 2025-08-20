@@ -166,8 +166,12 @@ class Editor(QsciScintilla):
         self.setLexer(self.pylexer)
 
         #every script should start with this code
-        self.setText("""# Gets current player object
+        self.setText("""import gfless_api
+# Gets current player object
 player = self.players[self.tab_widget.currentIndex()][0]
+
+# Get pidnum = (PID number)
+pidnum = player.PIDnum
 
 # Gets all The players and remove current player to get alts
 alts = [sublist[0] if sublist[0] is not None else None for sublist in self.players]

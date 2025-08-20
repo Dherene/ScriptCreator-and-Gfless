@@ -3,17 +3,22 @@ import json
 import phoenix
 import threading
 from typing import Optional
-from getports import returnCorrectPort
+from getports import returnCorrectPort, returnCorrectPID
 from path import loadMap, findPath
 from calculatefieldlocation import calculate_field_location, calculate_point_B_position
 import random
+import subprocess
+try:
+    import psutil
+except ImportError:  # psutil is optional but recommended
+    psutil = None
+import pywinctl as pwc
 
 from PyQt5 import QtWidgets
-import gfless_api
 
 # player class which can be reused in other standalone apis
 class Player:
-    def __init__(self, name = None):
+    def __init__(self, name=None, on_disconnect=None):
         # player info
         self.name = name
         self.id = 0
@@ -57,6 +62,9 @@ class Player:
 
         # indicates when a script has been loaded into this player
         self.script_loaded = False
+
+        # callback when connection is lost
+        self.on_disconnect = on_disconnect
         
         # initialize 100 empty attributes so user can use them as he wants
         for i in range(1, 50):
@@ -68,6 +76,7 @@ class Player:
         if name is not None:
             # initialize api
             self.port = returnCorrectPort(self.name)
+            self.PIDnum = returnCorrectPID(self.name)
             self.api = phoenix.Api(self.port)
             self.stop_script = False
             pl_thread = threading.Thread(target=self.packetlogger)
@@ -97,8 +106,8 @@ class Player:
                             if self.send_packet_conditions[i][2]:
                                 t_send_packet_condition = threading.Thread(target=self.exec_send_packet_condition, args=[self.send_packet_conditions[i][1], packet, i, self.send_packet_conditions[i][0]])
                                 t_send_packet_condition.start()
-                        except:
-                            pass
+                        except Exception as e:
+                            print(f"Error scheduling send_packet condition: {e}")
                 if json_msg["type"] == phoenix.Type.packet_recv.value:
                     packet = json_msg["packet"]
                     splitPacket = packet.split()
@@ -254,8 +263,8 @@ class Player:
                             if self.recv_packet_conditions[i][2]:
                                 t_recv_packet_condition = threading.Thread(target=self.exec_recv_packet_condition, args=[self.recv_packet_conditions[i][1], packet, i, self.recv_packet_conditions[i][0]])
                                 t_recv_packet_condition.start()
-                        except:
-                            pass
+                        except Exception as e:
+                            print(f"Error scheduling recv_packet condition: {e}")
                 if json_msg["type"] == phoenix.Type.query_player_info.value:
                     player_info = json_msg["player_info"]
                     self.id = player_info["id"]
@@ -286,8 +295,46 @@ class Player:
                 time.sleep(0.01)
         print(f"{self.name} lost connection")
         self.api.close()
+        if callable(self.on_disconnect):
+            try:
+                self.on_disconnect(self)
+            except Exception as e:
+                print(f"Error in disconnect callback: {e}")
     
-    def walk_to_point(self, point, walk_with_pet = True, skip = 4, timeout = 3):
+    def walk_to_point(self, point, radius=0, walk_with_pet = True, skip = 4, timeout = 3):
+        """Walk the player toward ``point`` with an optional random offset.
+
+        ``point`` can be a list/tuple ``[x, y]`` or an object exposing ``x`` and
+        ``y``. ``radius`` sets the maximum distance in cells to offset the
+        destination randomly. A radius of ``0`` keeps the exact coordinates.
+        """
+
+        # Normalise ``point`` in case a ``GridNode`` or a similar object is
+        # passed in. This ensures ``findPath`` always receives a pair of
+        # coordinates instead of arbitrary objects.
+        if hasattr(point, "x") and hasattr(point, "y"):
+            point = [point.x, point.y]
+        elif isinstance(point, (list, tuple)) and len(point) == 2:
+            point = list(point)
+        else:
+            raise TypeError("point must be a sequence or expose 'x' and 'y'")
+
+        if isinstance(radius, str):
+            try:
+                radius = int(radius)
+            except ValueError:
+                radius = 0
+
+        if radius > 0:
+            rand_x = random.randint(-radius, radius)
+            rand_y = random.randint(-radius, radius)
+            point = [point[0] + rand_x, point[1] + rand_y]
+
+        # If already at destination, skip pathfinding
+        if self.pos_x == point[0] and self.pos_y == point[1]:
+            print("Is ready in point")
+            return
+
         player_pos = [self.pos_x, self.pos_y]
         api = self.api
         try:
@@ -297,8 +344,11 @@ class Player:
                 for i in range(0, len(Path), skip):
                     if self.stop_script:
                         raise SystemExit
-                    x = Path[i][0]
-                    y = Path[i][1]
+                    node = Path[i]
+                    if hasattr(node, 'x') and hasattr(node, 'y'):
+                        x, y = node.x, node.y
+                    else:
+                        x, y = node[0], node[1]
 
                     api.player_walk(x, y)
                     if walk_with_pet:
@@ -313,26 +363,52 @@ class Player:
                             raise SystemExit
                         else:
                             time.sleep(0.1)
-                api.player_walk(Path[lastpath][0], Path[lastpath][1])
+                dest_node = Path[lastpath]
+                if hasattr(dest_node, 'x') and hasattr(dest_node, 'y'):
+                    dest_x, dest_y = dest_node.x, dest_node.y
+                else:
+                    dest_x, dest_y = dest_node[0], dest_node[1]
+
+                api.player_walk(dest_x, dest_y)
                 if walk_with_pet:
-                    api.pets_walk(Path[lastpath][0], Path[lastpath][1])
+                    api.pets_walk(dest_x, dest_y)
             else:
                 print("Failed to find a path")
         except Exception as e:
             print(f"Error in walk_to_point: {e}")
 
+
+
     def walk_and_switch_map(self, point, walk_with_pet = True, skip = 4, timeout = 3):
+        """Walk to ``point`` and wait for a map change.
+
+        ``point`` can be a list/tuple ``[x, y]`` or any object exposing
+        ``x`` and ``y`` attributes. This mirrors ``walk_to_point`` so calling
+        code can pass in ``GridNode`` instances directly.
+        """
+
+        # Normalise ``point`` just like in ``walk_to_point``
+        if hasattr(point, "x") and hasattr(point, "y"):
+            point = [point.x, point.y]
+        elif isinstance(point, (list, tuple)) and len(point) == 2:
+            point = list(point)
+        else:
+            raise TypeError("point must be a sequence or expose 'x' and 'y'")
+
         player_pos = [self.pos_x, self.pos_y]
         api = self.api
         try:
-            Path = findPath(player_pos, point[0], point[1], self.map_array)
+            Path = findPath(player_pos, [point[0], point[1]], self.map_array)
             if Path != []:
                 lastpath = len(Path)-1
                 for i in range(0, len(Path), skip):
                     if self.stop_script:
                         raise SystemExit
-                    x = Path[i][0]
-                    y = Path[i][1]
+                    node = Path[i]
+                    if hasattr(node, 'x') and hasattr(node, 'y'):
+                        x, y = node.x, node.y
+                    else:
+                        x, y = node[0], node[1]
 
                     api.player_walk(x, y)
                     if walk_with_pet:
@@ -350,9 +426,15 @@ class Player:
                 while self.map_changed == False:
                     random_x = random.choice([-1,1,0])
                     random_y = random.choice([-1,1,0])
-                    api.player_walk(Path[lastpath][0]+random_x, Path[lastpath][1]+random_y)
+                    last_node = Path[lastpath]
+                    if hasattr(last_node, 'x') and hasattr(last_node, 'y'):
+                        base_x, base_y = last_node.x, last_node.y
+                    else:
+                        base_x, base_y = last_node[0], last_node[1]
+
+                    api.player_walk(base_x + random_x, base_y + random_y)
                     if walk_with_pet:
-                        api.pets_walk(Path[lastpath][0]+random_x, Path[lastpath][1]+random_y)
+                        api.pets_walk(base_x + random_x, base_y + random_y)
                     for i in range(50):
                         time.sleep(0.1)
                         if self.map_changed:
@@ -407,14 +489,10 @@ class Player:
         if min_val == max_val:
             return min_val
 
-        min_val = str(min_val)[:5]
-        max_val = str(max_val)[:5]
+        min_i = int(min_val * decimals)
+        max_i = int(max_val * decimals)
 
-        return random.randint(float(min_val)*decimals, float(max_val)*decimals)/decimals
-
-    def auto_login(self, lang: int, server: int, channel: int, character: int, *, pid: Optional[int] = None, exe_name: str = "NostaleClientX.exe"):
-        """Reconnect using gfless_api login sequence."""
-        gfless_api.login(lang, server, channel, character, pid=pid, exe_name=exe_name)
+        return random.randint(min_i, max_i) / decimals
 
     def queries(self, delay=1, player_info = True, inventory = True, skills = True, entities = True):
         time.sleep(delay)
@@ -438,8 +516,8 @@ class Player:
             try:
                 self.recv_packet_conditions.pop(index)
                 print(f"\nError executing recv_packet condition: {cond_name}\nError: {e}\nCondition was removed.")
-            except:
-                pass
+            except Exception as e2:
+                print(f"Error removing faulty recv_packet condition: {e2}")
 
     def exec_send_packet_condition(self, code, packet, index, cond_name):
         try:
@@ -448,8 +526,8 @@ class Player:
             try:
                 self.send_packet_conditions.pop(index)
                 print(f"\nError executing send_packet condition: {cond_name}\nError: {e}\nCondition was removed.")
-            except:
-                pass
+            except Exception as e2:
+                print(f"Error removing faulty send_packet condition: {e2}")
 
     def exec_periodic_conditions(self):
         j = 0
@@ -461,12 +539,18 @@ class Player:
                             exec(self.periodical_conditions[i][1])
                         except Exception as e:
                             try:
-                                self.send_packet_conditions.pop(self.send_packet_conditions.index(self.periodical_conditions[i]))
-                                print(f"\nError executing periodical condition: {self.periodical_conditions[i][0]}\nError: {e}\nCondition was removed.")
-                            except:
-                                print(f"\nError executing periodical condition: {self.periodical_conditions[i][0]}\nError: {e}\nCondition was removed.")
-            except:
-                pass
+                                # Remove the faulty periodic condition from the list
+                                faulty = self.periodical_conditions[i]
+                                self.periodical_conditions.pop(i)
+                                print(
+                                    f"\nError executing periodical condition: {faulty[0]}\nError: {e}\nCondition was removed."
+                                )
+                            except Exception:
+                                print(
+                                    f"\nError executing periodical condition: {faulty[0]}\nError: {e}\nCondition was removed."
+                                )
+            except Exception as e:
+                print(f"Error executing periodic conditions loop: {e}")
             j+=1
             time.sleep(0.1)
    
@@ -474,7 +558,75 @@ class Player:
     def split_packet(self, packet, delimeter = " "):
         return packet.split(delimeter)
 
+    def reset_attrs(self):
+        """Reset attr1 through attr99 to 0."""
+        for i in range(1, 100):
+            setattr(self, f'attr{i}', 0)
 
+    def invite_members(self):
+        """Invite all stored group members with a 3-second delay between invites."""
+        if not isinstance(self.attr51, list):
+            return
+        for name in self.attr51:
+            try:
+                self.api.send_packet(f"$Invite {name}")
+                time.sleep(3)
+            except Exception as e:
+                print(f"Failed to invite {name}: {e}")
 
-test = 10
+    def close_game(self):
+        """Terminate the Nostale client associated with this player."""
+        pid = None
+        if psutil is not None:
+            try:
+                for conn in psutil.net_connections(kind="tcp"):
+                    if conn.laddr and conn.laddr.port == self.port and conn.pid:
+                        pid = conn.pid
+                        break
+            except Exception:
+                pass
+
+        if pid is None:
+            try:
+                wins = pwc.getWindowsWithTitle("Nostale")
+                if wins:
+                    pid = wins[0].getPid()
+            except Exception:
+                pass
+
+        win = None
+        if pid:
+            try:
+                subprocess.check_call(["taskkill", "/PID", str(pid), "/F"])
+                return True
+            except subprocess.CalledProcessError:
+                pass
+
+            try:
+                subprocess.check_call([
+                    "wmic",
+                    "process",
+                    "where",
+                    f"processid={pid}",
+                    "call",
+                    "terminate",
+                ])
+                return True
+            except Exception:
+                pass
+
+            try:
+                wins = pwc.getWindowsWithTitle("Nostale")
+                if wins:
+                    win = wins[0]
+            except Exception:
+                pass
+
+            if win:
+                try:
+                    win.close()
+                    return True
+                except Exception:
+                    pass
+        return False
 

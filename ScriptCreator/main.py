@@ -4,7 +4,15 @@ import ctypes
 import win32gui
 import win32con
 import threading
-from time import sleep
+import warnings
+# Some PyQt5/QScintilla builds emit a deprecation warning regarding
+# ``sipPyTypeDict``. The underlying code is part of the compiled
+# extension and cannot be changed here, so hide this warning.
+warnings.filterwarnings(
+    "ignore",
+    message=r".*sipPyTypeDict.*",
+    category=DeprecationWarning,
+)
 
 from PyQt5.QtWidgets import (
     QApplication,
@@ -47,8 +55,9 @@ from editor import Editor
 class CheckableComboBox(QComboBox):
     """ComboBox that allows selecting multiple items using check boxes."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, max_checked=None):
         super().__init__(parent)
+        self.max_checked = max_checked
         self.setModel(QStandardItemModel(self))
         self.view().pressed.connect(self.handleItemPressed)
         self.setEditable(True)
@@ -68,6 +77,14 @@ class CheckableComboBox(QComboBox):
         if item.checkState() == Qt.Checked:
             item.setCheckState(Qt.Unchecked)
         else:
+            if self.max_checked is not None:
+                checked = self.checkedIndices()
+                if len(checked) >= self.max_checked:
+                    if self.max_checked == 1:
+                        for i in checked:
+                            self.model().item(i).setCheckState(Qt.Unchecked)
+                    else:
+                        return
             item.setCheckState(Qt.Checked)
         self._changed = True
         self.updateText()
@@ -421,21 +438,7 @@ class loadFull(QDialog):
 
 
     def confirmLoadFullScript(self):
-        for i in range(len(self.players)):
-            self.players[i][0].recv_packet_conditions = []
-            self.players[i][0].send_packet_conditions = []
-            # clear any previously loaded periodical conditions
-            self.players[i][0].periodical_conditions = []
-            self.text_editors[i].setText("""# Gets current player object
-player = self.players[self.tab_widget.currentIndex()][0]
-
-# Gets all The players and remove current player to get alts
-alts = [sublist[0] if sublist[0] is not None else None for sublist in self.players]
-alts.remove(player)
-
-""")
-            
-            
+         
         try:
             loaded_names = []
             for i in range(len(self.setup_widgets)):
@@ -448,6 +451,19 @@ alts.remove(player)
                     if index is None:
                         continue
                     loaded_names.append(name)
+                    self.players[index][0].recv_packet_conditions = []
+                    self.players[index][0].send_packet_conditions = []
+                    self.players[index][0].periodical_conditions = []
+                    self.players[i][0].periodical_conditions = []
+                    self.text_editors[i].setText("""import gfless_api
+# Gets current player object
+player = self.players[self.tab_widget.currentIndex()][0]
+
+# Gets all The players and remove current player to get alts
+alts = [sublist[0] if sublist[0] is not None else None for sublist in self.players]
+alts.remove(player)
+
+""")
                     self.players[index][0].script_loaded = True
 
                     # load scripts
@@ -504,13 +520,192 @@ alts.remove(player)
         if self.minimumHeight() - 28 > 0:
             self.setMaximumHeight(self.minimumHeight() - 28)
 
+class LeaderSelectionDialog(QDialog):
+    def __init__(self, player_names, current_leaders):
+        super().__init__()
+        self.setWindowTitle("Select Leaders")
+        self.setWindowIcon(QIcon('src/icon.png'))
+        self.combo = CheckableComboBox(max_checked=4)
+        self.combo.addItems(player_names)
+        for i in range(self.combo.model().rowCount()):
+            item = self.combo.model().item(i)
+            if item.text() in current_leaders:
+                item.setCheckState(Qt.Checked)
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel("Leaders"))
+        layout.addWidget(self.combo)
+        button_layout = QHBoxLayout()
+        ok_button = QPushButton("OK")
+        cancel_button = QPushButton("Cancel")
+        ok_button.clicked.connect(self.accept)
+        cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(ok_button)
+        button_layout.addWidget(cancel_button)
+        layout.addLayout(button_layout)
+        self.setLayout(layout)
+
+    def selected_leaders(self):
+        return self.combo.checkedItems()
+
+class GroupScriptDialog(QDialog):
+    def __init__(self, players, text_editors, leader_path, member_path, group_id, leaders):
+        super().__init__()
+
+        self.players = players
+        self.text_editors = text_editors
+        self.leader_path = leader_path
+        self.member_path = member_path
+        self.group_id = group_id
+        # Predefined leaders to exclude from auto-selection and member listing
+        self.leaders = leaders
+
+        self.setWindowTitle("Group Script Setup")
+        self.setWindowIcon(QIcon('src/icon.png'))
+
+        leader_names = self.leaders
+        member_names = [
+            p[0].name
+            for p in players
+            if p[0].name not in leader_names and not p[0].script_loaded
+        ]
+
+        self.leader_combo = CheckableComboBox(max_checked=1)
+        self.leader_combo.addItems(leader_names)
+        self.leader_combo.setMinimumWidth(200)
+
+        self.members_combo = CheckableComboBox(max_checked=8)
+        self.members_combo.addItems(member_names)
+        self.members_combo.setMinimumWidth(200)
+
+        layout = QGridLayout()
+        layout.addWidget(QLabel("Leader"), 0, 0)
+        layout.addWidget(self.leader_combo, 0, 1)
+        layout.addWidget(QLabel("Members"), 1, 0)
+        layout.addWidget(self.members_combo, 1, 1)
+
+        load_button = QPushButton("Load")
+        load_button.clicked.connect(self.load_setup)
+        all_button = QPushButton("All")
+        all_button.clicked.connect(self.select_all_members)
+        layout.addWidget(load_button, 2, 0)
+        layout.addWidget(all_button, 2, 1)
+
+        self.setLayout(layout)
+
+    def select_all_members(self):
+        selected_leaders = set(self.leader_combo.checkedItems())
+        leaders = set(self.leaders) | selected_leaders
+        eligible = [p[0].name for p in self.players if not p[0].script_loaded and p[0].name not in leaders]
+        # Respect maximum allowed members
+        eligible = eligible[: self.members_combo.max_checked]
+        for i in range(self.members_combo.model().rowCount()):
+            item = self.members_combo.model().item(i)
+            if item.text() in eligible:
+                item.setCheckState(Qt.Checked)
+            else:
+                item.setCheckState(Qt.Unchecked)
+        self.members_combo.updateText()
+
+    def load_setup(self):
+        leader_names = self.leader_combo.checkedItems()
+        member_names = self.members_combo.checkedItems()
+
+        if len(leader_names) != 1:
+            QMessageBox.warning(self, "Invalid Selection", "Please select exactly one leader.")
+            return
+        if len(member_names) > 8:
+            QMessageBox.warning(self, "Invalid Selection", "Please select up to eight members.")
+            return
+        if leader_names[0] in member_names:
+            QMessageBox.warning(self, "Invalid Selection", "Leader cannot be selected as member.")
+            return
+
+        leader_name = leader_names[0]
+
+        roles = {leader_name: (self.leader_path, "leader")}
+        for m in member_names:
+            roles[m] = (self.member_path, "member")
+
+        leader_obj = None
+
+        for idx, (player_obj, _) in enumerate(self.players):
+            if player_obj.name not in roles:
+                continue
+
+            player_obj.reset_attrs()
+
+            setup_path, role = roles[player_obj.name]
+            script_dir = os.path.join(setup_path, "script")
+            cond_dir = os.path.join(setup_path, "conditions")
+
+            if not os.path.isdir(script_dir) or not os.path.isdir(cond_dir):
+                QMessageBox.warning(self, "Load Failed", f"Invalid setup folder: {setup_path}")
+                return
+
+            script_files = sorted([f for f in os.listdir(script_dir) if f.endswith('.txt')])
+            if not script_files:
+                QMessageBox.warning(self, "Load Failed", f"No scripts found in {script_dir}")
+                return
+
+            if role == "leader":
+                chosen = next((s for s in script_files if "setup1" in s.lower() or "leader" in s.lower()), script_files[0])
+            else:
+                chosen = next((s for s in script_files if "follow" in s.lower() or "member" in s.lower()), script_files[0])
+
+            with open(os.path.join(script_dir, chosen), "r") as file:
+                script_text = file.read()
+
+            cond_files = sorted([f for f in os.listdir(cond_dir) if f.endswith('.txt')])
+            cond_data = []
+            for cf in cond_files:
+                with open(os.path.join(cond_dir, cf), "r") as cfile:
+                    c_type = cfile.readline().strip()
+                    running = cfile.readline().strip()
+                    script = cfile.read().strip()
+                cond_data.append((os.path.splitext(cf)[0], c_type, script, running))
+
+            self.text_editors[idx].setText(script_text)
+            player_obj.recv_packet_conditions = []
+            player_obj.send_packet_conditions = []
+            player_obj.periodical_conditions = []
+
+            for name, ctype, cscript, running in cond_data:
+                running_bool = True if running == "1" else False
+                if ctype == "recv_packet":
+                    player_obj.recv_packet_conditions.append([name, cscript, running_bool])
+                elif ctype == "send_packet":
+                    player_obj.send_packet_conditions.append([name, cscript, running_bool])
+                else:
+                    player_obj.periodical_conditions.append([name, cscript, running_bool, 1])
+
+            if role == "leader":
+                player_obj.attr19 = 0
+                player_obj.attr20 = player_obj.name
+                leader_obj = player_obj
+            else:
+                player_obj.attr19 = self.group_id
+                player_obj.attr20 = leader_name
+                player_obj.script_loaded = True
+            player_obj.attr13 = 0
+
+        if leader_obj:
+            leader_obj.attr51 = member_names
+
+        QMessageBox.information(self, "Group Script Setup", "Setup successfully loaded.")
+        self.accept()
+
 class MyWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.settings = QSettings('PBapi', 'Script Creator')
         windowScreenGeometry = self.settings.value("windowScreenGeometry")
         self.colorTheme = self.settings.value("colorTheme")
-        self.console = self.settings.value("console")
+        # Default to showing the console when no previous preference exists
+        self.console = int(self.settings.value("console", 1))
+        self.group_leader_setup_path = self.settings.value("groupLeaderSetupPath")
+        self.group_member_setup_path = self.settings.value("groupMemberSetupPath")
+        self.group_script_group_counter = 0
+        self.group_leaders = []
 
         if windowScreenGeometry:
             self.restoreGeometry( windowScreenGeometry )
@@ -600,6 +795,17 @@ class MyWindow(QMainWindow):
         darkThemeAction.triggered.connect(self.setDarkTheme)
         colorThemeMenu.addAction(darkThemeAction)
 
+        groupMenu = menubar.addMenu('Group Script')
+        markLeadersAction = QAction('Mark Leaders', self)
+        markLeadersAction.triggered.connect(self.mark_group_leaders)
+        groupMenu.addAction(markLeadersAction)
+        loadGroupAction = QAction('Load Setup', self)
+        loadGroupAction.triggered.connect(self.load_group_script_setup)
+        groupMenu.addAction(loadGroupAction)
+        groupPathsAction = QAction('Set Setup Paths', self)
+        groupPathsAction.triggered.connect(self.set_group_script_paths)
+        groupMenu.addAction(groupPathsAction)
+
         consoleMenu = menubar.addMenu("Console")
 
         showConsoleAction = QAction('Show Console', self)
@@ -649,7 +855,7 @@ class MyWindow(QMainWindow):
 
     def exit_application(self, event):
         self.settings.setValue("windowScreenGeometry", self.saveGeometry())
-        os._exit(0)
+        QApplication.quit()
 
     def minimizeToTray(self):
         self.hide()
@@ -699,12 +905,84 @@ class MyWindow(QMainWindow):
             load_full = loadFull(self.players, self.text_editors, folder_path)
             load_full.exec_()
 
+    def player_disconnected(self, player):
+        """Remove player tab and clear scripts when connection is lost."""
+        try:
+            index = next(i for i, p in enumerate(self.players) if p[0] == player)
+        except StopIteration:
+            return
+
+        player.recv_packet_conditions = []
+        player.send_packet_conditions = []
+        player.periodical_conditions = []
+        player.script_loaded = False
+
+        try:
+            if self.players[index][1]:
+                self.players[index][1].kill()
+        except Exception:
+            pass
+
+        self.tab_widget.removeTab(index)
+        self.open_tabs_names.pop(index)
+        self.players.pop(index)
+        self.text_editors.pop(index)
+        self.start_stop_buttons.pop(index)
+
+    def mark_group_leaders(self):
+        names = [p[0].name for p in self.players]
+        dlg = LeaderSelectionDialog(names, self.group_leaders)
+        if dlg.exec_():
+            self.group_leaders = dlg.selected_leaders()
+
+    def load_group_script_setup(self):
+        self.group_leaders = [name for name in self.group_leaders if any(p[0].name == name for p in self.players)]
+        if not self.group_leaders:
+            QMessageBox.information(self, "Group Script Setup", "Please mark leaders first.")
+            return
+
+        if all(p[0].script_loaded for p in self.players if p[0].name not in self.group_leaders):
+            QMessageBox.information(self, "Group Script Setup", "All characters already have a script loaded.")
+            return
+
+        if not self.group_leader_setup_path or not self.group_member_setup_path:
+            self.set_group_script_paths()
+            if not self.group_leader_setup_path or not self.group_member_setup_path:
+                return
+
+        dlg = GroupScriptDialog(
+            self.players,
+            self.text_editors,
+            self.group_leader_setup_path,
+            self.group_member_setup_path,
+            self.group_script_group_counter,
+            self.group_leaders,
+        )
+        if dlg.exec_():
+            self.group_script_group_counter += 1
+
+    def set_group_script_paths(self):
+        leader_path = QFileDialog.getExistingDirectory(self, "Select Leader Setup Folder")
+        if not leader_path:
+            return
+        member_path = QFileDialog.getExistingDirectory(self, "Select Member Setup Folder")
+        if not member_path:
+            return
+        self.group_leader_setup_path = leader_path
+        self.group_member_setup_path = member_path
+        self.settings.setValue("groupLeaderSetupPath", leader_path)
+        self.settings.setValue("groupMemberSetupPath", member_path)
+        QMessageBox.information(self, "Group Script Setup", "Setup paths saved.")
+
     def refresh(self):
         all_chars = returnAllPorts()
         all_chars = sorted(all_chars, key=lambda x: x[0])
         for i in range(len(all_chars)):
             if all_chars[i][0] not in self.open_tabs_names:
                 self.add_tab(all_chars[i][0])
+
+        current_names = [p[0] for p in all_chars]
+        self.group_leaders = [name for name in self.group_leaders if name in current_names]
         
         tabs_to_remove = []
         for i in range(len(self.open_tabs_names)):
@@ -733,7 +1011,7 @@ class MyWindow(QMainWindow):
         self.tab_widget.addTab(tab, char_name)
         self.open_tabs_names += [char_name]
 
-        player = Player(char_name)
+        player = Player(char_name, on_disconnect=self.player_disconnected)
         self.players.append([player, None])
 
         # Create a layout for the tab

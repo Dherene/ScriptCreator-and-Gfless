@@ -36,7 +36,7 @@ class Api:
 
         self._do_work = True
         self._messages = queue.Queue()
-        self._worker = threading.Thread(target = self._work)
+        self._worker = threading.Thread(target=self._work, daemon=True)
         self._worker.start()
 
     def _send_data(self, data : str) -> int:

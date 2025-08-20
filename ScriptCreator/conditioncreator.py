@@ -214,16 +214,6 @@ class ConditionReview(QDialog):
         message_box.setWindowTitle("Wrong Condition Name")
         message_box.exec_()
         return
-    
-    def condition_name_already_exists_msg_box(self):
-        message_box = QMessageBox()
-        message_box.setIcon(QMessageBox.Warning)
-        message_box.setText(f"Condition with this name already exists.\n")
-        message_box.setStandardButtons(QMessageBox.Ok)
-        message_box.setDefaultButton(QMessageBox.Ok)
-        message_box.setWindowTitle("Wrong Condition Name")
-        message_box.exec_()
-        return
 
     def allow_edit(self):
         if self.allow_edit_checkbox.isChecked():
@@ -376,8 +366,9 @@ class ConditionCreator(QDialog):
             "wait", "walk_to_point", "send_packet", "recv_packet",
             "start_bot", "stop_bot", "continue_bot", "load_settings",
             "attack", "player_skill", "player_walk", "pets_walk",
-            "start_minigame_bot", "stop_minigame_bot", "use_item",
-            "auto_login", "python_code", "delete_condition"
+            "start_minigame_bot", "stop_minigame_bot", "use_item", 
+            "auto_login", "relogin", "python_code", "delete_condition", "close_game",
+            "invite_members"
         ]
         for i in range(1, 101):
             elements_list.append(f"attr{i}")
@@ -465,7 +456,6 @@ class ConditionCreator(QDialog):
             new_x_label = QLabel("x:")
             new_y = QLineEdit()
             new_y_label = QLabel("y:")
-
             group_box_layout.addWidget(new_x_label, 0, 2)
             group_box_layout.addWidget(new_x, 0, 3)
             group_box_layout.addWidget(new_y_label, 0, 4)
@@ -475,6 +465,18 @@ class ConditionCreator(QDialog):
             self.action_widgets[index].append(new_x)
             self.action_widgets[index].append(new_y_label)
             self.action_widgets[index].append(new_y)
+
+            if condition == "walk_to_point":
+                new_radius = QLineEdit("0")
+                new_radius_label = QLabel("radius:")
+                new_radius.setToolTip("Numero de celdas alrededor del punto")
+                new_radius.setPlaceholderText("celdas")
+
+                group_box_layout.addWidget(new_radius_label, 0, 6)
+                group_box_layout.addWidget(new_radius, 0, 7)
+
+                self.action_widgets[index].append(new_radius_label)
+                self.action_widgets[index].append(new_radius)
         elif condition == "load_settings":
             new_settings_path_label = QLabel("Settings path:")
             new_settings_path = QLineEdit()
@@ -527,6 +529,13 @@ class ConditionCreator(QDialog):
                 char_label, char_edit,
                 pid_label, pid_edit
             ])
+        elif condition == "relogin":
+            pid_label = QLabel("pid:")
+            pid_edit = QLineEdit("pidnum")
+            group_box_layout.addWidget(pid_label, 0, 2)
+            group_box_layout.addWidget(pid_edit, 0, 3)
+            self.action_widgets[index].append(pid_label)
+            self.action_widgets[index].append(pid_edit)
         elif condition == "python_code":
             new_equals_label = QLabel("=")
             new_python_code = QLineEdit()
@@ -573,6 +582,9 @@ class ConditionCreator(QDialog):
             self.action_widgets[index].append(new_monster_id)
             self.action_widgets[index].append(new_skill_id_label)
             self.action_widgets[index].append(new_skill_id)
+        elif condition == "close_game":
+            # no additional widgets needed for closing the game
+            pass
 
         self.action_widgets[index].append(group_box_layout)
 
@@ -615,10 +627,14 @@ class ConditionCreator(QDialog):
         condition_review.exec_()
 
     def construct_script(self, conditions_array, actions_array):
+        need_import = any(action[0] in ("auto_login", "relogin") for action in actions_array)
+        script = ""
+        if need_import:
+            script += "import gfless_api\n"
         if conditions_array[0][0] == "IF":
-            script = f'if '
+            script += "if "
         else:
-            script = f'if not '
+            script += "if not "
 
         for i in range(len(conditions_array)):
             if_condition = conditions_array[i][0]
@@ -717,7 +733,10 @@ class ConditionCreator(QDialog):
             elif actions_array[i][0] == "load_settings":
                 script += f'self.api.load_settings({actions_array[i][1]})'
             elif actions_array[i][0] == "walk_to_point":
-                script += f'self.walk_to_point([{actions_array[i][1]},{actions_array[i][2]}])'
+                if len(actions_array[i]) >= 4:
+                    script += f'self.walk_to_point([{actions_array[i][1]},{actions_array[i][2]}], {actions_array[i][3]})'
+                else:
+                    script += f'self.walk_to_point([{actions_array[i][1]},{actions_array[i][2]}])'
             elif actions_array[i][0] == "player_walk" or actions_array[i][0] == "pets_walk":
                 script += f'self.api.{actions_array[i][0]}({actions_array[i][1]}, {actions_array[i][2]})'
             elif actions_array[i][0] == "use_item":
@@ -729,10 +748,16 @@ class ConditionCreator(QDialog):
                     f'int({actions_array[i][3]}), int({actions_array[i][4]}), '
                     f'pid=int({actions_array[i][5]}))'
                 )
+            elif actions_array[i][0] == "relogin":
+                script += f'gfless_api.inject_dll(pid=int({actions_array[i][1]}))'
             elif actions_array[i][0] == "python_code":
                 script += f'{actions_array[i][1]}'
             elif actions_array[i][0] == "delete_condition":
                 script += f'raise ValueError("Intentional Exit By User")'
+            elif actions_array[i][0] == "close_game":
+                script += 'self.close_game()'
+            elif actions_array[i][0] == "invite_members":
+                script += 'self.invite_members()'
             else:
                 if actions_array[i][2] == "string":
                     script += f'self.{actions_array[i][0]} = "{actions_array[i][1]}"'

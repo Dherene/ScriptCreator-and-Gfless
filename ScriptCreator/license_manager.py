@@ -67,19 +67,26 @@ def save_details(data):
         pickle.dump(data, f)
 
 
-def generate_license(days, key=None):
+def generate_license(days, key=None, *, reset=False):
     """Create a new license valid for ``days`` days and return its key.
 
     If ``key`` is provided, it will be used instead of generating a random one.
+    When ``reset`` is ``True`` all previously stored licenses are removed and
+    only the newly generated license is kept. This is useful when creating a
+    distributable build that should ship with a single license.
     """
     key = key or uuid.uuid4().hex[:16]
-    keys = load_licenses()
-    details = load_details()
     expires = (datetime.now() + timedelta(days=days)).timestamp()
 
-    if key not in keys:
-        keys.append(key)
-    details[key] = {"expires": expires, "hwid": None, "blocked": False}
+    if reset:
+        keys = [key]
+        details = {key: {"expires": expires, "hwid": None, "blocked": False}}
+    else:
+        keys = load_licenses()
+        details = load_details()
+        if key not in keys:
+            keys.append(key)
+        details[key] = {"expires": expires, "hwid": None, "blocked": False}
 
     save_licenses(keys)
     save_details(details)

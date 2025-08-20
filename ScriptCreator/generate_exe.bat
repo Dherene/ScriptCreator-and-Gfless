@@ -1,7 +1,8 @@
 @echo off
-set "DIST_DIR=C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\ScriptCreator\dist"
-set "SRC_DIR=C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\ScriptCreator"
-set "DLL_NAME=gfless.dll"
+set "DIST_DIR=C:\Users\valde\OneDrive\Escritorio\ScriptTSgroup\dist"
+set "SRC_DIR=C:\Users\valde\OneDrive\Escritorio\ScriptTSgroup\"
+
+
 
 REM === ELIMINAR main.spec (si existe) ===
 if exist "%SRC_DIR%\main.spec" del "%SRC_DIR%\main.spec"
@@ -21,10 +22,7 @@ if not "%LICENSE_KEY%"=="" (
 )
 
 REM === COMPILAR CON PYINSTALLER ===
-py -3.9-32 -m PyInstaller main.py --noconfirm --clean --console --icon=ico.ico --name="Script Creator" --onefile --distpath "%DIST_DIR%" --add-binary "%SRC_DIR%\%DLL_NAME%;."
-REM === COPIAR Injector.exe a DIST ===
-copy /Y "%SRC_DIR%\Injector.exe" "%DIST_DIR%\Injector.exe" >nul
-
+py -3.9-32 -m PyInstaller main.py --noconfirm --clean --console --icon=ico.ico --name="Script Creator" --onefile --distpath "%DIST_DIR%"
 
 REM === COPIAR ARCHIVOS DE LICENCIA A DIST ===
 if exist licenses.json copy /Y licenses.json "%DIST_DIR%\licenses.json" >nul
@@ -36,7 +34,3 @@ echo =============================
 echo Compilación finalizada.
 echo =============================
 pause
-
-
-
-

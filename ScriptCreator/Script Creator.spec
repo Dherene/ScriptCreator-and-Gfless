@@ -4,7 +4,7 @@
 a = Analysis(
     ['main.py'],
     pathex=[],
-    binaries=[('C:\\Users\\valde\\OneDrive\\Escritorio\\scriptcreator+glfess\\ScriptCreator\\gfless.dll', '.')],
+    binaries=[],
     datas=[],
     hiddenimports=[],
     hookspath=[],
