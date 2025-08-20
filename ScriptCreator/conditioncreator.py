@@ -501,35 +501,47 @@ class ConditionCreator(QDialog):
             self.action_widgets[index].append(new_item_vnum)
             self.action_widgets[index].append(new_inventory_type)
         elif condition == "auto_login":
-            # Arguments match gfless_api.update_login(lang, server, channel, character[, pid])
-            lang_label = QLabel("lang:")
-            lang_edit = QLineEdit("0")
-            server_label = QLabel("server:")
-            server_edit = QLineEdit("0")
-            channel_label = QLabel("channel:")
-            channel_edit = QLineEdit("0")
-            char_label = QLabel("char:")
-            char_edit = QLineEdit("0")
-            pid_label = QLabel("pid:")
-            pid_edit = QLineEdit()
-            pid_edit.setPlaceholderText("current")
+            # Use comboboxes similar to the Server Configuration dialog
+            lang_label = QLabel("Language:")
+            lang_combo = QComboBox()
+            lang_combo.addItems([
+                "International/English",
+                "German",
+                "French",
+                "Italian",
+                "Polish",
+                "Spanish",
+            ])
+
+            server_label = QLabel("Server:")
+            server_combo = QComboBox()
+            server_combo.addItems([str(i) for i in range(1, 5)])
+
+            channel_label = QLabel("Channel:")
+            channel_combo = QComboBox()
+            channel_combo.addItems([str(i) for i in range(1, 8)])
+
+            char_label = QLabel("Character:")
+            char_combo = QComboBox()
+            char_combo.addItems([str(i) for i in range(1, 5)])
 
             widgets = [
-                (lang_label, 0, 2), (lang_edit, 0, 3),
-                (server_label, 0, 4), (server_edit, 0, 5),
-                (channel_label, 1, 2), (channel_edit, 1, 3),
-                (char_label, 1, 4), (char_edit, 1, 5),
-                (pid_label, 2, 2), (pid_edit, 2, 3)
+                (lang_label, 0, 2), (lang_combo, 0, 3),
+                (server_label, 1, 2), (server_combo, 1, 3),
+                (channel_label, 2, 2), (channel_combo, 2, 3),
+                (char_label, 3, 2), (char_combo, 3, 3),
             ]
+
             for w, r, c in widgets:
                 group_box_layout.addWidget(w, r, c)
 
+            group_box_layout.setColumnStretch(3, 1)
+
             self.action_widgets[index].extend([
-                lang_label, lang_edit,
-                server_label, server_edit,
-                channel_label, channel_edit,
-                char_label, char_edit,
-                pid_label, pid_edit
+                lang_label, lang_combo,
+                server_label, server_combo,
+                channel_label, channel_combo,
+                char_label, char_combo,
             ])
         elif condition == "relogin":
             pid_label = QLabel("pid:")
@@ -616,12 +628,22 @@ class ConditionCreator(QDialog):
 
         actions_array = []
         for row in self.action_widgets:
-            new_row = []
-            for i in range(len(row)):
-                if row[i].__class__.__name__ == "QLineEdit":
-                    new_row.append(row[i].text())
-                if row[i].__class__.__name__ == "QComboBox":
-                    new_row.append(row[i].currentText())
+            action_name = row[0].currentText()
+            new_row = [action_name]
+            if action_name == "auto_login":
+                # Collect indices from comboboxes: lang, server, channel, character
+                new_row.extend([
+                    str(row[2].currentIndex()),
+                    str(row[4].currentIndex()),
+                    str(row[6].currentIndex()),
+                    str(row[8].currentIndex()),
+                ])
+            else:
+                for widget in row[1:]:
+                    if widget.__class__.__name__ == "QLineEdit":
+                        new_row.append(widget.text())
+                    elif widget.__class__.__name__ == "QComboBox":
+                        new_row.append(widget.currentText())
             actions_array.append(new_row)
         
         script = self.construct_script(conditions_array, actions_array)
@@ -745,11 +767,12 @@ class ConditionCreator(QDialog):
                 script += f'self.use_item({int(actions_array[i][1])}, "{actions_array[i][2]}")'
             elif actions_array[i][0] == "auto_login":
                 script += (
-                    "# login(lang, server, channel, character, pid) - performs DLL injection and updates parameters\n"
-                    f'gfless_api.login('
-                    f'int({actions_array[i][1]}), int({actions_array[i][2]}), '
-                    f'int({actions_array[i][3]}), int({actions_array[i][4]}), '
-                    f'pid=int({actions_array[i][5]}))'
+                    "# Save parameters and login (performs DLL injection)\n"
+                    f"\tgfless_api.save_config(int({actions_array[i][1]}), int({actions_array[i][2]}), "
+                    f"int({actions_array[i][3]}), int({actions_array[i][4]}))\n"
+                    "\tgfless_api.close_login_pipe()\n"
+                    f"\tgfless_api.login(int({actions_array[i][1]}), int({actions_array[i][2]}), "
+                    f"int({actions_array[i][3]}), int({actions_array[i][4]}), pid=self.PIDnum, force_reinject=True)"
                 )
             elif actions_array[i][0] == "relogin":
                 script += f'gfless_api.inject_dll(pid=int({actions_array[i][1]}))'
