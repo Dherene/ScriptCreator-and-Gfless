@@ -306,6 +306,11 @@ def _serve_pipe(
             win32file.CloseHandle(pipe)
         except pywintypes.error:
             pass
+        global _current_pipe, _server_thread
+        if _current_pipe == pipe:
+            _current_pipe = None
+        if _server_thread is threading.current_thread():
+            _server_thread = None
 
 
 def _send_relogin_command() -> None:
@@ -352,12 +357,24 @@ def close_login_pipe() -> None:
     if thread is not None and thread.is_alive():
         thread.join(timeout=0.1)
 
-def login(lang: int, server: int, channel: int, character: int, delay: float = 1.0, *, pid: Optional[int] = None, exe_name: str = "NostaleClientX.exe"):
+def login(
+    lang: int,
+    server: int,
+    channel: int,
+    character: int,
+    delay: float = 1.0,
+    *,
+    pid: Optional[int] = None,
+    exe_name: str = "NostaleClientX.exe",
+    force_reinject: bool = False,
+):
     """Inject the DLL and respond to its login parameter requests.
 
     The character index provided is zero-based as used by the UI. The DLL
     expects values from 1 to 4, so we adjust it automatically.
     """
+
+    close_login_pipe()
 
     # the DLL expects characters numbered from 1, while the UI uses 0..3
     character += 1
@@ -400,19 +417,18 @@ def login(lang: int, server: int, channel: int, character: int, delay: float = 1
     _current_pipe = pipe
     _server_thread = server_thread
     server_thread.start()
+    timer = threading.Timer(10, close_login_pipe)
+    timer.daemon = True
+    timer.start()
     try:
         if is_dll_injected(pid, exe_name):
             _send_relogin_command()
         else:
             if not ensure_injected(pid, exe_name):
                 raise RuntimeError("Failed to inject gfless.dll")
-    finally:
-        server_thread.join(timeout=10)
-        if server_thread.is_alive():
-            close_login_pipe()
-        else:
-            _current_pipe = None
-            _server_thread = None
+    except Exception:
+        close_login_pipe()
+        raise
 
 
 def update_login(
@@ -423,6 +439,7 @@ def update_login(
     *,
     pid: Optional[int] = None,
     exe_name: str = "NostaleClientX.exe",
+    force_reinject: bool = False,
 ) -> None:
     """Update login parameters reusing an existing ``gfless.dll`` injection.
 
@@ -447,6 +464,8 @@ def update_login(
     ``svrlist``) to switch server, channel or character without forcing a
     new DLL injection.
     """
+    close_login_pipe()
+
     # the DLL expects characters numbered from 1, while the UI uses 0..3
     character += 1
 
@@ -480,12 +499,9 @@ def update_login(
     _current_pipe = pipe
     _server_thread = server_thread
     server_thread.start()
+    timer = threading.Timer(10, close_login_pipe)
+    timer.daemon = True
+    timer.start()
 
     # Reuse existing injection so the new parameters take effect
     ensure_injected(pid, exe_name, force=False)
-    server_thread.join(timeout=10)
-    if server_thread.is_alive():
-        close_login_pipe()
-    else:
-        _current_pipe = None
-        _server_thread = None
