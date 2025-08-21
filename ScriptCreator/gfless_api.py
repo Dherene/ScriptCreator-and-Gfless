@@ -206,7 +206,7 @@ def login_from_config(delay: float = 1.0, *, pid: Optional[int] = None, exe_name
 PIPE_NAME = r"\\.\pipe\GflessClient"
 
 def _terminate_login_servers() -> None:
-    """Terminate any known processes that could own the login pipe."""
+    """Terminate any known processes that could own ``PIPE_NAME``."""
     # GflessClient.exe is the official launcher that also provides this pipe.
     names = {"gflessclient.exe"}
     for proc in psutil.process_iter(["pid", "name"]):
@@ -219,8 +219,8 @@ def _terminate_login_servers() -> None:
             continue
 
 
-def _create_pipe(pipe_name: str = PIPE_NAME) -> Optional[int]:
-    """Return a handle to ``pipe_name`` or ``None`` if another server is running."""
+def _create_pipe() -> Optional[int]:
+    """Return a handle to ``PIPE_NAME`` or ``None`` if another server is running."""
     sa = win32security.SECURITY_ATTRIBUTES()
     sd = win32security.SECURITY_DESCRIPTOR()
     # allow Everyone to connect so an elevated process can access the pipe
@@ -229,7 +229,7 @@ def _create_pipe(pipe_name: str = PIPE_NAME) -> Optional[int]:
 
     try:
         return win32pipe.CreateNamedPipe(
-            pipe_name,
+            PIPE_NAME,
             win32pipe.PIPE_ACCESS_DUPLEX,
             win32pipe.PIPE_TYPE_BYTE
             | win32pipe.PIPE_READMODE_BYTE
@@ -246,7 +246,7 @@ def _create_pipe(pipe_name: str = PIPE_NAME) -> Optional[int]:
             time.sleep(0.5)
             try:
                 return win32pipe.CreateNamedPipe(
-                    pipe_name,
+                    PIPE_NAME,
                     win32pipe.PIPE_ACCESS_DUPLEX,
                     win32pipe.PIPE_TYPE_BYTE
                     | win32pipe.PIPE_READMODE_BYTE
@@ -330,8 +330,8 @@ def _serve_pipe(
             _server_thread = None
 
 
-def _send_relogin_command(pipe_name: str = PIPE_NAME) -> None:
-    """Send a ``Relogin`` command through ``pipe_name``.
+def _send_relogin_command() -> None:
+    """Send a ``Relogin`` command through ``PIPE_NAME``.
 
     The injected DLL listens on this pipe for commands. When it receives
     ``Relogin`` it will reconnect to request the current login parameters,
@@ -340,7 +340,7 @@ def _send_relogin_command(pipe_name: str = PIPE_NAME) -> None:
 
     try:
         handle = win32file.CreateFile(
-            pipe_name,
+            PIPE_NAME,
             win32file.GENERIC_WRITE,
             0,
             None,
@@ -384,13 +384,11 @@ def login(
     pid: Optional[int] = None,
     exe_name: str = "NostaleClientX.exe",
     force_reinject: bool = False,
-    pipe_name: str = PIPE_NAME,
 ):
     """Inject the DLL and respond to its login parameter requests.
 
     The character index provided is zero-based as used by the UI. The DLL
     expects values from 1 to 4, so we adjust it automatically.
-    ``pipe_name`` selects the named pipe used to exchange login parameters.
     """
 
     close_login_pipe()
@@ -399,6 +397,7 @@ def login(
     character += 1
 
     # If the DLL is already injected try to update the login parameters first.
+    need_reinject = force_reinject
     if is_dll_injected(pid, exe_name) and not force_reinject:
         try:
             update_login(
@@ -408,14 +407,14 @@ def login(
                 character - 1,
                 pid=pid,
                 exe_name=exe_name,
-                pipe_name=pipe_name,
             )
             return
         except RuntimeError:
             close_login_pipe()
+            need_reinject = True
 
     try:
-        pipe = _create_pipe(pipe_name)
+        pipe = _create_pipe()
     except pywintypes.error as exc:
         if exc.winerror == 231:
             raise RuntimeError(
@@ -440,7 +439,7 @@ def login(
     server_thread.start()
     try:
         if is_dll_injected(pid, exe_name):
-            _send_relogin_command(pipe_name)
+            _send_relogin_command()
         else:
             if not ensure_injected(pid, exe_name):
                 raise RuntimeError("Failed to inject GflessDLL.dll")
@@ -458,7 +457,6 @@ def update_login(
     pid: Optional[int] = None,
     exe_name: str = "NostaleClientX.exe",
     force_reinject: bool = False,
-    pipe_name: str = PIPE_NAME,
 ) -> None:
     """Update login parameters reusing an existing ``GflessDLL.dll`` injection.
 
@@ -478,9 +476,6 @@ def update_login(
     exe_name:
         Executable name to locate the client process when ``pid`` is not
         provided.
-    pipe_name:
-        Named pipe to communicate login parameters. Use a unique value when
-        multiple clients run simultaneously.
 
     This helper allows script conditions (for example after receiving
     ``svrlist``) to switch server, channel or character without forcing a
@@ -493,7 +488,7 @@ def update_login(
 
     for attempt in range(5):
         try:
-            pipe = _create_pipe(pipe_name)
+            pipe = _create_pipe()
             break
         except pywintypes.error as exc:
             if exc.winerror != 231:
