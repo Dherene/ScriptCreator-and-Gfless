@@ -22,8 +22,15 @@ DWORD WINAPI AltPipeThread(LPVOID)
             Sleep(500);
             continue;
         }
-        while (ReadFile(hAlt, readBuffer, BUFFER_SIZE, NULL, NULL))
+        while (true)
         {
+            DWORD bytesRead = 0;
+            ZeroMemory(readBuffer, BUFFER_SIZE);
+            BOOL ok = ReadFile(hAlt, readBuffer, BUFFER_SIZE - 1, &bytesRead, NULL);
+            if (!ok || bytesRead == 0)
+                break;
+            readBuffer[bytesRead] = '\0';
+
             std::istringstream iss(readBuffer);
             std::string cmd;
             int language, server, channel, character;
@@ -37,7 +44,7 @@ DWORD WINAPI AltPipeThread(LPVOID)
                     TNTNewServerSelectWidget2* newServerSelectWidget;
                     TCharacterSelectWidget* characterSelectWidget;
                     while ((characterSelectWidget = TCharacterSelectWidget::getInstance()) == nullptr ||
-                           (newServerSelectWidget = TNTNewServerSelectWidget2::getInstance()) == nullptr)
+                        (newServerSelectWidget = TNTNewServerSelectWidget2::getInstance()) == nullptr)
                         Sleep(500);
 
                     while (!characterSelectWidget->isVisible())
