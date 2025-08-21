@@ -69,6 +69,11 @@ class ServerConfigDialog(QDialog):
 
         gfless_api.close_login_pipe()
         try:
+            pipe_name = (
+                gfless_api.PIPE_NAME + str(pid)
+                if pid is not None
+                else gfless_api.PIPE_NAME
+            )
             gfless_api.login(
                 lang,
                 server,
@@ -76,6 +81,7 @@ class ServerConfigDialog(QDialog):
                 char,
                 pid=pid,
                 force_reinject=True,
+                pipe_name=pipe_name,
             )
         except Exception as exc:
             self._login_failed(str(exc))

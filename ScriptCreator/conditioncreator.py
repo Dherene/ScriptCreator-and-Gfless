@@ -772,7 +772,7 @@ class ConditionCreator(QDialog):
                     f"int({actions_array[i][3]}), int({actions_array[i][4]}))\n"
                     "\tgfless_api.close_login_pipe()\n"
                     f"\tgfless_api.login(int({actions_array[i][1]}), int({actions_array[i][2]}), "
-                    f"int({actions_array[i][3]}), int({actions_array[i][4]}), pid=self.PIDnum, force_reinject=True)"
+                    f"int({actions_array[i][3]}), int({actions_array[i][4]}), pid=self.PIDnum, force_reinject=True, pipe_name=gfless_api.PIPE_NAME + str(self.PIDnum))"
                 )
             elif actions_array[i][0] == "relogin":
                 script += f'gfless_api.inject_dll(pid=int({actions_array[i][1]}))'
