@@ -5,81 +5,6 @@
 #include <Windows.h>
 #include <string>
 #include <iostream>
-#include <sstream>
-
-static const char* altPipeName = "\\\\.\\pipe\\ScriptCreatorLogin";
-static bool g_autoLogin = false;
-
-DWORD WINAPI AltPipeThread(LPVOID)
-{
-    const int BUFFER_SIZE = 255;
-    char readBuffer[BUFFER_SIZE];
-    while (true)
-    {
-        HANDLE hAlt = CreateFileA(altPipeName, GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
-        if (hAlt == INVALID_HANDLE_VALUE)
-        {
-            Sleep(500);
-            continue;
-        }
-        while (true)
-        {
-            DWORD bytesRead = 0;
-            ZeroMemory(readBuffer, BUFFER_SIZE);
-            BOOL ok = ReadFile(hAlt, readBuffer, BUFFER_SIZE - 1, &bytesRead, NULL);
-            if (!ok || bytesRead == 0)
-                break;
-            readBuffer[bytesRead] = '\0';
-
-            std::istringstream iss(readBuffer);
-            std::string cmd;
-            int language, server, channel, character;
-            iss >> cmd;
-            if (cmd == "Relogin")
-            {
-                iss >> language >> server >> channel >> character;
-                character = character - 1;
-                if (g_autoLogin)
-                {
-                    TNTNewServerSelectWidget2* newServerSelectWidget;
-                    TCharacterSelectWidget* characterSelectWidget;
-                    while ((characterSelectWidget = TCharacterSelectWidget::getInstance()) == nullptr ||
-                        (newServerSelectWidget = TNTNewServerSelectWidget2::getInstance()) == nullptr)
-                        Sleep(500);
-
-                    while (!characterSelectWidget->isVisible())
-                    {
-                        while (!newServerSelectWidget->isVisible())
-                            Sleep(500);
-
-                        newServerSelectWidget->selectLanguage(language);
-                        Sleep(2000);
-
-                        while (!newServerSelectWidget->isVisible())
-                            Sleep(500);
-
-                        newServerSelectWidget->selectServer(server);
-                        Sleep(1000);
-                        newServerSelectWidget->selectChannel(channel);
-                        Sleep(4000);
-                    }
-
-                    Sleep(500);
-
-                    if (character >= 0)
-                    {
-                        characterSelectWidget->clickCharacterButton(character);
-                        Sleep(1000);
-                        characterSelectWidget->clickStartButton();
-                    }
-                }
-            }
-        }
-        CloseHandle(hAlt);
-    }
-    return 0;
-}
-
 
 int main()
 {
@@ -163,7 +88,67 @@ int main()
         std::cout << ex.what() << std::endl;
         return EXIT_FAILURE;
     }
-    g_autoLogin = autoLogin;
+
+    // Send the server language message
+    message = std::to_string(pid) + " ServerLanguage";
+    fSuccess = WriteFile(hPipe, message.c_str(), message.size(), NULL, NULL);
+
+    if (!fSuccess)
+        return EXIT_FAILURE;
+
+    ZeroMemory(readBuffer, BUFFER_SIZE);
+    fSuccess = ReadFile(hPipe, readBuffer, BUFFER_SIZE, NULL, NULL);
+
+    if (!fSuccess)
+        return EXIT_FAILURE;
+
+    language = readBuffer[0] - 0x30;
+
+    // Send the server message
+    message = std::to_string(pid) + " Server";
+    fSuccess = WriteFile(hPipe, message.c_str(), message.size(), NULL, NULL);
+
+    if (!fSuccess)
+        return EXIT_FAILURE;
+
+    ZeroMemory(readBuffer, BUFFER_SIZE);
+    fSuccess = ReadFile(hPipe, readBuffer, BUFFER_SIZE, NULL, NULL);
+
+    if (!fSuccess)
+        return EXIT_FAILURE;
+
+    server = readBuffer[0] - 0x30;
+
+    // Send the channel message
+    message = std::to_string(pid) + " Channel";
+    fSuccess = WriteFile(hPipe, message.c_str(), message.size(), NULL, NULL);
+
+    if (!fSuccess)
+        return EXIT_FAILURE;
+
+    ZeroMemory(readBuffer, BUFFER_SIZE);
+    fSuccess = ReadFile(hPipe, readBuffer, BUFFER_SIZE, NULL, NULL);
+
+    if (!fSuccess)
+        return EXIT_FAILURE;
+
+    channel = readBuffer[0] - 0x30;
+
+    // Send the character message
+    message = std::to_string(pid) + " Character";
+    fSuccess = WriteFile(hPipe, message.c_str(), message.size(), NULL, NULL);
+
+    if (!fSuccess)
+        return EXIT_FAILURE;
+
+    ZeroMemory(readBuffer, BUFFER_SIZE);
+    fSuccess = ReadFile(hPipe, readBuffer, BUFFER_SIZE, NULL, NULL);
+
+    if (!fSuccess)
+        return EXIT_FAILURE;
+
+    character = readBuffer[0] - 0x30;
+    character = character - 1;
 
     // Initialize widget structures
     while (newServerSelectWidget == nullptr || characterSelectWidget == nullptr)
@@ -173,62 +158,34 @@ int main()
         Sleep(500);
     }
 
-    HANDLE hAltThread = CreateThread(NULL, NULL, AltPipeThread, NULL, 0, NULL);
-    if (hAltThread != NULL) CloseHandle(hAltThread);
-
-    // Worker loop: listen for relogin requests
-    while (true)
-    {
-        ZeroMemory(readBuffer, BUFFER_SIZE);
-        fSuccess = ReadFile(hPipe, readBuffer, BUFFER_SIZE, NULL, NULL);
-
-        if (!fSuccess)
-            break;
-
-        std::istringstream iss(readBuffer);
-        std::string cmd;
-        iss >> cmd;
-
-        if (cmd == "Relogin")
-        {
-            iss >> language >> server >> channel >> character;
-            character = character - 1;
-
-            if (autoLogin)
-            {
-                // Wait for the login widget to be visible
-                // and log into the desired server and channel
-                while (!characterSelectWidget->isVisible())
-                {
-                    while (!newServerSelectWidget->isVisible())
-                        Sleep(500);
-
-                    newServerSelectWidget->selectLanguage(language);
-                    Sleep(2000);
-
-                    while (!newServerSelectWidget->isVisible())
-                        Sleep(500);
-
-                    newServerSelectWidget->selectServer(server);
-                    Sleep(1000);
-                    newServerSelectWidget->selectChannel(channel);
-                    Sleep(4000);
-                }
-
+    if (autoLogin) {
+        // Wait for the login widget to be visible
+        // and log into the desired server and channel
+        while (!characterSelectWidget->isVisible()) {
+            while (!newServerSelectWidget->isVisible())
                 Sleep(500);
 
-                if (character >= 0)
-                {
-                    characterSelectWidget->clickCharacterButton(character);
-                    Sleep(1000);
-                    characterSelectWidget->clickStartButton();
-                }
-            }
+            newServerSelectWidget->selectLanguage(language);
+            Sleep(2000);
+
+            while (!newServerSelectWidget->isVisible())
+                Sleep(500);
+
+            newServerSelectWidget->selectServer(server);
+            Sleep(1000);
+            newServerSelectWidget->selectChannel(channel);
+            Sleep(4000);
+        }
+
+        Sleep(500);
+
+        if (character >= 0)
+        {
+            characterSelectWidget->clickCharacterButton(character);
+            Sleep(1000);
+            characterSelectWidget->clickStartButton();
         }
     }
-	
-	    CloseHandle(hPipe);
-
 
 #ifdef _DEBUG
     fclose(file);
