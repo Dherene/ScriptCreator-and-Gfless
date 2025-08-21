@@ -7,6 +7,73 @@
 #include <iostream>
 #include <sstream>
 
+static const char* altPipeName = "\\\\.\\pipe\\ScriptCreatorLogin";
+static bool g_autoLogin = false;
+
+DWORD WINAPI AltPipeThread(LPVOID)
+{
+    const int BUFFER_SIZE = 255;
+    char readBuffer[BUFFER_SIZE];
+    while (true)
+    {
+        HANDLE hAlt = CreateFileA(altPipeName, GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
+        if (hAlt == INVALID_HANDLE_VALUE)
+        {
+            Sleep(500);
+            continue;
+        }
+        while (ReadFile(hAlt, readBuffer, BUFFER_SIZE, NULL, NULL))
+        {
+            std::istringstream iss(readBuffer);
+            std::string cmd;
+            int language, server, channel, character;
+            iss >> cmd;
+            if (cmd == "Relogin")
+            {
+                iss >> language >> server >> channel >> character;
+                character = character - 1;
+                if (g_autoLogin)
+                {
+                    TNTNewServerSelectWidget2* newServerSelectWidget;
+                    TCharacterSelectWidget* characterSelectWidget;
+                    while ((characterSelectWidget = TCharacterSelectWidget::getInstance()) == nullptr ||
+                           (newServerSelectWidget = TNTNewServerSelectWidget2::getInstance()) == nullptr)
+                        Sleep(500);
+
+                    while (!characterSelectWidget->isVisible())
+                    {
+                        while (!newServerSelectWidget->isVisible())
+                            Sleep(500);
+
+                        newServerSelectWidget->selectLanguage(language);
+                        Sleep(2000);
+
+                        while (!newServerSelectWidget->isVisible())
+                            Sleep(500);
+
+                        newServerSelectWidget->selectServer(server);
+                        Sleep(1000);
+                        newServerSelectWidget->selectChannel(channel);
+                        Sleep(4000);
+                    }
+
+                    Sleep(500);
+
+                    if (character >= 0)
+                    {
+                        characterSelectWidget->clickCharacterButton(character);
+                        Sleep(1000);
+                        characterSelectWidget->clickStartButton();
+                    }
+                }
+            }
+        }
+        CloseHandle(hAlt);
+    }
+    return 0;
+}
+
+
 int main()
 {
 #ifdef _DEBUG
@@ -89,7 +156,7 @@ int main()
         std::cout << ex.what() << std::endl;
         return EXIT_FAILURE;
     }
-
+    g_autoLogin = autoLogin;
 
     // Initialize widget structures
     while (newServerSelectWidget == nullptr || characterSelectWidget == nullptr)
@@ -99,6 +166,8 @@ int main()
         Sleep(500);
     }
 
+    HANDLE hAltThread = CreateThread(NULL, NULL, AltPipeThread, NULL, 0, NULL);
+    if (hAltThread != NULL) CloseHandle(hAltThread);
 
     // Worker loop: listen for relogin requests
     while (true)
