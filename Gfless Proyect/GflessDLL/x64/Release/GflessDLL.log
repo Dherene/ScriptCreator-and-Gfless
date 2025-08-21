@@ -1,0 +1,135 @@
+﻿  dllmain.cpp
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TLBSWidgetList.h(16,38): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "dllmain.cpp")
+  
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TLBSWidget.h(18,34): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "dllmain.cpp")
+  
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TEWGraphicButtonWidget.h(20,46): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "dllmain.cpp")
+  
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TNTNewServerSelectWidget2.h(24,49): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "dllmain.cpp")
+  
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TEWButtonWidget.h(9,39): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "dllmain.cpp")
+  
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TCharacterSelectWidget.h(15,37): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "dllmain.cpp")
+  
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TCharacterSelectWidget.h(72,46): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "dllmain.cpp")
+  
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\dllmain.cpp(48,62): warning C4267: 'argumento': conversión de 'size_t' a 'DWORD'; posible pérdida de datos
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\dllmain.cpp(73,62): warning C4267: 'argumento': conversión de 'size_t' a 'DWORD'; posible pérdida de datos
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\dllmain.cpp(94,62): warning C4267: 'argumento': conversión de 'size_t' a 'DWORD'; posible pérdida de datos
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\dllmain.cpp(109,62): warning C4267: 'argumento': conversión de 'size_t' a 'DWORD'; posible pérdida de datos
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\dllmain.cpp(124,62): warning C4267: 'argumento': conversión de 'size_t' a 'DWORD'; posible pérdida de datos
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\dllmain.cpp(139,62): warning C4267: 'argumento': conversión de 'size_t' a 'DWORD'; posible pérdida de datos
+  TCharacterSelectWidget.cpp
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TLBSWidgetList.h(16,38): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "GameStructures/TCharacterSelectWidget.cpp")
+  
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TLBSWidget.h(18,34): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "GameStructures/TCharacterSelectWidget.cpp")
+  
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TEWGraphicButtonWidget.h(20,46): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "GameStructures/TCharacterSelectWidget.cpp")
+  
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TEWButtonWidget.h(9,39): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "GameStructures/TCharacterSelectWidget.cpp")
+  
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TCharacterSelectWidget.h(15,37): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "GameStructures/TCharacterSelectWidget.cpp")
+  
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TCharacterSelectWidget.h(72,46): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "GameStructures/TCharacterSelectWidget.cpp")
+  
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TCharacterSelectWidget.cpp(14,12): warning C4312: 'conversión de tipo': conversión de 'DWORD' a 'uintptr_t *' de mayor tamaño
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TCharacterSelectWidget.cpp(14,12): warning C4244: '=': conversión de 'uintptr_t' a 'DWORD'; posible pérdida de datos
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TCharacterSelectWidget.cpp(15,12): warning C4312: 'conversión de tipo': conversión de 'DWORD' a 'uintptr_t *' de mayor tamaño
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TCharacterSelectWidget.cpp(15,12): warning C4244: '=': conversión de 'uintptr_t' a 'DWORD'; posible pérdida de datos
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TCharacterSelectWidget.cpp(16,12): warning C4312: 'conversión de tipo': conversión de 'DWORD' a 'uintptr_t *' de mayor tamaño
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TCharacterSelectWidget.cpp(16,12): warning C4244: '=': conversión de 'uintptr_t' a 'DWORD'; posible pérdida de datos
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TCharacterSelectWidget.cpp(18,35): warning C4312: 'reinterpret_cast': conversión de 'DWORD' a 'TCharacterSelectWidget *' de mayor tamaño
+  TEWGraphicButtonWidget.cpp
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TLBSWidgetList.h(16,38): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "GameStructures/TEWGraphicButtonWidget.cpp")
+  
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TLBSWidget.h(18,34): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "GameStructures/TEWGraphicButtonWidget.cpp")
+  
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TEWGraphicButtonWidget.h(20,46): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "GameStructures/TEWGraphicButtonWidget.cpp")
+  
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TEWGraphicButtonWidget.cpp(14,2): error C4235: se ha utilizado una extensión no estándar: la palabra clave '__asm' no se admite en esta arquitectura
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TEWGraphicButtonWidget.cpp(16,3): error C2065: 'mov': identificador no declarado
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TEWGraphicButtonWidget.cpp(16,7): error C2146: error de sintaxis: falta ';' delante del identificador 'eax'
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TEWGraphicButtonWidget.cpp(16,7): error C2065: 'eax': identificador no declarado
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TEWGraphicButtonWidget.cpp(17,3): error C2146: error de sintaxis: falta ';' delante del identificador 'mov'
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TEWGraphicButtonWidget.cpp(17,3): error C2065: 'mov': identificador no declarado
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TEWGraphicButtonWidget.cpp(17,7): error C2146: error de sintaxis: falta ';' delante del identificador 'edx'
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TEWGraphicButtonWidget.cpp(17,7): error C2065: 'edx': identificador no declarado
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TEWGraphicButtonWidget.cpp(18,3): error C2146: error de sintaxis: falta ';' delante del identificador 'call'
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TEWGraphicButtonWidget.cpp(18,3): error C2065: 'call': identificador no declarado
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TEWGraphicButtonWidget.cpp(18,8): error C2146: error de sintaxis: falta ';' delante del identificador 'callAddress'
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TEWGraphicButtonWidget.cpp(19,2): error C2143: error de sintaxis: falta ';' delante de '}'
+  TLBSWidget.cpp
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TLBSWidgetList.h(16,38): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "GameStructures/TLBSWidget.cpp")
+  
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TLBSWidget.h(18,34): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "GameStructures/TLBSWidget.cpp")
+  
+  TLBSWidgetList.cpp
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TLBSWidget.h(18,34): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "GameStructures/TLBSWidgetList.cpp")
+  
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TLBSWidgetList.h(16,38): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "GameStructures/TLBSWidgetList.cpp")
+  
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TLBSWidgetList.cpp(5,17): warning C4018: '>=': no coinciden signed/unsigned
+  TNTNewServerSelectWidget2.cpp
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TLBSWidgetList.h(16,38): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "GameStructures/TNTNewServerSelectWidget2.cpp")
+  
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TLBSWidget.h(18,34): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "GameStructures/TNTNewServerSelectWidget2.cpp")
+  
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TEWGraphicButtonWidget.h(20,46): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "GameStructures/TNTNewServerSelectWidget2.cpp")
+  
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TNTNewServerSelectWidget2.h(24,49): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "GameStructures/TNTNewServerSelectWidget2.cpp")
+  
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TNTNewServerSelectWidget2.cpp(13,12): warning C4312: 'conversión de tipo': conversión de 'DWORD' a 'uintptr_t *' de mayor tamaño
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TNTNewServerSelectWidget2.cpp(13,12): warning C4244: '=': conversión de 'uintptr_t' a 'DWORD'; posible pérdida de datos
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TNTNewServerSelectWidget2.cpp(14,12): warning C4312: 'conversión de tipo': conversión de 'DWORD' a 'uintptr_t *' de mayor tamaño
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TNTNewServerSelectWidget2.cpp(14,12): warning C4244: '=': conversión de 'uintptr_t' a 'DWORD'; posible pérdida de datos
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TNTNewServerSelectWidget2.cpp(15,12): warning C4312: 'conversión de tipo': conversión de 'DWORD' a 'uintptr_t *' de mayor tamaño
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TNTNewServerSelectWidget2.cpp(15,12): warning C4244: '=': conversión de 'uintptr_t' a 'DWORD'; posible pérdida de datos
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TNTNewServerSelectWidget2.cpp(16,12): warning C4312: 'conversión de tipo': conversión de 'DWORD' a 'uintptr_t *' de mayor tamaño
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TNTNewServerSelectWidget2.cpp(16,12): warning C4244: '=': conversión de 'uintptr_t' a 'DWORD'; posible pérdida de datos
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TNTNewServerSelectWidget2.cpp(18,38): warning C4312: 'reinterpret_cast': conversión de 'DWORD' a 'TNTNewServerSelectWidget2 *' de mayor tamaño
+  GflessDLLExports.cpp
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TLBSWidgetList.h(16,38): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "GflessDLLExports.cpp")
+  
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TLBSWidget.h(18,34): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "GflessDLLExports.cpp")
+  
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TEWGraphicButtonWidget.h(20,46): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "GflessDLLExports.cpp")
+  
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TNTNewServerSelectWidget2.h(24,49): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "GflessDLLExports.cpp")
+  
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TEWButtonWidget.h(9,39): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "GflessDLLExports.cpp")
+  
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TCharacterSelectWidget.h(15,37): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "GflessDLLExports.cpp")
+  
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TCharacterSelectWidget.h(72,46): error C2607: no se pudo realizar la aserción estática
+  (compilando archivo de origen "GflessDLLExports.cpp")
+  

@@ -1,0 +1,14 @@
+﻿  dllmain.cpp
+  TCharacterSelectWidget.cpp
+  TEWGraphicButtonWidget.cpp
+  TLBSWidget.cpp
+  TLBSWidgetList.cpp
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TLBSWidgetList.cpp(5,17): warning C4018: '>=': no coinciden signed/unsigned
+  TNTNewServerSelectWidget2.cpp
+  Hook.cpp
+  NosmallDisabler.cpp
+  PatternScanner.cpp
+  GflessDLLExports.cpp
+  Generando código...
+     Creando biblioteca C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\Debug\GflessDLL.lib y objeto C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\Debug\GflessDLL.exp
+  GflessDLL.vcxproj -> C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\Debug\GflessDLL.dll

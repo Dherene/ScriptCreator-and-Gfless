@@ -1,0 +1,17 @@
+﻿  dllmain.cpp
+  TCharacterSelectWidget.cpp
+  TEWGraphicButtonWidget.cpp
+  TLBSWidget.cpp
+  TLBSWidgetList.cpp
+  TNTNewServerSelectWidget2.cpp
+C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\GflessDLL\GameStructures\TLBSWidgetList.cpp(5,17): warning C4018: '>=': no coinciden signed/unsigned
+  Hook.cpp
+  NosmallDisabler.cpp
+  PatternScanner.cpp
+  GflessDLLExports.cpp
+     Creando biblioteca C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\Release\GflessDLL.lib y objeto C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\Release\GflessDLL.exp
+  Generando código
+  Previous IPDB not found, fall back to full compilation.
+  All 137 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  Generación de código finalizada
+  GflessDLL.vcxproj -> C:\Users\valde\OneDrive\Escritorio\scriptcreator+glfess\Gfless Proyect\GflessDLL\Release\GflessDLL.dll
