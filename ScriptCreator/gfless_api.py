@@ -203,7 +203,7 @@ def login_from_config(delay: float = 1.0, *, pid: Optional[int] = None, exe_name
     lang, server, channel, character = load_config()
     login(lang, server, channel, character, delay=delay, pid=pid, exe_name=exe_name)
 
-PIPE_NAME = r"\\.\pipe\GflessClient"
+PIPE_NAME = r"\\.\pipe\MiServidor"
 
 def _terminate_login_servers() -> None:
     """Terminate any known processes that could own ``PIPE_NAME``."""
