@@ -330,12 +330,14 @@ def _serve_pipe(
             _server_thread = None
 
 
-def _send_relogin_command() -> None:
-    """Send a ``Relogin`` command through ``PIPE_NAME``.
+def _send_relogin_command(
+    lang: int, server: int, channel: int, character: int
+) -> None:
+    """Send a ``Relogin`` command with parameters through ``PIPE_NAME``.
 
     The injected DLL listens on this pipe for commands. When it receives
-    ``Relogin`` it will reconnect to request the current login parameters,
-    which are served by ``login`` or ``update_login``.
+    ``Relogin`` along with server parameters, it will reconnect using the
+    supplied values.
     """
 
     try:
@@ -353,7 +355,8 @@ def _send_relogin_command() -> None:
             "Could not connect to Gfless pipe; is the DLL injected?"
         ) from exc
     try:
-        win32file.WriteFile(handle, b"0 Relogin")
+        message = f"Relogin {lang} {server} {channel} {character}".encode()
+        win32file.WriteFile(handle, message)
     finally:
         win32file.CloseHandle(handle)
 
@@ -439,7 +442,7 @@ def login(
     server_thread.start()
     try:
         if is_dll_injected(pid, exe_name):
-            _send_relogin_command()
+            _send_relogin_command(lang, server, channel, character)
         else:
             if not ensure_injected(pid, exe_name):
                 raise RuntimeError("Failed to inject GflessDLL.dll")
@@ -481,41 +484,11 @@ def update_login(
     ``svrlist``) to switch server, channel or character without forcing a
     new DLL injection.
     """
-    close_login_pipe()
 
     # the DLL expects characters numbered from 1, while the UI uses 0..3
     character += 1
 
-    for attempt in range(5):
-        try:
-            pipe = _create_pipe()
-            break
-        except pywintypes.error as exc:
-            if exc.winerror != 231:
-                raise
-            _terminate_login_servers()
-            time.sleep(0.5)
-    else:
-        raise RuntimeError(
-            "Could not create Gfless pipe after several attempts; "
-            "another instance may be running."
-        )
-
-    if pipe is None:
-        raise RuntimeError(
-            "Another Gfless instance is providing login parameters "
-            "and could not be closed automatically."
-        )
-
-    server_thread = threading.Thread(
-        target=_serve_pipe,
-        args=(pipe, lang, server, channel, character),
-        daemon=True,
-    )
-    global _current_pipe, _server_thread
-    _current_pipe = pipe
-    _server_thread = server_thread
-    server_thread.start()
-
     # Reuse existing injection so the new parameters take effect
-    ensure_injected(pid, exe_name, force=False)
+    ensure_injected(pid, exe_name, force=force_reinject)
+
+    _send_relogin_command(lang, server, channel, character)
