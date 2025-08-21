@@ -331,14 +331,16 @@ def _serve_pipe(
 
 
 def _send_relogin_command(
-    lang: int, server: int, channel: int, character: int
+    lang: Optional[int] = None,
+    server: Optional[int] = None,
+    channel: Optional[int] = None,
+    character: Optional[int] = None,
 ) -> None:
-    """Send a ``Relogin`` command with parameters through ``PIPE_NAME``.
+    """Send a ``Relogin`` command through ``PIPE_NAME``.
 
-    All parameters are expected to be **1-based** as required by the DLL.
-    The injected DLL listens on this pipe for commands. When it receives
-    ``Relogin`` along with server parameters, it will reconnect using the
-    supplied values.
+    When all parameters are provided, they are expected to be **1-based**
+    and will be sent alongside the ``Relogin`` command.  Otherwise a plain
+    ``Relogin`` command is issued for backward compatibility.
     """
 
     try:
@@ -356,7 +358,12 @@ def _send_relogin_command(
             "Could not connect to Gfless pipe; is the DLL injected?"
         ) from exc
     try:
-        message = f"Relogin {lang} {server} {channel} {character}".encode()
+        if None not in (lang, server, channel, character):
+            message = f"Relogin {lang} {server} {channel} {character}".encode(
+                "ascii"
+            )
+        else:
+            message = b"Relogin"
         win32file.WriteFile(handle, message)
     finally:
         win32file.CloseHandle(handle)
