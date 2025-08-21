@@ -204,13 +204,9 @@ def login_from_config(delay: float = 1.0, *, pid: Optional[int] = None, exe_name
     login(lang, server, channel, character, delay=delay, pid=pid, exe_name=exe_name)
 
 PIPE_NAME = r"\\.\pipe\GflessClient"
-ALT_PIPE_NAME = r"\\.\pipe\ScriptCreatorLogin"
 
-def _terminate_login_servers(pipe_name: str = PIPE_NAME) -> None:
-    """Terminate any known processes that could own ``pipe_name``."""
-    if pipe_name != PIPE_NAME:
-        return
-
+def _terminate_login_servers() -> None:
+    """Terminate any known processes that could own ``PIPE_NAME``."""
     # GflessClient.exe is the official launcher that also provides this pipe.
     names = {"gflessclient.exe"}
     for proc in psutil.process_iter(["pid", "name"]):
@@ -223,8 +219,8 @@ def _terminate_login_servers(pipe_name: str = PIPE_NAME) -> None:
             continue
 
 
-def _create_pipe(pipe_name: str = PIPE_NAME) -> Optional[int]:
-    """Return a handle to ``pipe_name`` or ``None`` if another server is running."""
+def _create_pipe() -> Optional[int]:
+    """Return a handle to ``PIPE_NAME`` or ``None`` if another server is running."""
     sa = win32security.SECURITY_ATTRIBUTES()
     sd = win32security.SECURITY_DESCRIPTOR()
     # allow Everyone to connect so an elevated process can access the pipe
@@ -233,7 +229,7 @@ def _create_pipe(pipe_name: str = PIPE_NAME) -> Optional[int]:
 
     try:
         return win32pipe.CreateNamedPipe(
-            pipe_name,
+            PIPE_NAME,
             win32pipe.PIPE_ACCESS_DUPLEX,
             win32pipe.PIPE_TYPE_BYTE
             | win32pipe.PIPE_READMODE_BYTE
@@ -246,11 +242,11 @@ def _create_pipe(pipe_name: str = PIPE_NAME) -> Optional[int]:
         )
     except pywintypes.error as exc:
         if exc.winerror == 5:
-            _terminate_login_servers(pipe_name)
+            _terminate_login_servers()
             time.sleep(0.5)
             try:
                 return win32pipe.CreateNamedPipe(
-                    pipe_name,
+                    PIPE_NAME,
                     win32pipe.PIPE_ACCESS_DUPLEX,
                     win32pipe.PIPE_TYPE_BYTE
                     | win32pipe.PIPE_READMODE_BYTE
@@ -334,47 +330,22 @@ def _serve_pipe(
             _server_thread = None
 
 
-def _serve_relogin_pipe(
-    pipe: int,
-    lang: int,
-    server: int,
-    channel: int,
-    character: int,
-) -> None:
-    """Send a single ``Relogin`` command with parameters through ``pipe``."""
-    try:
-        win32pipe.ConnectNamedPipe(pipe, None)
-        msg = f"Relogin {lang} {server} {channel} {character}".encode("ascii")
-        win32file.WriteFile(pipe, msg)
-    finally:
-        try:
-            win32file.CloseHandle(pipe)
-        except pywintypes.error:
-            pass
-        global _current_pipe, _server_thread
-        if _current_pipe == pipe:
-            _current_pipe = None
-        if _server_thread is threading.current_thread():
-            _server_thread = None
-
-
 def _send_relogin_command(
     lang: Optional[int] = None,
     server: Optional[int] = None,
     channel: Optional[int] = None,
     character: Optional[int] = None,
-    *,
-    pipe_name: str = PIPE_NAME,
 ) -> None:
-    """Send a ``Relogin`` command through ``pipe_name``.
+    """Send a ``Relogin`` command through ``PIPE_NAME``.
 
-    When all parameters are provided, they are appended to the command so the
-    DLL can apply them directly. Otherwise a plain ``Relogin`` request is sent.
+    When all parameters are provided, they are expected to be **1-based**
+    and will be sent alongside the ``Relogin`` command.  Otherwise a plain
+    ``Relogin`` command is issued for backward compatibility.
     """
 
     try:
         handle = win32file.CreateFile(
-            pipe_name,
+            PIPE_NAME,
             win32file.GENERIC_WRITE,
             0,
             None,
@@ -388,10 +359,12 @@ def _send_relogin_command(
         ) from exc
     try:
         if None not in (lang, server, channel, character):
-            msg = f"Relogin {lang} {server} {channel} {character}".encode("ascii")
+            message = f"Relogin {lang} {server} {channel} {character}".encode(
+                "ascii"
+            )
         else:
-            msg = b"0 Relogin"
-        win32file.WriteFile(handle, msg)
+            message = b"Relogin"
+        win32file.WriteFile(handle, message)
     finally:
         win32file.CloseHandle(handle)
 
@@ -452,7 +425,7 @@ def login(
             need_reinject = True
 
     try:
-        pipe = _create_pipe(PIPE_NAME)
+        pipe = _create_pipe()
     except pywintypes.error as exc:
         if exc.winerror == 231:
             raise RuntimeError(
@@ -477,7 +450,7 @@ def login(
     server_thread.start()
     try:
         if is_dll_injected(pid, exe_name):
-            _send_relogin_command(lang, server, channel, character, pipe_name=PIPE_NAME)
+            _send_relogin_command(lang, server, channel, character)
         else:
             if not ensure_injected(pid, exe_name):
                 raise RuntimeError("Failed to inject GflessDLL.dll")
@@ -496,16 +469,52 @@ def update_login(
     exe_name: str = "NostaleClientX.exe",
     force_reinject: bool = False,
 ) -> None:
-    """Update login parameters reusing an existing ``GflessDLL.dll`` injection."""
+    """Update login parameters reusing an existing ``GflessDLL.dll`` injection.
+
+    Parameters
+    ----------
+    lang:
+        Language/region index to log in.
+    server:
+        Server index within ``lang``.
+    channel:
+        Channel index within ``server``.
+    character:
+        Character slot index (0-based) as used by the UI.
+    pid:
+        Optional process ID of the game client. Use this when running
+        multiple clients simultaneously.
+    exe_name:
+        Executable name to locate the client process when ``pid`` is not
+        provided.
+
+    This helper allows script conditions (for example after receiving
+    ``svrlist``) to switch server, channel or character without forcing a
+    new DLL injection.
+    """
 
     # the DLL expects characters numbered from 1, while the UI uses 0..3
     character += 1
 
-    pipe = _create_pipe(ALT_PIPE_NAME)
+    close_login_pipe()
+
+    try:
+        pipe = _create_pipe()
+    except pywintypes.error as exc:
+        if exc.winerror == 231:
+            raise RuntimeError(
+                "Another Gfless instance is providing login parameters "
+                "and could not be closed automatically."
+            ) from exc
+        raise
     if pipe is None:
-        raise RuntimeError("Another instance is using the relogin pipe")
+        raise RuntimeError(
+            "Another Gfless instance is providing login parameters "
+            "and could not be closed automatically."
+        )
+
     server_thread = threading.Thread(
-        target=_serve_relogin_pipe,
+        target=_serve_pipe,
         args=(pipe, lang, server, channel, character),
         daemon=True,
     )
@@ -514,5 +523,9 @@ def update_login(
     _server_thread = server_thread
     server_thread.start()
 
-    if not ensure_injected(pid, exe_name, force=force_reinject):
-        raise RuntimeError("Failed to inject GflessDLL.dll")
+    try:
+        ensure_injected(pid, exe_name, force=force_reinject)
+        _send_relogin_command(lang, server, channel, character)
+    except Exception:
+        close_login_pipe()
+        raise
