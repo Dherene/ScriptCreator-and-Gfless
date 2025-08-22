@@ -1,0 +1,18 @@
+recv_packet
+1
+
+split_packet = self.split_packet(packet, " ")
+
+# Comprueba el formato del paquete y extrae el ID
+if len(split_packet) >= 2 and split_packet[0] == "dlgi2" and split_packet[1].startswith("#pjoin"):
+    invitacion_id = split_packet[1].split("^")[2]
+
+    # Si el ID invitado ya pertenece a la party, se acepta la invitación
+    if int(invitacion_id) in self.partyID:
+        time.sleep(self.randomize_delay(1,2))
+        self.api.send_packet(f"#pjoin^3^{invitacion_id}")   # aceptación
+    else:
+        time.sleep(self.randomize_delay(1,2))
+        self.api.send_packet(f"#pjoin^4^{invitacion_id}")   # rechazo
+
+

@@ -1,0 +1,18 @@
+periodical
+1
+if int(self.map_id) == 20 and int(self.attr1) == 0:
+	print("Started mission in 10s")
+	time.sleep(self.randomize_delay(10,12))
+	self.walk_to_point([17,92], 3)
+	self.api.send_packet("wear 1 0")
+	time.sleep(self.randomize_delay(0.75,1.5))
+	self.api.send_packet("wear 4 0")
+	time.sleep(self.randomize_delay(0.75,1.5))
+	self.api.send_packet("wear 13 0")
+	time.sleep(self.randomize_delay(0.75,1.5))
+	self.api.send_packet("wear 9 0")
+	time.sleep(self.randomize_delay(0.75,1.5))
+	self.api.send_packet("sl 0")
+	time.sleep(self.randomize_delay(10,12))
+	self.attr1 = 1
+	print("Items Equiped")

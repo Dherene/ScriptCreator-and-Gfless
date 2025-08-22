@@ -1,0 +1,11 @@
+periodical
+1
+self.attr71 = 0
+
+if int(self.hp_percent) < 62 and int(self.attr1) == 39 and int(self.attr6) == 2 and self.attr71 == 0:
+    self.attr71 = 1  # block flag
+    time.sleep(self.randomize_delay(0.6, 1.2))
+    self.use_item(1010, "main")
+    time.sleep(self.randomize_delay(0.2, 0.5))
+    self.attr71 = 0  # release flag
+    print("1- Potion used")

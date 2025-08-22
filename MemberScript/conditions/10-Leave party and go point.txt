@@ -1,0 +1,12 @@
+send_packet
+1
+if packet.startswith(f"#pjoin^6^{self.leaderID}"):
+	print(f"{self.name} Leave party")
+	time.sleep(self.randomize_delay(1,1.5))
+	self.api.send_packet("pleave")
+	self.attr1 = 39 #attr1 is a flag to know what kind of quest the character is right now
+	self.attr6 = 2 #attr6 is a flag to do the TS in while
+	self.attr9 = 0 #attr9 is a flag to know what room is on TS
+	time.sleep(self.randomize_delay(2,3))
+	self.use_item(2071, "etc")
+	

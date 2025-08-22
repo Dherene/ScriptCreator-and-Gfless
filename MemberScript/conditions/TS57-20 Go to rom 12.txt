@@ -1,0 +1,36 @@
+recv_packet
+1
+# === TS Room Transition ===
+CURRENT_ROOM = 11           # Número actual de sala (attr9)
+NEXT_ROOM = 12              # Próxima sala después de llegar
+X_COORD = 24               # Coordenada X a la que se debe llegar
+Y_COORD = 3               # Coordenada Y a la que se debe llegar
+
+if int(self.attr9) == CURRENT_ROOM and packet.startswith("msgi 0 537 0 0 0 0 0") and getattr(self, "attr70", 0) == 0:
+    print(f"[TS-57] Moving to room {NEXT_ROOM}")
+
+# attr70 is used to prevent this condition from running multiple times if multiple identical packets arrive
+
+    self.attr70 = 1  # Evita múltiples ejecuciones
+    self.api.stop_bot()
+    time.sleep(self.randomize_delay(0.75,1.5))  # Esperamos algunos segundos al entrar al mapa
+
+    for _ in range(20):  # intentar caminar hasta 20 veces
+        self.walk_to_point([X_COORD, Y_COORD])
+
+        for _ in range(10):  # esperar hasta 2 segundos por intento
+            if int(self.pos_x) == X_COORD and int(self.pos_y) == Y_COORD:
+                print(f"[TS-57] Arrived at room {NEXT_ROOM}")
+                self.attr9 = NEXT_ROOM
+                break  # salimos del bucle interno
+
+            time.sleep(0.2)
+
+        if int(self.attr9) == NEXT_ROOM:
+            break  # salimos del bucle externo si ya llegamos
+
+        time.sleep(2)
+
+# Reset bandera al entrar al siguiente mapa
+if packet.startswith("c_map 0 4"):
+    self.attr70 = 0

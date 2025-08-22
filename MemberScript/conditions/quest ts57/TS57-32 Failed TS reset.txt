@@ -1,0 +1,9 @@
+recv_packet
+1
+if int(self.attr9) < 21 and packet.startswith("score") and int(self.attr1) == 39:
+	print("TS57-32 Failed TS reset")
+	time.sleep(self.randomize_delay(1,2))
+	self.api.send_packet("escape")
+	self.attr1 = 39
+	self.attr6 = 2
+	self.attr9 = 0

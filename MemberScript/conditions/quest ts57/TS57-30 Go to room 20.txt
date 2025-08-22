@@ -1,0 +1,28 @@
+recv_packet
+1
+# === TS Room Transition ===
+CURRENT_ROOM = 19           # Número actual de sala (attr9)
+NEXT_ROOM = 20              # Próxima sala después de llegar
+X_COORD = 24               # Coordenada X a la que se debe llegar
+Y_COORD = 36               # Coordenada Y a la que se debe llegar
+
+if int(self.attr9) == CURRENT_ROOM and packet.startswith("c_map 0 4"):
+    print(f"[TS-57] Moving to room {NEXT_ROOM}")
+
+    time.sleep(self.randomize_delay(0.75,1.5))  # Esperamos algunos segundos al entrar al mapa
+
+    for _ in range(20):  # intentar caminar hasta 20 veces
+        self.walk_to_point([X_COORD, Y_COORD])
+
+        for _ in range(10):  # esperar hasta 2 segundos por intento
+            if int(self.pos_x) == X_COORD and int(self.pos_y) == Y_COORD:
+                print(f"[TS-57] Arrived at room {NEXT_ROOM}")
+                self.attr9 = NEXT_ROOM
+                break  # salimos del bucle interno
+
+            time.sleep(0.2)
+
+        if int(self.attr9) == NEXT_ROOM:
+            break  # salimos del bucle externo si ya llegamos
+
+        time.sleep(2)

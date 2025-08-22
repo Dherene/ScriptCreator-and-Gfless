@@ -1,0 +1,23 @@
+recv_packet
+1
+if int(self.attr9) == 17 and packet.startswith("in 9 1000"):  # Se detecta palanca en mapa 17
+    partes = packet.split()
+    if len(partes) >= 6:
+        lever_id = partes[3]
+        x = int(partes[4])
+        y = int(partes[5])
+        print(f"[TS-57][Room 17] Lever detected at ({x},{y}) with ID {lever_id}")
+
+        self.walk_to_point([x,y])
+
+        # Verificar que llegamos a la palanca antes de activarla
+        for _ in range(100):  # ~20 segundos máx
+            if int(self.pos_x) == x and int(self.pos_y) == y:
+                break
+            time.sleep(0.2)
+
+        time.sleep(self.randomize_delay(1, 1.5))  # pequeño delay antes de activar
+        self.api.start_bot()
+        self.api.send_packet(f"get 1 {self.id} {lever_id}")
+        print("[TS57][Room 17] Lever activated")
+        time.sleep(7)

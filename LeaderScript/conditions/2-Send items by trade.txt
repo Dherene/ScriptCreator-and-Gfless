@@ -1,0 +1,8 @@
+send_packet
+1
+if packet.startswith("#req_exc^2^"):
+	print("2-Trade accepted by leader")
+	time.sleep(self.randomize_delay(3,5))
+	self.put_items_in_trade([(1, 1010, 10), (1, 1012, 20), (2, 2026, 20), (2, 2071, 1), (2, 2070, 1)])
+	time.sleep(self.randomize_delay(3,5))
+	self.api.send_packet("req_exc 3")

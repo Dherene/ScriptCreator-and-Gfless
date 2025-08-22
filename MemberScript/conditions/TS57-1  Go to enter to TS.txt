@@ -1,0 +1,7 @@
+periodical
+1
+if int(self.attr1) == 39 and int(self.attr6) == 2 and int(self.map_id) == 86 and int(self.attr9) == 0:
+	print("[TS-57] Go to Time-Space Portal")
+	time.sleep(self.randomize_delay(2,3))
+	self.walk_to_point([13,28])
+	time.sleep(self.randomize_delay(1,2))
