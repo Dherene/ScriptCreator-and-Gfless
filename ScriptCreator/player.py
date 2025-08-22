@@ -67,6 +67,8 @@ class Player:
         # group info
         self.leadername = ""
         self.leaderID = 0
+        self.partyname = []
+        self.partyID = []
 
         # callback when connection is lost
         self.on_disconnect = on_disconnect

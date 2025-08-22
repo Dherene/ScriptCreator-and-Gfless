@@ -628,6 +628,12 @@ class GroupScriptDialog(QDialog):
 
         leader_obj = None
         member_objs = []
+        group_names = [leader_name] + member_names
+
+        for idx, (player_obj, _) in enumerate(self.players):
+            if player_obj.name not in roles:
+                continue
+        
 
         for idx, (player_obj, _) in enumerate(self.players):
             if player_obj.name not in roles:
@@ -696,6 +702,13 @@ class GroupScriptDialog(QDialog):
         if leader_obj:
             leader_obj.attr51 = member_names
             leader_id = leader_obj.id
+            member_ids = [m.id for m in member_objs]
+            party_names = [leader_obj.name] + member_names
+            party_ids = [leader_id] + member_ids
+            # Assign party information to all members and the leader
+            for p in [leader_obj] + member_objs:
+                p.partyname = party_names
+                p.partyID = party_ids
             for m in member_objs:
                 m.leaderID = leader_id
 
