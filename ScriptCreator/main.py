@@ -627,6 +627,7 @@ class GroupScriptDialog(QDialog):
             roles[m] = (self.member_path, "member")
 
         leader_obj = None
+        member_objs = []
 
         for idx, (player_obj, _) in enumerate(self.players):
             if player_obj.name not in roles:
@@ -681,15 +682,22 @@ class GroupScriptDialog(QDialog):
             if role == "leader":
                 player_obj.attr19 = 0
                 player_obj.attr20 = player_obj.name
+                player_obj.leadername = player_obj.name
+                player_obj.leaderID = player_obj.id
                 leader_obj = player_obj
             else:
                 player_obj.attr19 = self.group_id
                 player_obj.attr20 = leader_name
+                player_obj.leadername = leader_name
                 player_obj.script_loaded = True
+                member_objs.append(player_obj)
             player_obj.attr13 = 0
 
         if leader_obj:
             leader_obj.attr51 = member_names
+            leader_id = leader_obj.id
+            for m in member_objs:
+                m.leaderID = leader_id
 
         QMessageBox.information(self, "Group Script Setup", "Setup successfully loaded.")
         self.accept()

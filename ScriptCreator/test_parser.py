@@ -623,8 +623,27 @@ class Player:
                     item_position = item["position"]
                     self.api.send_packet(f"u_i 1 {self.id} 2 {item_position} 0 0")
                     return True
-        
+
         print(f"Couldnt find item with vnum: {item_vnum} in inventory: {inventory_type}")
+        return False
+
+    def put_item_in_trade(self, vnum, amount):
+        inv_blocks = {
+            0: self.equip,
+            1: self.main,
+            2: self.etc,
+        }
+
+        for inv_type, block in inv_blocks.items():
+            for item in block:
+                if item.get("vnum") == vnum:
+                    slot = item.get("position")
+                    qty = item.get("quantity", item.get("amount", item.get("count", 0)))
+                    trade_qty = min(amount, qty)
+                    if trade_qty > 0:
+                        self.api.send_packet(f"exc_list 0 0 {inv_type} {slot} {trade_qty}")
+                        return True
+        print(f"Item vnum {vnum} not found in inventory")
         return False
 
     def update_map_change(self):

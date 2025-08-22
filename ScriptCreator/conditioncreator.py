@@ -1,5 +1,22 @@
-from PyQt5.QtWidgets import QPushButton, QTableView, QFileDialog, QTableWidgetItem, QTableWidget, QPlainTextEdit, QCheckBox, QMessageBox, QGroupBox, QDialog, QVBoxLayout, QGridLayout, QLabel, QComboBox, QLineEdit
-from PyQt5.QtCore import QTimer, Qt
+from PyQt5.QtWidgets import (
+    QPushButton,
+    QTableView,
+    QFileDialog,
+    QTableWidgetItem,
+    QTableWidget,
+    QPlainTextEdit,
+    QCheckBox,
+    QMessageBox,
+    QGroupBox,
+    QDialog,
+    QVBoxLayout,
+    QGridLayout,
+    QLabel,
+    QComboBox,
+    QLineEdit,
+    QSizePolicy,
+)
+from PyQt5.QtCore import QTimer, Qt, QSettings, QSize
 from PyQt5.QtGui import QFont, QFontMetricsF, QColor, QIcon
 import os
 import gfless_api
@@ -235,6 +252,15 @@ class ConditionCreator(QDialog):
         self.setWindowTitle("Condition Creator")
         self.setWindowIcon(QIcon('src/icon.png'))
 
+        # Start with a larger resizable dialog and restore last size
+        self.settings = QSettings('PBapi', 'Script Creator')
+        last_size = self.settings.value(
+            "condition_creator_size", QSize(650, 250), type=QSize
+        )
+        self.resize(last_size)
+        self.setMinimumSize(650, 250)
+        self.setSizeGripEnabled(True)
+
         self.condition_widgets = []
         self.condition_group_box = []
 
@@ -243,6 +269,8 @@ class ConditionCreator(QDialog):
 
         # Create main layout
         self.main_layout = QGridLayout()
+        for i in range(6):
+            self.main_layout.setColumnStretch(i, 1)
 
         # Add a + button at the bottom
         self.add_condition_button = QPushButton("+")
@@ -298,6 +326,7 @@ class ConditionCreator(QDialog):
 
         # Create condition group box and set layout
         condition_group_box = QGroupBox("Conditions")
+        condition_group_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
 
         if_combobox = QComboBox()
@@ -340,6 +369,7 @@ class ConditionCreator(QDialog):
         for i in range(len(self.condition_widgets)):
             for j in range(len(self.condition_widgets[i])):
                 condition_layout.addWidget(self.condition_widgets[i][j], i, j)
+                condition_layout.setColumnStretch(j, 1)
 
         # Create condition group box and set layout
         condition_group_box.setLayout(condition_layout)
@@ -366,7 +396,7 @@ class ConditionCreator(QDialog):
             "wait", "walk_to_point", "send_packet", "recv_packet",
             "start_bot", "stop_bot", "continue_bot", "load_settings",
             "attack", "player_skill", "player_walk", "pets_walk",
-            "start_minigame_bot", "stop_minigame_bot", "use_item", 
+            "start_minigame_bot", "stop_minigame_bot", "use_item", "put_item_in_trade", 
             "auto_login", "relogin", "python_code", "delete_condition", "close_game",
             "invite_members"
         ]
@@ -378,12 +408,15 @@ class ConditionCreator(QDialog):
 
         # Create a group box for the new set of widgets
         group_box = QGroupBox(f"action {row_position}")
+        group_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         group_box_layout = QGridLayout()
         group_box_layout.addWidget(new_action_combobox, 0, 0)
         group_box_layout.addWidget(new_min_wait_label, 0, 1)
         group_box_layout.addWidget(new_min_wait, 0, 2)
         group_box_layout.addWidget(new_max_wait_label, 0, 3)
         group_box_layout.addWidget(new_max_wait, 0, 4)
+        for col in range(5):
+            group_box_layout.setColumnStretch(col, 1)
         group_box.setLayout(group_box_layout)
 
         # Add the group box to the main layout
@@ -500,6 +533,22 @@ class ConditionCreator(QDialog):
             self.action_widgets[index].append(new_item_vnum_label)
             self.action_widgets[index].append(new_item_vnum)
             self.action_widgets[index].append(new_inventory_type)
+        elif condition == "put_item_in_trade":
+            for n in range(10):
+                inv_combo = QComboBox()
+                inv_combo.addItems(["equip", "main", "etc"])
+                v_label = QLabel(f"VNUM {n+1}:")
+                v_edit = QLineEdit()
+                q_label = QLabel("qty:")
+                q_edit = QLineEdit()
+
+                group_box_layout.addWidget(inv_combo, n, 2)
+                group_box_layout.addWidget(v_label, n, 3)
+                group_box_layout.addWidget(v_edit, n, 4)
+                group_box_layout.addWidget(q_label, n, 5)
+                group_box_layout.addWidget(q_edit, n, 6)
+
+                self.action_widgets[index].extend([inv_combo, v_label, v_edit, q_label, q_edit])
         elif condition == "auto_login":
             # Use comboboxes similar to the Server Configuration dialog
             lang_label = QLabel("Language:")
@@ -523,6 +572,7 @@ class ConditionCreator(QDialog):
 
             char_label = QLabel("Character:")
             char_combo = QComboBox()
+            char_combo.addItem("Stay at character selection")
             char_combo.addItems([str(i) for i in range(1, 5)])
 
             widgets = [
@@ -636,7 +686,7 @@ class ConditionCreator(QDialog):
                     str(row[2].currentIndex()),
                     str(row[4].currentIndex()),
                     str(row[6].currentIndex()),
-                    str(row[8].currentIndex()),
+                    str(row[8].currentIndex() - 1),
                 ])
             else:
                 for widget in row[1:]:
@@ -765,6 +815,19 @@ class ConditionCreator(QDialog):
                 script += f'self.api.{actions_array[i][0]}({actions_array[i][1]}, {actions_array[i][2]})'
             elif actions_array[i][0] == "use_item":
                 script += f'self.use_item({int(actions_array[i][1])}, "{actions_array[i][2]}")'
+            elif actions_array[i][0] == "put_item_in_trade":
+                items = []
+                inv_map = {"equip": 0, "main": 1, "etc": 2}
+                for j in range(1, len(actions_array[i]), 3):
+                    inv = actions_array[i][j]
+                    v = actions_array[i][j+1] if j+1 < len(actions_array[i]) else ""
+                    q = actions_array[i][j+2] if j+2 < len(actions_array[i]) else ""
+                    if inv and v and q:
+                        inv_code = inv_map.get(inv, inv)
+                        items.append((int(inv_code), int(v), int(q)))
+                if items:
+                    items_str = ", ".join(f"({inv}, {v}, {q})" for inv, v, q in items)
+                    script += f'self.put_items_in_trade([{items_str}])'
             elif actions_array[i][0] == "auto_login":
                 script += (
                     "# Save parameters and login (performs DLL injection)\n"
@@ -826,9 +889,13 @@ class ConditionCreator(QDialog):
             self.condition_widgets[index][2].setVisible(False)
 
     def adjust_size_periodically(self):
-        #self.adjustSize()
-        self.setFixedHeight(len(self.action_group_boxes)*65 + len(self.condition_widgets)*26 + 107)
-        pass
+        # Ensure the dialog can grow/shrink while keeping a sensible minimum height
+        self.setMinimumHeight(len(self.action_group_boxes) * 65 + len(self.condition_widgets) * 26 + 107)
+
+    def closeEvent(self, event):
+        """Persist the user's chosen window size before closing."""
+        self.settings.setValue("condition_creator_size", self.size())
+        super().closeEvent(event)
 
 class ConditionModifier(QDialog):
     def __init__(self, player):

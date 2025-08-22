@@ -53,8 +53,9 @@ def _load_module():
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    module._create_pipe = lambda *a, **k: object()
+    module._serve_pipe = lambda *a, **k: None
     return module, writes
-
 
 def test_update_login_sends_new_values():
     gfless_api, writes = _load_module()
@@ -64,3 +65,23 @@ def test_update_login_sends_new_values():
     gfless_api.update_login(1, 2, 3, 0)
 
     assert writes == [b"Relogin 1 2 3 1"]
+
+
+def test_update_login_with_character_minus_one():
+    gfless_api, writes = _load_module()
+    gfless_api.is_dll_injected = lambda *a, **k: True
+    gfless_api.ensure_injected = lambda *a, **k: True
+
+    gfless_api.update_login(1, 2, 3, -1)
+
+    assert writes == [b"Relogin 1 2 3 0"]
+
+
+def test_login_with_character_minus_one():
+    gfless_api, writes = _load_module()
+    gfless_api.is_dll_injected = lambda *a, **k: True
+    gfless_api.ensure_injected = lambda *a, **k: True
+
+    gfless_api.login(1, 2, 3, -1, force_reinject=True)
+
+    assert writes == [b"Relogin 1 2 3 0"]

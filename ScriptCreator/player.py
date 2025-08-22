@@ -64,6 +64,10 @@ class Player:
         # indicates when a script has been loaded into this player
         self.script_loaded = False
 
+        # group info
+        self.leadername = ""
+        self.leaderID = 0
+
         # callback when connection is lost
         self.on_disconnect = on_disconnect
         
@@ -467,9 +471,46 @@ class Player:
                     item_position = item["position"]
                     self.api.send_packet(f"u_i 1 {self.id} 2 {item_position} 0 0")
                     return True
-        
+
         print(f"Couldnt find item with vnum: {item_vnum} in inventory: {inventory_type}")
         return False
+
+    def put_items_in_trade(self, items):
+        inv_blocks = {
+            0: self.equip,
+            1: self.main,
+            2: self.etc,
+        }
+
+        packet_parts = ["exc_list", "0", "0"]
+        for inv_type, vnum, amount in items:
+            block = inv_blocks.get(inv_type, [])
+            best_slot = None
+            best_qty = 0
+            for item in block:
+                if item.get("vnum") == vnum:
+                    slot = item.get("position")
+                    qty = item.get("quantity", item.get("amount", item.get("count", 0)))
+                    if qty >= amount:
+                        best_slot = slot
+                        best_qty = amount
+                        break
+                    elif qty > best_qty:
+                        best_slot = slot
+                        best_qty = qty
+            if best_slot is None or best_qty == 0:
+                print("Insufficient items to exchange")
+                return False
+            packet_parts.extend([str(inv_type), str(best_slot), str(best_qty)])
+
+        if len(packet_parts) > 3:
+            self.api.send_packet(" ".join(packet_parts))
+            return True
+        print("Insufficient items to exchange")
+        return False
+
+    def put_item_in_trade(self, items):
+        return self.put_items_in_trade(items)
 
     def update_map_change(self):
         self.map_changed = True
@@ -562,9 +603,11 @@ class Player:
         return packet.split(delimeter)
 
     def reset_attrs(self):
-        """Reset attr1 through attr99 to 0."""
+        """Reset attr1 through attr99 to 0 and clear leader info."""
         for i in range(1, 100):
             setattr(self, f'attr{i}', 0)
+        self.leadername = ""
+        self.leaderID = 0
 
     def invite_members(self):
         """Invite all stored group members with a 3-second delay between invites."""

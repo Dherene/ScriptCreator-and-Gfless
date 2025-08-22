@@ -193,7 +193,7 @@ def load_config() -> tuple[int, int, int, int]:
     lang = int(s.value("default_serverlocation", 0))
     server = int(s.value("default_server", 0))
     channel = int(s.value("default_channel", 0))
-    character = int(s.value("default_character", 0))
+    character = int(s.value("default_character", -1))
     s.endGroup()
     return lang, server, channel, character
 
@@ -398,14 +398,14 @@ def login(
 ):
     """Inject the DLL and respond to its login parameter requests.
 
-    The character index provided is zero-based as used by the UI. The DLL
-    expects values from 1 to 4, so we adjust it automatically.
+    The character index is zero-based; ``-1`` means staying at the
+    selection screen.  The DLL expects ``0`` to remain in the selection or
+    ``1``–``4`` to pick a character, so we map it automatically.
     """
 
     close_login_pipe()
 
-    # the DLL expects characters numbered from 1, while the UI uses 0..3
-    character += 1
+    dll_character = 0 if character == -1 else character + 1
 
     # If the DLL is already injected try to update the login parameters first.
     need_reinject = force_reinject
@@ -415,7 +415,7 @@ def login(
                 lang,
                 server,
                 channel,
-                character - 1,
+                character,
                 pid=pid,
                 exe_name=exe_name,
             )
@@ -441,7 +441,7 @@ def login(
 
     server_thread = threading.Thread(
         target=_serve_pipe,
-        args=(pipe, lang, server, channel, character),
+        args=(pipe, lang, server, channel, dll_character),
         daemon=True,
     )
     global _current_pipe, _server_thread
@@ -450,7 +450,7 @@ def login(
     server_thread.start()
     try:
         if is_dll_injected(pid, exe_name):
-            _send_relogin_command(lang, server, channel, character)
+            _send_relogin_command(lang, server, channel, dll_character)
         else:
             if not ensure_injected(pid, exe_name):
                 raise RuntimeError("Failed to inject GflessDLL.dll")
@@ -480,7 +480,8 @@ def update_login(
     channel:
         Channel index within ``server``.
     character:
-        Character slot index (0-based) as used by the UI.
+        Character slot index (0-based); ``-1`` means staying at the
+        character selection screen.
     pid:
         Optional process ID of the game client. Use this when running
         multiple clients simultaneously.
@@ -493,8 +494,7 @@ def update_login(
     new DLL injection.
     """
 
-    # the DLL expects characters numbered from 1, while the UI uses 0..3
-    character += 1
+    dll_character = 0 if character == -1 else character + 1
 
     close_login_pipe()
 
@@ -515,7 +515,7 @@ def update_login(
 
     server_thread = threading.Thread(
         target=_serve_pipe,
-        args=(pipe, lang, server, channel, character),
+        args=(pipe, lang, server, channel, dll_character),
         daemon=True,
     )
     global _current_pipe, _server_thread
@@ -525,7 +525,7 @@ def update_login(
 
     try:
         ensure_injected(pid, exe_name, force=force_reinject)
-        _send_relogin_command(lang, server, channel, character)
+        _send_relogin_command(lang, server, channel, dll_character)
     except Exception:
         close_login_pipe()
         raise

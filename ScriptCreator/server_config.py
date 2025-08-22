@@ -41,6 +41,7 @@ class ServerConfigDialog(QDialog):
 
         layout.addWidget(QLabel("Character"))
         self.char_combo = QComboBox()
+        self.char_combo.addItem("Stay at character selection")
         self.char_combo.addItems([str(i) for i in range(1, 5)])
         layout.addWidget(self.char_combo)
 
@@ -61,7 +62,7 @@ class ServerConfigDialog(QDialog):
         lang = self.lang_combo.currentIndex()
         server = self.server_combo.currentIndex()
         channel = self.channel_combo.currentIndex()
-        char = self.char_combo.currentIndex()
+        char = self.char_combo.currentIndex() - 1
 
         gfless_api.save_config(lang, server, channel, char)
         # persist the last used PID for convenience
@@ -89,7 +90,7 @@ class ServerConfigDialog(QDialog):
         self.lang_combo.setCurrentIndex(lang)
         self.server_combo.setCurrentIndex(server)
         self.channel_combo.setCurrentIndex(channel)
-        self.char_combo.setCurrentIndex(char)
+        self.char_combo.setCurrentIndex(char + 1)
         if pid:
             self.pid_edit.setText(str(pid))
 
