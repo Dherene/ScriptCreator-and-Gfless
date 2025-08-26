@@ -1,6 +1,0 @@
-periodical
-1
-if int(self.attr1) == 39 and int(self.attr6) == 2 and int(self.map_id) == 86 and int(self.pos_x) == 13 and int(self.pos_y) == 28 and int(self.attr9) == 0:
-	print("[TS-57] Send TS request")
-	time.sleep(self.randomize_delay(0.75,1.5))
-	self.api.send_packet("wreq")

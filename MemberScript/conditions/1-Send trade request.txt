@@ -1,6 +1,0 @@
-recv_packet
-1
-if packet.startswith("guri 6 1"):
-	self.api.send_packet(f"req_exc 1 {self.leaderID}")
-	print("Member sending trade request")
-	

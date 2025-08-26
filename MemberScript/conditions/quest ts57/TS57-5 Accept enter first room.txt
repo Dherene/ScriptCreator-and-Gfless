@@ -1,6 +1,0 @@
-recv_packet
-1
-if int(self.map_id) == 4303 and int(self.attr1) == 39 and packet.startswith("dlgi #rstart"):
-	print("TS57-5 Accept enter first room")
-	time.sleep(self.randomize_delay(0.75,1.5))
-	self.api.send_packet("#rstart^1")

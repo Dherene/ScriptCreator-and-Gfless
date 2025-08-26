@@ -1,6 +1,0 @@
-recv_packet
-1
-if int(self.attr1) == 39 and int(self.map_id) == 86 and int(self.attr6) == 2 and packet.startswith("rbr ") and int(self.attr9) == 0:
-	print("[TS-57] Accept request")
-	time.sleep(self.randomize_delay(0.75,1.5))
-	self.api.send_packet("wreq 1")

@@ -1,9 +1,0 @@
-recv_packet
-1
-if int(self.attr1) == 39 and 4300 <= int(self.map_id) <= 4314:
-    if packet.startswith("npc_req 1"):
-        time.sleep(self.randomize_delay(0.75,1.5))
-        print(f"[TS-57] Skip Dialogue")
-        self.api.send_packet(f"n_run 5 0 1 {self.id}")
-        time.sleep(self.randomize_delay(0.75,1.5))
-        self.api.send_packet(f"n_run 6 0 1 {self.id}")
