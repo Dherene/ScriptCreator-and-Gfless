@@ -1,8 +1,0 @@
-periodical
-1
-if int(self.map_id) == 4303 and int(self.attr1) == 39 and int(self.attr6) == 2 and int(self.attr9) == 0:
-	print("1-Load setting")
-	time.sleep(self.randomize_delay(0.75,1.5))
-	self.api.load_settings("C:\\Users\\valde\\OneDrive\\Escritorio\\PBScriptCreator\\HollyDMG-TS56-Part2.ini")
-	time.sleep(self.randomize_delay(2,3))
-	self.api.stop_bot()
