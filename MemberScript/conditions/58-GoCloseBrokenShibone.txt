@@ -1,0 +1,6 @@
+periodical
+1
+if int(self.map_id) == 22 and self.attr1 == 21:
+	self.walk_to_point([83,48])
+	time.sleep(self.randomize_delay(0.75,1.5))
+	print("58-Go close BrokenShibone")

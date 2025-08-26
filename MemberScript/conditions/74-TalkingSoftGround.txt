@@ -1,0 +1,13 @@
+periodical
+1
+if int(self.attr1) == 32 and int(self.map_id) == 20 and int(self.pos_x) == 91:
+	print("74-TalkingSoftGround")
+	time.sleep(self.randomize_delay(0.75,1.5))
+	self.api.send_packet("ncif 2 4919")
+	time.sleep(self.randomize_delay(1,2))
+	self.api.send_packet("npc_req 2 4919")
+	time.sleep(self.randomize_delay(3,5))
+	self.api.send_packet(f"n_run 5 0 1 {self.id}")
+	self.api.send_packet("script 0 12 340")
+	time.sleep(self.randomize_delay(2,3))
+	self.attr1 = 33

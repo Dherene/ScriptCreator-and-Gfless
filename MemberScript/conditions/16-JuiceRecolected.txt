@@ -1,0 +1,5 @@
+recv_packet
+1
+if "msgi 0 973 2 2029 0 0 0" in packet and int(self.map_id) == 22:
+	self.attr1 = 6
+	print("16-No more bottles go next point")

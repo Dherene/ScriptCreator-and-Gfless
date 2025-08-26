@@ -1,0 +1,8 @@
+periodical
+1
+if int(self.attr1) == 15 and int(self.map_id) == 20:
+	time.sleep(self.randomize_delay(8,10))
+	self.api.player_walk(40, 93)
+	time.sleep(self.randomize_delay(0.75,1.5))
+	print("53-GoingCloseTowerTPKrem")
+	self.attr1 = 16

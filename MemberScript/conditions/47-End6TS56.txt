@@ -1,0 +1,9 @@
+recv_packet
+1
+if int(self.attr3) == 13 and packet.startswith("msgi 0 537 0 0 0 0 0"):
+	self.api.stop_bot()
+	time.sleep(self.randomize_delay(2,3))
+	self.api.player_walk(15, 0 )
+	self.attr3 = 14
+	time.sleep(self.randomize_delay(2,3))
+	print("43-Room6 FINISH TS")

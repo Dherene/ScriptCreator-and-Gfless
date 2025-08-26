@@ -1,0 +1,12 @@
+periodical
+1
+if int(self.map_id) == 22 and int(self.attr1) == 6:
+	print("17-Try talking with shinebone")
+	self.walk_to_point([31,27])
+	time.sleep(self.randomize_delay(3,5))
+	self.api.send_packet("ncif 2 5221")
+	time.sleep(self.randomize_delay(0.75,1.5))
+	self.api.send_packet("npc_req 2 5221")
+	time.sleep(self.randomize_delay(2,3))
+	self.api.send_packet("script 0 12 70")
+	self.attr1 = 7
