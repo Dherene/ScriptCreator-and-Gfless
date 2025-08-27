@@ -510,6 +510,38 @@ class ConditionCreator(QDialog):
 
                 self.action_widgets[index].append(new_radius_label)
                 self.action_widgets[index].append(new_radius)
+
+                skip_timeout_checkbox = QCheckBox("custom")
+                skip_label = QLabel("skip:")
+                skip_input = QLineEdit("4")
+                timeout_label = QLabel("timeout:")
+                timeout_input = QLineEdit("3")
+
+                skip_label.setEnabled(False)
+                skip_input.setEnabled(False)
+                timeout_label.setEnabled(False)
+                timeout_input.setEnabled(False)
+
+                def toggle_skip_timeout(state, s_label=skip_label, s_input=skip_input, t_label=timeout_label, t_input=timeout_input):
+                    enabled = state == Qt.Checked
+                    s_label.setEnabled(enabled)
+                    s_input.setEnabled(enabled)
+                    t_label.setEnabled(enabled)
+                    t_input.setEnabled(enabled)
+
+                skip_timeout_checkbox.stateChanged.connect(toggle_skip_timeout)
+
+                group_box_layout.addWidget(skip_timeout_checkbox, 0, 8)
+                group_box_layout.addWidget(skip_label, 0, 9)
+                group_box_layout.addWidget(skip_input, 0, 10)
+                group_box_layout.addWidget(timeout_label, 0, 11)
+                group_box_layout.addWidget(timeout_input, 0, 12)
+
+                self.action_widgets[index].append(skip_timeout_checkbox)
+                self.action_widgets[index].append(skip_label)
+                self.action_widgets[index].append(skip_input)
+                self.action_widgets[index].append(timeout_label)
+                self.action_widgets[index].append(timeout_input)
         elif condition == "load_settings":
             new_settings_path_label = QLabel("Settings path:")
             new_settings_path = QLineEdit()
@@ -688,6 +720,11 @@ class ConditionCreator(QDialog):
                     str(row[6].currentIndex()),
                     str(row[8].currentIndex() - 1),
                 ])
+            elif action_name == "walk_to_point":
+                new_row.extend([row[2].text(), row[4].text()])
+                new_row.append(row[6].text())
+                if row[7].isChecked():
+                    new_row.extend([row[9].text(), row[11].text()])
             else:
                 for widget in row[1:]:
                     if widget.__class__.__name__ == "QLineEdit":
@@ -807,7 +844,12 @@ class ConditionCreator(QDialog):
             elif actions_array[i][0] == "load_settings":
                 script += f'self.api.load_settings({actions_array[i][1]})'
             elif actions_array[i][0] == "walk_to_point":
-                if len(actions_array[i]) >= 4:
+                if len(actions_array[i]) >= 6:
+                    script += (
+                        f'self.walk_to_point([{actions_array[i][1]},{actions_array[i][2]}], '
+                        f'{actions_array[i][3]}, skip={actions_array[i][4]}, timeout={actions_array[i][5]})'
+                    )
+                elif len(actions_array[i]) >= 4:
                     script += f'self.walk_to_point([{actions_array[i][1]},{actions_array[i][2]}], {actions_array[i][3]})'
                 else:
                     script += f'self.walk_to_point([{actions_array[i][1]},{actions_array[i][2]}])'
