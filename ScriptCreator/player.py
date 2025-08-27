@@ -310,17 +310,17 @@ class Player:
             except Exception as e:
                 print(f"Error in disconnect callback: {e}")
     
-    def walk_to_point(self, point, radius=0, walk_with_pet = True, skip = 4, timeout = 3):
-        """Walk the player toward ``point`` with an optional random offset.
+    def walk_to_point(self, point, radius=0, walk_with_pet=True, skip=4, timeout=3):
+        """Walk the player to ``point`` similarly to the legacy implementation.
 
-        ``point`` can be a list/tuple ``[x, y]`` or an object exposing ``x`` and
-        ``y``. ``radius`` sets the maximum distance in cells to offset the
-        destination randomly. A radius of ``0`` keeps the exact coordinates.
+        ``point`` may be a sequence ``[x, y]`` or an object exposing ``x`` and
+        ``y``. ``radius`` adds a random offset to the destination; if the
+        resulting point is unreachable, the original coordinates are used as a
+        fallback. Parameters ``walk_with_pet``, ``skip`` and ``timeout`` mirror
+        the behaviour of the old API.
         """
 
-        # Normalise ``point`` in case a ``GridNode`` or a similar object is
-        # passed in. This ensures ``findPath`` always receives a pair of
-        # coordinates instead of arbitrary objects.
+        # Normalise the point into a plain list of coordinates
         if hasattr(point, "x") and hasattr(point, "y"):
             point = [point.x, point.y]
         elif isinstance(point, (list, tuple)) and len(point) == 2:
@@ -328,42 +328,40 @@ class Player:
         else:
             raise TypeError("point must be a sequence or expose 'x' and 'y'")
 
+        # Allow ``radius`` to be passed as a string
         if isinstance(radius, str):
             try:
                 radius = int(radius)
             except ValueError:
                 radius = 0
 
+        target = point[:]  # keep original destination for fallback
         if radius > 0:
             rand_x = random.randint(-radius, radius)
             rand_y = random.randint(-radius, radius)
             point = [point[0] + rand_x, point[1] + rand_y]
 
-        # If already at destination, skip pathfinding
-        if self.pos_x == point[0] and self.pos_y == point[1]:
-            print("Is ready in point")
-            return
-
         player_pos = [self.pos_x, self.pos_y]
         api = self.api
         try:
             Path = findPath(player_pos, [point[0], point[1]], self.map_array)
+            if Path == [] and radius > 0:
+                # If randomised destination fails, try the original point
+                Path = findPath(player_pos, target, self.map_array)
+                point = target
             if Path != []:
-                lastpath = len(Path)-1
+                lastpath = len(Path) - 1
                 for i in range(0, len(Path), skip):
                     if self.stop_script:
                         raise SystemExit
-                    node = Path[i]
-                    if hasattr(node, 'x') and hasattr(node, 'y'):
-                        x, y = node.x, node.y
-                    else:
-                        x, y = node[0], node[1]
+                    x = Path[i][0]
+                    y = Path[i][1]
 
                     api.player_walk(x, y)
                     if walk_with_pet:
                         api.pets_walk(x, y)
                     startTimer = time.time()
-                    while 1:
+                    while True:
                         if self.pos_x == x and self.pos_y == y:
                             break
                         if time.time() - startTimer > timeout:
@@ -372,15 +370,9 @@ class Player:
                             raise SystemExit
                         else:
                             time.sleep(0.1)
-                dest_node = Path[lastpath]
-                if hasattr(dest_node, 'x') and hasattr(dest_node, 'y'):
-                    dest_x, dest_y = dest_node.x, dest_node.y
-                else:
-                    dest_x, dest_y = dest_node[0], dest_node[1]
-
-                api.player_walk(dest_x, dest_y)
+                api.player_walk(Path[lastpath][0], Path[lastpath][1])
                 if walk_with_pet:
-                    api.pets_walk(dest_x, dest_y)
+                    api.pets_walk(Path[lastpath][0], Path[lastpath][1])
             else:
                 print("Failed to find a path")
         except Exception as e:
@@ -409,8 +401,11 @@ class Player:
         try:
             Path = findPath(player_pos, [point[0], point[1]], self.map_array)
             if Path != []:
+                # Scale ``skip`` for long routes
+                if len(Path) > 40:
+                    skip = max(1, len(Path)//20)
                 lastpath = len(Path)-1
-                for i in range(0, len(Path), skip):
+                for i in range(skip, len(Path), skip):
                     if self.stop_script:
                         raise SystemExit
                     node = Path[i]
@@ -424,7 +419,7 @@ class Player:
                         api.pets_walk(x, y)
                     startTimer = time.time()
                     while 1:
-                        if self.pos_x == x and self.pos_y == y:
+                        if abs(self.pos_x - x) <= 1 and abs(self.pos_y - y) <= 1:
                             break
                         if time.time() - startTimer > timeout:
                             break
@@ -432,7 +427,8 @@ class Player:
                             raise SystemExit
                         else:
                             time.sleep(0.1)
-                while self.map_changed == False:
+                start = time.time()
+                while not self.map_changed and time.time() - start < 10:
                     random_x = random.choice([-1,1,0])
                     random_y = random.choice([-1,1,0])
                     last_node = Path[lastpath]
@@ -448,7 +444,10 @@ class Player:
                         time.sleep(0.1)
                         if self.map_changed:
                             break
-                print("reached new map")             
+                if not self.map_changed:
+                    print("timeout waiting for map change")
+                else:
+                    print("reached new map")           
             else:
                 print("Failed to find a path")
         except Exception as e:
