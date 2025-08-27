@@ -1,9 +1,0 @@
-send_packet
-0
-if packet.startswith(f"#pjoin^6^{self.leaderID}"):
-	print(f"{self.name} Leave party")
-	time.sleep(self.randomize_delay(1,1.5))
-	self.api.send_packet("pleave")
-	time.sleep(self.randomize_delay(2,3))
-	self.use_item(2071, "etc")
-	
