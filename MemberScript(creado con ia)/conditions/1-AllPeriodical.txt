@@ -1,3 +1,0 @@
-periodical
-1
-handle_periodical()

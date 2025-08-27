@@ -1,3 +1,0 @@
-recv_packet
-1
-handle_recv_packet(packet)
