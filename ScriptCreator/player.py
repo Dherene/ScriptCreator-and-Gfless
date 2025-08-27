@@ -4,6 +4,7 @@ import phoenix
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
+from queue import Queue
 from getports import returnCorrectPort, returnCorrectPID
 from path import loadMap, findPath
 from calculatefieldlocation import calculate_field_location, calculate_point_B_position
@@ -63,10 +64,17 @@ class Player:
         self.periodical_conditions = []
 
         # internal state for periodical walking
-        # track which condition is executing and manage per-condition cooldowns
-        self._executing_periodic = None
+        # track per-condition cooldowns and thread context
         self._periodic_walking = set()
         self._last_periodic_walk = {}
+        self._periodic_ctx = threading.local()
+        self._periodic_cond_lock = threading.Lock()
+
+        # walking coordination
+        self.walk_lock = threading.Lock()
+        self.walk_queue = Queue()
+        self._walk_thread = threading.Thread(target=self._process_walk_queue, daemon=True)
+        self._walk_thread.start()
 
 
         # indicates when a script has been loaded into this player
@@ -317,6 +325,14 @@ class Player:
                 self.on_disconnect(self)
             except Exception as e:
                 print(f"Error in disconnect callback: {e}")
+
+    def _process_walk_queue(self):
+        while True:
+            func, args = self.walk_queue.get()
+            try:
+                func(*args)
+            except Exception as e:
+                print(f"Error executing walk command: {e}")
     
     def walk_to_point(self, point, radius=0, walk_with_pet=True, skip=4, timeout=3):
         """Walk the player to ``point`` similarly to the legacy implementation.
@@ -328,84 +344,84 @@ class Player:
         the behaviour of the old API.
         """
 
-        if self._executing_periodic:
-            cond = self._executing_periodic
-            now = time.time()
-            last = self._last_periodic_walk.get(cond, 0)
-            if cond in self._periodic_walking or now - last < 10:
-                return
-            self._periodic_walking.add(cond)
+        with self.walk_lock:
+            cond = getattr(self._periodic_ctx, "current", None)
+            if cond:
+                now = time.time()
+                last = self._last_periodic_walk.get(cond, 0)
+                if cond in self._periodic_walking or now - last < 10:
+                    return
+                self._periodic_walking.add(cond)
 
-        # Normalise the point into a plain list of coordinates
-        if hasattr(point, "x") and hasattr(point, "y"):
-            point = [point.x, point.y]
-        elif isinstance(point, (list, tuple)) and len(point) == 2:
-            point = list(point)
-        else:
-            raise TypeError("point must be a sequence or expose 'x' and 'y'")
+            # Normalise the point into a plain list of coordinates
+            if hasattr(point, "x") and hasattr(point, "y"):
+                point = [point.x, point.y]
+            elif isinstance(point, (list, tuple)) and len(point) == 2:
+                point = list(point)
+            else:
+                raise TypeError("point must be a sequence or expose 'x' and 'y'")
 
-        # Allow ``radius`` to be passed as a string
-        if isinstance(radius, str):
+            # Allow ``radius`` to be passed as a string
+            if isinstance(radius, str):
+                try:
+                    radius = int(radius)
+                except ValueError:
+                    radius = 0
+
+            target = point[:]  # keep original destination for fallback
+            if radius > 0:
+                rand_x = random.randint(-radius, radius)
+                rand_y = random.randint(-radius, radius)
+                point = [point[0] + rand_x, point[1] + rand_y]
+
+            player_pos = [self.pos_x, self.pos_y]
+            api = self.api
             try:
-                radius = int(radius)
-            except ValueError:
-                radius = 0
-
-        target = point[:]  # keep original destination for fallback
-        if radius > 0:
-            rand_x = random.randint(-radius, radius)
-            rand_y = random.randint(-radius, radius)
-            point = [point[0] + rand_x, point[1] + rand_y]
-
-        player_pos = [self.pos_x, self.pos_y]
-        api = self.api
-        try:
-            Path = findPath(player_pos, [point[0], point[1]], self.map_array)
-            if Path == [] and radius > 0:
-                # If randomised destination fails, try the original point
-                Path = findPath(player_pos, target, self.map_array)
-                point = target
-            if Path != []:
-                lastpath = len(Path) - 1
-                for i in range(0, len(Path), skip):
-                    if self.stop_script:
-                        raise SystemExit
-                    node = Path[i]
-                    if hasattr(node, "x") and hasattr(node, "y"):
-                        x, y = node.x, node.y
-                    else:
-                        x, y = node[0], node[1]
-
-                    api.player_walk(x, y)
-                    if walk_with_pet:
-                        api.pets_walk(x, y)
-                    startTimer = time.time()
-                    while True:
-                        if self.pos_x == x and self.pos_y == y:
-                            break
-                        if time.time() - startTimer > timeout:
-                            break
+                Path = findPath(player_pos, [point[0], point[1]], self.map_array)
+                if Path == [] and radius > 0:
+                    # If randomised destination fails, try the original point
+                    Path = findPath(player_pos, target, self.map_array)
+                    point = target
+                if Path != []:
+                    lastpath = len(Path) - 1
+                    for i in range(0, len(Path), skip):
                         if self.stop_script:
                             raise SystemExit
+                        node = Path[i]
+                        if hasattr(node, "x") and hasattr(node, "y"):
+                            x, y = node.x, node.y
                         else:
-                            time.sleep(0.1)
-                last_node = Path[lastpath]
-                if hasattr(last_node, "x") and hasattr(last_node, "y"):
-                    last_x, last_y = last_node.x, last_node.y
+                            x, y = node[0], node[1]
+
+                        self.walk_queue.put((api.player_walk, (x, y)))
+                        if walk_with_pet:
+                            self.walk_queue.put((api.pets_walk, (x, y)))
+                        startTimer = time.time()
+                        while True:
+                            if self.pos_x == x and self.pos_y == y:
+                                break
+                            if time.time() - startTimer > timeout:
+                                break
+                            if self.stop_script:
+                                raise SystemExit
+                            else:
+                                time.sleep(0.1)
+                    last_node = Path[lastpath]
+                    if hasattr(last_node, "x") and hasattr(last_node, "y"):
+                        last_x, last_y = last_node.x, last_node.y
+                    else:
+                        last_x, last_y = last_node[0], last_node[1]
+                    self.walk_queue.put((api.player_walk, (last_x, last_y)))
+                    if walk_with_pet:
+                        self.walk_queue.put((api.pets_walk, (last_x, last_y)))
                 else:
-                    last_x, last_y = last_node[0], last_node[1]
-                api.player_walk(last_x, last_y)
-                if walk_with_pet:
-                    api.pets_walk(last_x, last_y)
-            else:
-                print("Failed to find a path")
-        except Exception as e:
-            print(f"Error in walk_to_point: {e}")
-        finally:
-            if self._executing_periodic:
-                cond = self._executing_periodic
-                self._periodic_walking.discard(cond)
-                self._last_periodic_walk[cond] = time.time()
+                    print("Failed to find a path")
+            except Exception as e:
+                print(f"Error in walk_to_point: {e}")
+            finally:
+                if cond:
+                    self._periodic_walking.discard(cond)
+                    self._last_periodic_walk[cond] = time.time()
 
 
     def walk_and_switch_map(self, point, walk_with_pet = True, skip = 4, timeout = 3):
@@ -604,31 +620,39 @@ class Player:
 
     def exec_periodic_conditions(self):
         j = 0
-        while True:
+        with ThreadPoolExecutor() as executor:
+            while True:
+                try:
+                    with self._periodic_cond_lock:
+                        conds = list(self.periodical_conditions)
+                    for name, code, active, interval in conds:
+                        if active and j % interval == 0:
+                            executor.submit(self._run_periodic_condition, name, code)
+                except Exception as e:
+                    print(f"Error executing periodic conditions loop: {e}")
+                j += 1
+                time.sleep(0.1)
+
+    def _run_periodic_condition(self, name, code):
+        self._periodic_ctx.current = name
+        try:
+            exec(code)
+        except Exception as e:
             try:
-                for i in range(len(self.periodical_conditions)):
-                    if self.periodical_conditions[i][2] and j % self.periodical_conditions[i][3] == 0:
-                        try:
-                            self._executing_periodic = self.periodical_conditions[i][0]
-                            exec(self.periodical_conditions[i][1])
-                        except Exception as e:
-                            try:
-                                # Remove the faulty periodic condition from the list
-                                faulty = self.periodical_conditions[i]
-                                self.periodical_conditions.pop(i)
-                                print(
-                                    f"\nError executing periodical condition: {faulty[0]}\nError: {e}\nCondition was removed."
-                                )
-                            except Exception:
-                                print(
-                                    f"\nError executing periodical condition: {faulty[0]}\nError: {e}\nCondition was removed."
-                                )
-                        finally:
-                            self._executing_periodic = None
-            except Exception as e:
-                print(f"Error executing periodic conditions loop: {e}")
-            j+=1
-            time.sleep(0.1)
+                with self._periodic_cond_lock:
+                    for idx, cond in enumerate(self.periodical_conditions):
+                        if cond[0] == name:
+                            self.periodical_conditions.pop(idx)
+                            break
+                print(
+                    f"\nError executing periodical condition: {name}\nError: {e}\nCondition was removed."
+                )
+            except Exception:
+                print(
+                    f"\nError executing periodical condition: {name}\nError: {e}\nCondition was removed."
+                )
+        finally:
+            self._periodic_ctx.current = None
    
     # there was some issue with calling packet.split directly in some rare cases, hence this function
     def split_packet(self, packet, delimeter = " "):
