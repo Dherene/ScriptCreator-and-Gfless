@@ -354,8 +354,11 @@ class Player:
                 for i in range(0, len(Path), skip):
                     if self.stop_script:
                         raise SystemExit
-                    x = Path[i][0]
-                    y = Path[i][1]
+                    node = Path[i]
+                    if hasattr(node, "x") and hasattr(node, "y"):
+                        x, y = node.x, node.y
+                    else:
+                        x, y = node[0], node[1]
 
                     api.player_walk(x, y)
                     if walk_with_pet:
@@ -370,9 +373,14 @@ class Player:
                             raise SystemExit
                         else:
                             time.sleep(0.1)
-                api.player_walk(Path[lastpath][0], Path[lastpath][1])
+                last_node = Path[lastpath]
+                if hasattr(last_node, "x") and hasattr(last_node, "y"):
+                    last_x, last_y = last_node.x, last_node.y
+                else:
+                    last_x, last_y = last_node[0], last_node[1]
+                api.player_walk(last_x, last_y)
                 if walk_with_pet:
-                    api.pets_walk(Path[lastpath][0], Path[lastpath][1])
+                    api.pets_walk(last_x, last_y)
             else:
                 print("Failed to find a path")
         except Exception as e:
