@@ -620,14 +620,21 @@ class Player:
 
     def exec_periodic_conditions(self):
         j = 0
-        with ThreadPoolExecutor() as executor:
+        # track running futures by condition name to avoid overlapping executions
+        running = {}
+        # limit concurrent threads to a reasonable number
+        with ThreadPoolExecutor(max_workers=4) as executor:
             while True:
                 try:
                     with self._periodic_cond_lock:
                         conds = list(self.periodical_conditions)
                     for name, code, active, interval in conds:
                         if active and j % interval == 0:
-                            executor.submit(self._run_periodic_condition, name, code)
+                            # skip scheduling if previous execution still running
+                            if name in running and not running[name].done():
+                                continue
+                            future = executor.submit(self._run_periodic_condition, name, code)
+                            running[name] = future
                 except Exception as e:
                     print(f"Error executing periodic conditions loop: {e}")
                 j += 1
