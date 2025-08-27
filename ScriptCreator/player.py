@@ -2,6 +2,7 @@ import time
 import json
 import phoenix
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 from getports import returnCorrectPort, returnCorrectPID
 from path import loadMap, findPath
@@ -60,6 +61,13 @@ class Player:
         self.recv_packet_conditions = []
         self.send_packet_conditions = []
         self.periodical_conditions = []
+
+        # internal state for periodical walking
+        # track which condition is executing and manage per-condition cooldowns
+        self._executing_periodic = None
+        self._periodic_walking = set()
+        self._last_periodic_walk = {}
+
 
         # indicates when a script has been loaded into this player
         self.script_loaded = False
@@ -320,6 +328,14 @@ class Player:
         the behaviour of the old API.
         """
 
+        if self._executing_periodic:
+            cond = self._executing_periodic
+            now = time.time()
+            last = self._last_periodic_walk.get(cond, 0)
+            if cond in self._periodic_walking or now - last < 10:
+                return
+            self._periodic_walking.add(cond)
+
         # Normalise the point into a plain list of coordinates
         if hasattr(point, "x") and hasattr(point, "y"):
             point = [point.x, point.y]
@@ -385,7 +401,11 @@ class Player:
                 print("Failed to find a path")
         except Exception as e:
             print(f"Error in walk_to_point: {e}")
-
+        finally:
+            if self._executing_periodic:
+                cond = self._executing_periodic
+                self._periodic_walking.discard(cond)
+                self._last_periodic_walk[cond] = time.time()
 
 
     def walk_and_switch_map(self, point, walk_with_pet = True, skip = 4, timeout = 3):
@@ -589,6 +609,7 @@ class Player:
                 for i in range(len(self.periodical_conditions)):
                     if self.periodical_conditions[i][2] and j % self.periodical_conditions[i][3] == 0:
                         try:
+                            self._executing_periodic = self.periodical_conditions[i][0]
                             exec(self.periodical_conditions[i][1])
                         except Exception as e:
                             try:
@@ -602,6 +623,8 @@ class Player:
                                 print(
                                     f"\nError executing periodical condition: {faulty[0]}\nError: {e}\nCondition was removed."
                                 )
+                        finally:
+                            self._executing_periodic = None
             except Exception as e:
                 print(f"Error executing periodic conditions loop: {e}")
             j+=1
