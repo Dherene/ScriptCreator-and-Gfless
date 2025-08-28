@@ -1,9 +1,0 @@
-recv_packet
-1
-splitPacket = packet.split()
-if len(splitPacket) >= 4 and splitPacket[0] == "in" and splitPacket[1] == "2":
-    vnum = splitPacket[2]
-    entity_id = splitPacket[3]
-    if vnum == "392":
-        self.attr99 = int(entity_id)
-        print(f"ID of Koaren Chief is: {self.attr99}")
