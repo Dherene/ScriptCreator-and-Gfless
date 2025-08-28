@@ -739,9 +739,12 @@ class ConditionCreator(QDialog):
 
     def construct_script(self, conditions_array, actions_array):
         need_import = any(action[0] in ("auto_login", "relogin") for action in actions_array)
+        need_asyncio = any(action[0] in ("wait", "walk_to_point") for action in actions_array)
         script = ""
         if need_import:
             script += "import gfless_api\n"
+        if need_asyncio:
+            script += "import asyncio\n"
         if conditions_array[0][0] == "IF":
             script += "if "
         else:
@@ -824,7 +827,7 @@ class ConditionCreator(QDialog):
         for i in range(len(actions_array)):
             script += "\n\t"
             if actions_array[i][0] == "wait":
-                script += f'time.sleep(self.randomize_delay({actions_array[i][1]},{actions_array[i][2]}))'
+                script += f'await asyncio.sleep(self.randomize_delay({actions_array[i][1]},{actions_array[i][2]}))'
             elif actions_array[i][0] == "send_packet":
                 if actions_array[i][2] == "string":
                     script += f'self.api.send_packet("{actions_array[i][1]}")'
@@ -846,13 +849,13 @@ class ConditionCreator(QDialog):
             elif actions_array[i][0] == "walk_to_point":
                 if len(actions_array[i]) >= 6:
                     script += (
-                        f'self.walk_to_point([{actions_array[i][1]},{actions_array[i][2]}], '
+                        f'await self.walk_to_point([{actions_array[i][1]},{actions_array[i][2]}], '
                         f'{actions_array[i][3]}, skip={actions_array[i][4]}, timeout={actions_array[i][5]})'
                     )
                 elif len(actions_array[i]) >= 4:
-                    script += f'self.walk_to_point([{actions_array[i][1]},{actions_array[i][2]}], {actions_array[i][3]})'
+                    script += f'await self.walk_to_point([{actions_array[i][1]},{actions_array[i][2]}], {actions_array[i][3]})'
                 else:
-                    script += f'self.walk_to_point([{actions_array[i][1]},{actions_array[i][2]}])'
+                    script += f'await self.walk_to_point([{actions_array[i][1]},{actions_array[i][2]}])'
             elif actions_array[i][0] == "player_walk" or actions_array[i][0] == "pets_walk":
                 script += f'self.api.{actions_array[i][0]}({actions_array[i][1]}, {actions_array[i][2]})'
             elif actions_array[i][0] == "use_item":

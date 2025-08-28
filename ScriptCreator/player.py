@@ -2,6 +2,8 @@ import time
 import json
 import phoenix
 import threading
+import asyncio
+import ast
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 from queue import Queue
@@ -12,6 +14,7 @@ import random
 import math
 import subprocess
 import gfless_api
+import textwrap
 try:
     import psutil
 except ImportError:  # psutil is optional but recommended
@@ -63,6 +66,7 @@ class Player:
         self.recv_packet_conditions = []
         self.send_packet_conditions = []
         self.periodical_conditions = []
+        self._cond_counter = 0
 
         # internal state for periodical walking
         # track per-condition cooldowns and thread context
@@ -77,6 +81,13 @@ class Player:
         self._walk_thread = threading.Thread(target=self._process_walk_queue, daemon=True)
         self._walk_thread.start()
 
+        # dedicated executor for heavy path computations
+        self._path_executor = ThreadPoolExecutor(max_workers=1)
+        
+        # asyncio event loop for non-blocking tasks
+        self.loop = asyncio.new_event_loop()
+        self._loop_thread = threading.Thread(target=self.loop.run_forever, daemon=True)
+        self._loop_thread.start()
 
         # indicates when a script has been loaded into this player
         self.script_loaded = False
@@ -110,9 +121,10 @@ class Player:
             t = threading.Thread(target=self.queries, args=[0.25, ])
             t.start()
 
-            #start periodic conditions loop
-            t_periodic_conds = threading.Thread(target=self.exec_periodic_conditions)
-            t_periodic_conds.start()
+            # start periodic conditions loop
+            self.loop.call_soon_threadsafe(
+                lambda: asyncio.create_task(self.exec_periodic_conditions())
+            )
 
     def packetlogger(self):
         while self.api.working():
@@ -130,8 +142,12 @@ class Player:
                     for i in range(len(self.send_packet_conditions)):
                         try:
                             if self.send_packet_conditions[i][2]:
-                                t_send_packet_condition = threading.Thread(target=self.exec_send_packet_condition, args=[self.send_packet_conditions[i][1], packet, i, self.send_packet_conditions[i][0]])
-                                t_send_packet_condition.start()
+                                self.exec_send_packet_condition(
+                                    self.send_packet_conditions[i][1],
+                                    packet,
+                                    i,
+                                    self.send_packet_conditions[i][0],
+                                )
                         except Exception as e:
                             print(f"Error scheduling send_packet condition: {e}")
                 if json_msg["type"] == phoenix.Type.packet_recv.value:
@@ -287,8 +303,12 @@ class Player:
                     for i in range(len(self.recv_packet_conditions)):
                         try:
                             if self.recv_packet_conditions[i][2]:
-                                t_recv_packet_condition = threading.Thread(target=self.exec_recv_packet_condition, args=[self.recv_packet_conditions[i][1], packet, i, self.recv_packet_conditions[i][0]])
-                                t_recv_packet_condition.start()
+                                self.exec_recv_packet_condition(
+                                    self.recv_packet_conditions[i][1],
+                                    packet,
+                                    i,
+                                    self.recv_packet_conditions[i][0],
+                                )
                         except Exception as e:
                             print(f"Error scheduling recv_packet condition: {e}")
                 if json_msg["type"] == phoenix.Type.query_player_info.value:
@@ -345,8 +365,8 @@ class Player:
             except Exception as e:
                 print(f"Error executing walk command: {e}")
     
-    def walk_to_point(self, point, radius=0, walk_with_pet=True, skip=4, timeout=3, proximity=2):
-        """Walk the player to ``point`` similarly to the legacy implementation.
+    async def walk_to_point(self, point, radius=0, walk_with_pet=True, skip=4, timeout=3, proximity=2):
+        """Walk the player to ``point`` using non-blocking asyncio primitives.
 
         ``point`` may be a sequence ``[x, y]`` or an object exposing ``x`` and
         ``y``. ``radius`` adds a random offset to the destination; if the
@@ -368,169 +388,192 @@ class Player:
                     return
                 self._periodic_walking.add(cond)
 
-            # Normalise the point into a plain list of coordinates
-            if hasattr(point, "x") and hasattr(point, "y"):
-                point = [point.x, point.y]
-            elif isinstance(point, (list, tuple)) and len(point) == 2:
-                point = list(point)
-            else:
-                raise TypeError("point must be a sequence or expose 'x' and 'y'")
+        # Normalise the point into a plain list of coordinates
+        if hasattr(point, "x") and hasattr(point, "y"):
+            point = [point.x, point.y]
+        elif isinstance(point, (list, tuple)) and len(point) == 2:
+            point = list(point)
+        else:
+            raise TypeError("point must be a sequence or expose 'x' and 'y'")
 
-            # Allow ``radius`` to be passed as a string
-            if isinstance(radius, str):
-                try:
-                    radius = int(radius)
-                except ValueError:
-                    radius = 0
-
-            target = point[:]  # keep original destination for fallback
-            if radius > 0:
-                rand_x = random.randint(-radius, radius)
-                rand_y = random.randint(-radius, radius)
-                point = [point[0] + rand_x, point[1] + rand_y]
-
-            api = self.api
-            start_map = self.map_id
+        # Allow ``radius`` to be passed as a string
+        if isinstance(radius, str):
             try:
-                while True:
-                    player_pos = [self.pos_x, self.pos_y]
-                    Path = findPath(player_pos, [point[0], point[1]], self.map_array)
-                    if Path == [] and radius > 0:
-                        # If randomised destination fails, try the original point
-                        Path = findPath(player_pos, target, self.map_array)
-                        point = target
-                    if Path == []:
-                        print("Failed to find a path")
-                        break
-                    lastpath = len(Path) - 1
-                    success = True
-                    for i in range(0, len(Path), skip):
-                        if self.stop_script or self.map_id != start_map:
-                            return
-                        node = Path[i]
-                        if hasattr(node, "x") and hasattr(node, "y"):
-                            x, y = node.x, node.y
-                        else:
-                            x, y = node[0], node[1]
+                radius = int(radius)
+            except ValueError:
+                radius = 0
 
+        target = point[:]  # keep original destination for fallback
+        if radius > 0:
+            rand_x = random.randint(-radius, radius)
+            rand_y = random.randint(-radius, radius)
+            point = [point[0] + rand_x, point[1] + rand_y]
+
+        api = self.api
+        start_map = self.map_id
+        loop = asyncio.get_running_loop()
+        try:
+            while True:
+                player_pos = [self.pos_x, self.pos_y]
+                Path = await loop.run_in_executor(
+                    self._path_executor,
+                    findPath,
+                    player_pos,
+                    [point[0], point[1]],
+                    self.map_array,
+                    self.map_id,
+                )
+                if Path == [] and radius > 0:
+                    Path = await loop.run_in_executor(
+                        self._path_executor,
+                        findPath,
+                        player_pos,
+                        target,
+                        self.map_array,
+                        self.map_id,
+                    )
+                    point = target
+                if Path == []:
+                    print("Failed to find a path")
+                    break
+                lastpath = len(Path) - 1
+                success = True
+                for i in range(0, len(Path), skip):
+                    if self.stop_script or self.map_id != start_map:
+                        return
+                    node = Path[i]
+                    if hasattr(node, "x") and hasattr(node, "y"):
+                        x, y = node.x, node.y
+                    else:
+                        x, y = node[0], node[1]
+
+                    with self.walk_lock:
                         self.walk_queue.put((api.player_walk, (x, y)))
                         if walk_with_pet:
                             self.walk_queue.put((api.pets_walk, (x, y)))
-                        startTimer = time.time()
-                        deadline = startTimer + timeout * 2
-                        last_send = startTimer
-                        while True:
-                            if self.map_id != start_map:
-                                return
-                            if math.hypot(self.pos_x - x, self.pos_y - y) <= proximity:
-                                break
-                            now = time.time()
-                            if now >= deadline:
-                                success = False
-                                break
-                            if self.stop_script:
-                                raise SystemExit
-                            if now - last_send >= timeout:
+                    startTimer = time.time()
+                    deadline = startTimer + timeout * 2
+                    last_send = startTimer
+                    while True:
+                        if self.map_id != start_map:
+                            return
+                        if math.hypot(self.pos_x - x, self.pos_y - y) <= proximity:
+                            break
+                        now = time.time()
+                        if now >= deadline:
+                            success = False
+                            break
+                        if self.stop_script:
+                            raise SystemExit
+                        if now - last_send >= timeout:
+                            with self.walk_lock:
                                 self.walk_queue.put((api.player_walk, (x, y)))
                                 if walk_with_pet:
                                     self.walk_queue.put((api.pets_walk, (x, y)))
-                                last_send = now
-                            time.sleep(0.1)
-                        if not success:
-                            break
-                    if success:
-                        last_node = Path[lastpath]
-                        if hasattr(last_node, "x") and hasattr(last_node, "y"):
-                            last_x, last_y = last_node.x, last_node.y
-                        else:
-                            last_x, last_y = last_node[0], last_node[1]
+                            last_send = now
+                        await asyncio.sleep(0.02)
+                    if not success:
+                        break
+                if success:
+                    last_node = Path[lastpath]
+                    if hasattr(last_node, "x") and hasattr(last_node, "y"):
+                        last_x, last_y = last_node.x, last_node.y
+                    else:
+                        last_x, last_y = last_node[0], last_node[1]
+                    with self.walk_lock:
                         self.walk_queue.put((api.player_walk, (last_x, last_y)))
                         if walk_with_pet:
                             self.walk_queue.put((api.pets_walk, (last_x, last_y)))
-                        break
-                    else:
-                        time.sleep(timeout)
-                        continue
-            except Exception as e:
-                print(f"Error in walk_to_point: {e}")
-            finally:
-                if cond:
+                    break
+                else:
+                    await asyncio.sleep(timeout)
+                    continue
+        except Exception as e:
+            print(f"Error in walk_to_point: {e}")
+        finally:
+            if cond:
+                with self.walk_lock:
                     self._periodic_walking.discard(cond)
                     self._last_periodic_walk[cond] = time.time()
 
 
-    def walk_and_switch_map(self, point, walk_with_pet = True, skip = 3, timeout = 3):
-        """Walk to ``point`` and wait for a map change.
+    async def walk_and_switch_map(self, point, walk_with_pet=True, skip=3, timeout=3):
+        """Walk to ``point`` and wait for a map change using asyncio."""
 
-        ``point`` can be a list/tuple ``[x, y]`` or any object exposing
-        ``x`` and ``y`` attributes. This mirrors ``walk_to_point`` so calling
-        code can pass in ``GridNode`` instances directly.
-        """
+        # Normalise ``point`` just like in ``walk_to_point``
+        if hasattr(point, "x") and hasattr(point, "y"):
+            point = [point.x, point.y]
+        elif isinstance(point, (list, tuple)) and len(point) == 2:
+            point = list(point)
+        else:
+            raise TypeError("point must be a sequence or expose 'x' and 'y'")
 
-        with self.walk_lock:
-            # Normalise ``point`` just like in ``walk_to_point``
-            if hasattr(point, "x") and hasattr(point, "y"):
-                point = [point.x, point.y]
-            elif isinstance(point, (list, tuple)) and len(point) == 2:
-                point = list(point)
-            else:
-                raise TypeError("point must be a sequence or expose 'x' and 'y'")
+        player_pos = [self.pos_x, self.pos_y]
+        api = self.api
+        loop = asyncio.get_running_loop()
+        try:
+            Path = await loop.run_in_executor(
+                self._path_executor,
+                findPath,
+                player_pos,
+                [point[0], point[1]],
+                self.map_array,
+                self.map_id,
+            )
+            if Path:
+                lastpath = len(Path) - 1
+                for i in range(skip, len(Path), skip):
+                    if self.stop_script:
+                        raise SystemExit
+                    node = Path[i]
+                    if hasattr(node, "x") and hasattr(node, "y"):
+                        x, y = node.x, node.y
+                    else:
+                        x, y = node[0], node[1]
 
-            player_pos = [self.pos_x, self.pos_y]
-            api = self.api
-            try:
-                Path = findPath(player_pos, [point[0], point[1]], self.map_array)
-                if Path != []:
-                    lastpath = len(Path)-1
-                    for i in range(skip, len(Path), skip):
-                        if self.stop_script:
-                            raise SystemExit
-                        node = Path[i]
-                        if hasattr(node, 'x') and hasattr(node, 'y'):
-                            x, y = node.x, node.y
-                        else:
-                            x, y = node[0], node[1]
-
+                    with self.walk_lock:
                         self.walk_queue.put((api.player_walk, (x, y)))
                         if walk_with_pet:
                             self.walk_queue.put((api.pets_walk, (x, y)))
-                        startTimer = time.time()
-                        while 1:
-                            if abs(self.pos_x - x) <= 1 and abs(self.pos_y - y) <= 1:
-                                break
-                            if time.time() - startTimer > timeout:
-                                break
-                            if self.stop_script:
-                                raise SystemExit
+                    startTimer = time.time()
+                    while True:
+                        if abs(self.pos_x - x) <= 1 and abs(self.pos_y - y) <= 1:
+                            break
+                        if time.time() - startTimer > timeout:
+                            break
+                        if self.stop_script:
+                            raise SystemExit
+                        with self.walk_lock:
                             self.walk_queue.put((api.player_walk, (x, y)))
                             if walk_with_pet:
                                 self.walk_queue.put((api.pets_walk, (x, y)))
-                            time.sleep(timeout)
-                    start = time.time()
-                    while not self.map_changed and time.time() - start < 10:
-                        random_x = random.choice([-1,1,0])
-                        random_y = random.choice([-1,1,0])
-                        last_node = Path[lastpath]
-                        if hasattr(last_node, 'x') and hasattr(last_node, 'y'):
-                            base_x, base_y = last_node.x, last_node.y
-                        else:
-                            base_x, base_y = last_node[0], last_node[1]
+                        await asyncio.sleep(timeout)
+                start = time.time()
+                while not self.map_changed and time.time() - start < 10:
+                    random_x = random.choice([-1, 1, 0])
+                    random_y = random.choice([-1, 1, 0])
+                    last_node = Path[lastpath]
+                    if hasattr(last_node, "x") and hasattr(last_node, "y"):
+                        base_x, base_y = last_node.x, last_node.y
+                    else:
+                        base_x, base_y = last_node[0], last_node[1]
 
+                    with self.walk_lock:
                         self.walk_queue.put((api.player_walk, (base_x + random_x, base_y + random_y)))
                         if walk_with_pet:
                             self.walk_queue.put((api.pets_walk, (base_x + random_x, base_y + random_y)))
-                        for i in range(50):
-                            time.sleep(0.1)
-                            if self.map_changed:
-                                break
-                    if not self.map_changed:
-                        print("timeout waiting for map change")
-                    else:
-                        print("reached new map")
+                    for _ in range(50):
+                        await asyncio.sleep(0.1)
+                        if self.map_changed:
+                            break
+                if not self.map_changed:
+                    print("timeout waiting for map change")
                 else:
-                    print("Failed to find a path")
-            except Exception as e:
-                print(f"Error in walk_and_switch_map: {e}")
+                    print("reached new map")
+            else:
+                print("Failed to find a path")
+        except Exception as e:
+            print(f"Error in walk_and_switch_map: {e}")
 
     def use_item(self, item_vnum, inventory_type):
         if inventory_type == "equip":
@@ -635,50 +678,146 @@ class Player:
     
     def exec_recv_packet_condition(self, code, packet, index, cond_name):
         try:
-            exec(code)
+            if not callable(code):
+                func = self._compile_condition(code, with_packet=True)
+                self.recv_packet_conditions[index][1] = func
+            else:
+                func = code
+            asyncio.run_coroutine_threadsafe(
+                self._run_packet_condition(
+                    cond_name, func, packet, self.recv_packet_conditions, "recv_packet"
+                ),
+                self.loop,
+            )
         except Exception as e:
             try:
                 self.recv_packet_conditions.pop(index)
-                print(f"\nError executing recv_packet condition: {cond_name}\nError: {e}\nCondition was removed.")
+                print(
+                    f"\nError executing recv_packet condition: {cond_name}\nError: {e}\nCondition was removed."
+                )
             except Exception as e2:
                 print(f"Error removing faulty recv_packet condition: {e2}")
 
     def exec_send_packet_condition(self, code, packet, index, cond_name):
         try:
-            exec(code)
+            if not callable(code):
+                func = self._compile_condition(code, with_packet=True)
+                self.send_packet_conditions[index][1] = func
+            else:
+                func = code
+            asyncio.run_coroutine_threadsafe(
+                self._run_packet_condition(
+                    cond_name, func, packet, self.send_packet_conditions, "send_packet"
+                ),
+                self.loop,
+            )
         except Exception as e:
             try:
                 self.send_packet_conditions.pop(index)
-                print(f"\nError executing send_packet condition: {cond_name}\nError: {e}\nCondition was removed.")
+                print(
+                    f"\nError executing send_packet condition: {cond_name}\nError: {e}\nCondition was removed."
+                )
             except Exception as e2:
                 print(f"Error removing faulty send_packet condition: {e2}")
 
-    def exec_periodic_conditions(self):
+    async def exec_periodic_conditions(self):
         j = 0
-        # track running futures by condition name to avoid overlapping executions
         running = {}
-        # limit concurrent threads to a reasonable number
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            while True:
-                try:
-                    with self._periodic_cond_lock:
-                        conds = list(self.periodical_conditions)
-                    for name, code, active, interval in conds:
-                        if active and j % interval == 0:
-                            # skip scheduling if previous execution still running
-                            if name in running and not running[name].done():
-                                continue
-                            future = executor.submit(self._run_periodic_condition, name, code)
-                            running[name] = future
-                except Exception as e:
-                    print(f"Error executing periodic conditions loop: {e}")
-                j += 1
-                time.sleep(0.1)
+        while True:
+            try:
+                with self._periodic_cond_lock:
+                    conds = list(self.periodical_conditions)
+                for idx, (name, code, active, interval) in enumerate(conds):
+                    if not active or j % interval != 0:
+                        continue
+                    if not callable(code):
+                        func = self._compile_condition(code)
+                        with self._periodic_cond_lock:
+                            self.periodical_conditions[idx][1] = func
+                        code = func
+                    if name in running and not running[name].done():
+                        continue
+                    task = asyncio.create_task(self._run_periodic_condition(name, code))
+                    running[name] = task
+            except Exception as e:
+                print(f"Error executing periodic conditions loop: {e}")
+            j += 1
+            await asyncio.sleep(0.1)
 
-    def _run_periodic_condition(self, name, code):
+    def _compile_condition(self, script, with_packet=False):
+        """Compile a condition script into an async callable, replacing time.sleep with await asyncio.sleep."""
+        func_name = f"_cond_func_{self._cond_counter}"
+        self._cond_counter += 1
+
+        tree = ast.parse(script, mode="exec")
+
+        class SleepTransformer(ast.NodeTransformer):
+            def visit_Call(self, node):
+                self.generic_visit(node)
+                if (
+                    isinstance(node.func, ast.Attribute)
+                    and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id == "time"
+                    and node.func.attr == "sleep"
+                ):
+                    new_call = ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="asyncio", ctx=ast.Load()),
+                            attr="sleep",
+                            ctx=ast.Load(),
+                        ),
+                        args=node.args,
+                        keywords=node.keywords,
+                    )
+                    return ast.Await(value=new_call)
+                return node
+
+        tree = SleepTransformer().visit(tree)
+        ast.fix_missing_locations(tree)
+
+        args = [ast.arg(arg="self")]
+        if with_packet:
+            args.append(ast.arg(arg="packet"))
+
+        func_def = ast.AsyncFunctionDef(
+            name=func_name,
+            args=ast.arguments(
+                posonlyargs=[],
+                args=args,
+                vararg=None,
+                kwonlyargs=[],
+                kw_defaults=[],
+                kwarg=None,
+                defaults=[],
+            ),
+            body=tree.body,
+            decorator_list=[],
+        )
+
+        module = ast.Module(body=[func_def], type_ignores=[])
+        globs = {"asyncio": asyncio, "time": time}
+        exec(compile(module, func_name, "exec"), globs)
+        return globs[func_name]
+
+    async def _run_packet_condition(self, name, func, packet, store_list, cond_type):
+        try:
+            await func(self, packet)
+        except Exception as e:
+            try:
+                for idx, cond in enumerate(store_list):
+                    if cond[0] == name:
+                        store_list.pop(idx)
+                        break
+                print(
+                    f"\nError executing {cond_type} condition: {name}\nError: {e}\nCondition was removed."
+                )
+            except Exception as e2:
+                print(f"Error removing faulty {cond_type} condition: {e2}")
+
+    async def _run_periodic_condition(self, name, func):
         self._periodic_ctx.current = name
         try:
-            exec(code)
+            await func(self)
         except Exception as e:
             try:
                 with self._periodic_cond_lock:
