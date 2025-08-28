@@ -1,8 +1,0 @@
-periodical
-1
-if int(self.attr1) == 4 and int(self.map_id) == 20:
-	print("13-Changing map")
-	time.sleep(self.randomize_delay(0.75,1.5))
-	self.walk_to_point([54,4])
-	self.attr1 = 5
-	time.sleep(self.randomize_delay(0.75,1.5))

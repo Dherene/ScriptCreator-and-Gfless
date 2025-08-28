@@ -1,5 +1,0 @@
-periodical
-1
-if int(self.map_id) == 22 and int(self.attr1) == 5:
-	self.walk_to_point([19,40])
-	print("14-Walking close juice")

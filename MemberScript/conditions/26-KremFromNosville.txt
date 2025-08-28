@@ -1,9 +1,0 @@
-periodical
-1
-if int(self.map_id) == 1 and int(self.pos_x) == 68 and int(self.pos_y) == 57 and int(self.attr5) == 1:
-	print("27-Trying use Tower")
-	self.api.send_packet("ncif 2 2812")
-	time.sleep(self.randomize_delay(1,2))
-	self.api.send_packet("n_run 16 1 2 2812")
-	time.sleep(self.randomize_delay(4,6))
-	

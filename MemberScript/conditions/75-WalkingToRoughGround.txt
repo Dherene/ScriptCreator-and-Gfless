@@ -1,7 +1,0 @@
-periodical
-1
-if int(self.attr1) == 33 and int(self.map_id) == 20:
-	self.walk_to_point([98,73])
-	time.sleep(self.randomize_delay(1,2))
-	print("75-WalkingToRoughGround")
-	self.attr1 = 34

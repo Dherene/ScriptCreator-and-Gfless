@@ -1,5 +1,0 @@
-periodical
-1
-if int(self.map_id) == 22 and int(self.attr1) == 7:
-	self.walk_to_point([83,48])
-	print("20-Walking close Shinebune")

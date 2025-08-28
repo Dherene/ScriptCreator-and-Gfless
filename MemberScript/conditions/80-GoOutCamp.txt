@@ -1,9 +1,0 @@
-periodical
-1
-if int(self.attr1) == 37 and int(self.map_id) == 88:
-	print("80-GoOutCamp")
-	self.attr6 = 2   #activate ts 56 part 2
-	self.attr8 = 0    #reset rooms ts 56 part 2
-	self.walk_to_point([13,4])
-	time.sleep(self.randomize_delay(2,3))
-	self.attr1 = 38
