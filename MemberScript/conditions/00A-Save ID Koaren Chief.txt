@@ -1,0 +1,8 @@
+recv_packet
+1
+splitPacket = packet.split()
+if len(splitPacket) >= 4 and splitPacket[0] == "in" and splitPacket[1] == "2":
+    vnum = splitPacket[2]
+    self.KoarenID = splitPacket[3]
+    if vnum == "392":
+        print(f"ID of Koaren Chief is: {self.KoarenID}")
