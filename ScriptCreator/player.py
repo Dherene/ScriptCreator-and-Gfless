@@ -139,14 +139,14 @@ class Player:
                     #print(f"[SEND]: {packet}")
                     if splitPacket[0] == "walk":
                         self.pos_x, self.pos_y = int(splitPacket[1]), int(splitPacket[2])
-                    for i in range(len(self.send_packet_conditions)):
+                    for i, cond in list(enumerate(self.send_packet_conditions)):
                         try:
-                            if self.send_packet_conditions[i][2]:
+                            if cond[2]:
                                 self.exec_send_packet_condition(
-                                    self.send_packet_conditions[i][1],
+                                    cond[1],
                                     packet,
                                     i,
-                                    self.send_packet_conditions[i][0],
+                                    cond[0],
                                 )
                         except Exception as e:
                             print(f"Error scheduling send_packet condition: {e}")
@@ -300,14 +300,14 @@ class Player:
                                     if entry["hp_percent"] == 0:
                                         self.monsters.remove(entry)
                                     break
-                    for i in range(len(self.recv_packet_conditions)):
+                    for i, cond in list(enumerate(self.recv_packet_conditions)):
                         try:
-                            if self.recv_packet_conditions[i][2]:
+                            if cond[2]:
                                 self.exec_recv_packet_condition(
-                                    self.recv_packet_conditions[i][1],
+                                    cond[1],
                                     packet,
                                     i,
-                                    self.recv_packet_conditions[i][0],
+                                    cond[0],
                                 )
                         except Exception as e:
                             print(f"Error scheduling recv_packet condition: {e}")
@@ -415,6 +415,7 @@ class Player:
         try:
             while True:
                 player_pos = [self.pos_x, self.pos_y]
+                start_time = time.perf_counter()
                 Path = await loop.run_in_executor(
                     self._path_executor,
                     findPath,
@@ -423,7 +424,9 @@ class Player:
                     self.map_array,
                     self.map_id,
                 )
+                elapsed = time.perf_counter() - start_time
                 if Path == [] and radius > 0:
+                    start_time = time.perf_counter()
                     Path = await loop.run_in_executor(
                         self._path_executor,
                         findPath,
@@ -432,10 +435,12 @@ class Player:
                         self.map_array,
                         self.map_id,
                     )
+                    elapsed = time.perf_counter() - start_time
                     point = target
                 if Path == []:
                     print("Failed to find a path")
                     break
+                print(f"Path found in {elapsed:.3f} seconds")
                 lastpath = len(Path) - 1
                 success = True
                 for i in range(0, len(Path), skip):
@@ -751,28 +756,34 @@ class Player:
 
         tree = ast.parse(script, mode="exec")
 
-        class SleepTransformer(ast.NodeTransformer):
+        class AwaitTransformer(ast.NodeTransformer):
             def visit_Call(self, node):
                 self.generic_visit(node)
                 if (
                     isinstance(node.func, ast.Attribute)
                     and isinstance(node.func.value, ast.Name)
-                    and node.func.value.id == "time"
-                    and node.func.attr == "sleep"
                 ):
-                    new_call = ast.Call(
-                        func=ast.Attribute(
-                            value=ast.Name(id="asyncio", ctx=ast.Load()),
-                            attr="sleep",
-                            ctx=ast.Load(),
-                        ),
-                        args=node.args,
-                        keywords=node.keywords,
-                    )
-                    return ast.Await(value=new_call)
+                    # Replace time.sleep with await asyncio.sleep
+                    if node.func.value.id == "time" and node.func.attr == "sleep":
+                        new_call = ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Name(id="asyncio", ctx=ast.Load()),
+                                attr="sleep",
+                                ctx=ast.Load(),
+                            ),
+                            args=node.args,
+                            keywords=node.keywords,
+                        )
+                        return ast.Await(value=new_call)
+                    # Ensure asynchronous Player methods are awaited
+                    if node.func.value.id == "self" and node.func.attr in {
+                        "walk_to_point",
+                        "walk_and_switch_map",
+                    }:
+                        return ast.Await(value=node)
                 return node
 
-        tree = SleepTransformer().visit(tree)
+        tree = AwaitTransformer().visit(tree)
         ast.fix_missing_locations(tree)
 
         args = [ast.arg(arg="self")]
@@ -795,6 +806,8 @@ class Player:
         )
 
         module = ast.Module(body=[func_def], type_ignores=[])
+        ast.fix_missing_locations(func_def)
+        ast.fix_missing_locations(module)
         globs = {"asyncio": asyncio, "time": time}
         exec(compile(module, func_name, "exec"), globs)
         return globs[func_name]
