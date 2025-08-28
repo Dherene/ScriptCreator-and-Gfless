@@ -1,0 +1,9 @@
+periodical
+1
+if int(self.map_id) == 1 and int(self.pos_x) == 59 and int(self.pos_y) == 87 and int(self.attr1) == 18:
+	self.api.send_packet("ncif 2 2813")
+	time.sleep(self.randomize_delay(0.75,1.5))
+	self.api.send_packet("npc_req 2 2813")
+	print("55-WalkingAndTalkingtoSlugg")
+	time.sleep(self.randomize_delay(0.75,1.5))
+	self.attr1 = 19

@@ -1,0 +1,7 @@
+recv_packet
+1
+if int(self.attr3) == 2 and packet.startswith("c_map") and int(self.map_id) >= 4800:
+	time.sleep(self.randomize_delay(1,2))
+	self.api.start_bot()
+	print("37-Room1 StartBot")
+	self.attr3 = 3
