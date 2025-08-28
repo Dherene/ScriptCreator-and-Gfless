@@ -320,7 +320,11 @@ class Player:
             else:
                 time.sleep(0.01)
         print(f"{self.name} lost connection")
+        self.stop_script = True
         self.api.close()
+        # purge any queued walk commands to avoid errors after disconnect
+        with self.walk_queue.mutex:
+            self.walk_queue.queue.clear()
         if callable(self.on_disconnect):
             try:
                 self.on_disconnect(self)
@@ -330,12 +334,18 @@ class Player:
     def _process_walk_queue(self):
         while True:
             func, args = self.walk_queue.get()
+            if not self.api.working() or self.stop_script:
+                continue
             try:
                 func(*args)
+            except OSError as e:
+                if getattr(e, "winerror", None) == 10053:
+                    continue
+                print(f"Error executing walk command: {e}")
             except Exception as e:
                 print(f"Error executing walk command: {e}")
     
-    def walk_to_point(self, point, radius=0, walk_with_pet=True, skip=3, timeout=3, proximity=1):
+    def walk_to_point(self, point, radius=0, walk_with_pet=True, skip=4, timeout=3, proximity=2):
         """Walk the player to ``point`` similarly to the legacy implementation.
 
         ``point`` may be a sequence ``[x, y]`` or an object exposing ``x`` and
@@ -343,7 +353,7 @@ class Player:
         resulting point is unreachable, the original coordinates are used as a
         fallback. Parameters ``walk_with_pet``, ``skip`` and ``timeout`` mirror
         the behaviour of the old API. ``skip`` defaults to three nodes (roughly
-        three cells between waypoints) and ``timeout`` to three seconds. The
+        four cells between waypoints) and ``timeout`` to three seconds. The
         walk will abort if the map changes during execution. ``proximity``
         defines how close the player must be to a node before it is considered
         reached.
@@ -407,19 +417,24 @@ class Player:
                         if walk_with_pet:
                             self.walk_queue.put((api.pets_walk, (x, y)))
                         startTimer = time.time()
+                        deadline = startTimer + timeout * 2
+                        last_send = startTimer
                         while True:
                             if self.map_id != start_map:
                                 return
                             if math.hypot(self.pos_x - x, self.pos_y - y) <= proximity:
                                 break
-                            if time.time() - startTimer > timeout:
+                            now = time.time()
+                            if now >= deadline:
                                 success = False
                                 break
                             if self.stop_script:
                                 raise SystemExit
-                            self.walk_queue.put((api.player_walk, (x, y)))
-                            if walk_with_pet:
-                                self.walk_queue.put((api.pets_walk, (x, y)))
+                            if now - last_send >= timeout:
+                                self.walk_queue.put((api.player_walk, (x, y)))
+                                if walk_with_pet:
+                                    self.walk_queue.put((api.pets_walk, (x, y)))
+                                last_send = now
                             time.sleep(0.1)
                         if not success:
                             break
@@ -434,7 +449,7 @@ class Player:
                             self.walk_queue.put((api.pets_walk, (last_x, last_y)))
                         break
                     else:
-                        time.sleep(0.1)
+                        time.sleep(timeout)
                         continue
             except Exception as e:
                 print(f"Error in walk_to_point: {e}")
@@ -490,7 +505,7 @@ class Player:
                             self.walk_queue.put((api.player_walk, (x, y)))
                             if walk_with_pet:
                                 self.walk_queue.put((api.pets_walk, (x, y)))
-                            time.sleep(0.1)
+                            time.sleep(timeout)
                     start = time.time()
                     while not self.map_changed and time.time() - start < 10:
                         random_x = random.choice([-1,1,0])
