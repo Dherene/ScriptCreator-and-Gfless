@@ -3,11 +3,13 @@ periodical
 
 updates = self.get_group_var("id_update", {})
 if updates:
-    # Inicializar diccionarios si no existen
+    # Inicializar diccionarios/listas si no existen
     if not hasattr(self, "account_map"):
         self.account_map = {}
     if not hasattr(self, "name_to_account"):
         self.name_to_account = {}
+    if not hasattr(self, "partyID"):
+        self.partyID = []
 
     for account, info in updates.items():
         new_name = info.get("name")
@@ -28,9 +30,19 @@ if updates:
         if account not in self.attr51:
             self.attr51.append(account)
 
-        if old_id and old_id in self.partyID:
-            self.partyID.remove(old_id)
-        if new_id and new_id not in self.partyID:
-            self.partyID.append(new_id)
+        if old_id:
+            try:
+                old_id_int = int(old_id)
+            except ValueError:
+                old_id_int = None
+            if old_id_int is not None and old_id_int in self.partyID:
+                self.partyID.remove(old_id_int)
+        if new_id:
+            try:
+                new_id_int = int(new_id)
+            except ValueError:
+                new_id_int = None
+            if new_id_int is not None and new_id_int not in self.partyID:
+                self.partyID.append(new_id_int)
 
     self.set_group_var("id_update", {})
