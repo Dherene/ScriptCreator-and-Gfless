@@ -11,9 +11,9 @@ if packet == "select 0" and hasattr(self, "_old_name"):
     updates = self.get_group_var("id_update", {})
     updates[self.nameacc] = {
         "name": self.name,
-        "id": self.id,
+        "id": int(self.id),
         "old_name": old_name,
-        "old_id": old_id,
+        "old_id": int(old_id),
     }
     self.set_group_var("id_update", updates)
     print(
@@ -30,6 +30,6 @@ elif len(parts) >= 3 and parts[-2] == "GF" and parts[-1] == "0" and parts[0].sta
     self.saved_name = self.name
     self.saved_id = self.id
     updates = self.get_group_var("id_update", {})
-    updates[self.nameacc] = {"name": self.name, "id": self.id}
+    updates[self.nameacc] = {"name": self.name, "id": int(self.id)}
     self.set_group_var("id_update", updates)
     print(f"Sent account update to leader: {self.nameacc}/{self.name}/{self.id}")
