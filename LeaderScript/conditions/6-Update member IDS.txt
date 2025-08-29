@@ -1,0 +1,36 @@
+periodical
+1
+
+updates = self.get_group_var("id_update", {})
+if updates:
+    # Inicializar diccionarios si no existen
+    if not hasattr(self, "account_map"):
+        self.account_map = {}
+    if not hasattr(self, "name_to_account"):
+        self.name_to_account = {}
+
+    for account, info in updates.items():
+        new_name = info.get("name")
+        old_name = info.get("old_name")
+        new_id = info.get("id")
+        old_id = info.get("old_id")
+
+        if old_name and old_name in self.name_to_account:
+            del self.name_to_account[old_name]
+
+        if account in self.account_map:
+            prev_name = self.account_map[account]
+            if prev_name in self.name_to_account:
+                del self.name_to_account[prev_name]
+
+        self.account_map[account] = new_name
+        self.name_to_account[new_name] = account
+        if account not in self.attr51:
+            self.attr51.append(account)
+
+        if old_id and old_id in self.partyID:
+            self.partyID.remove(old_id)
+        if new_id and new_id not in self.partyID:
+            self.partyID.append(new_id)
+
+    self.set_group_var("id_update", {})
