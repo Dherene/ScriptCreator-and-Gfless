@@ -1,0 +1,22 @@
+recv_packet
+1
+
+parts = self.split_packet(packet)
+
+# El paquete debe tener al menos 7 partes, iniciar con 'dlgi2'
+# y el segundo segmento debe ser '#req_exc^...'
+if len(parts) >= 7 and parts[0] == "dlgi2" and parts[1].split("^")[0] == "#req_exc":
+    session_id = parts[1].split("^")[-1]    # ID del remitente
+    sender_name = parts[-1]
+    self.current_trader = sender_name
+    self.members_received_items = getattr(self, "members_received_items", set())
+    self.trade_mode = "pay" if sender_name in self.members_received_items else "receive"
+
+    if sender_name in self.attr51:          # lista de miembros autorizados
+        time.sleep(self.randomize_delay(1, 2))
+	print("Trade accepted by leader")
+        self.api.send_packet(f"#req_exc^2^{session_id}")   # aceptar
+    else:
+        time.sleep(self.randomize_delay(3, 5))
+	print("Trade Rejected by leader")
+        self.api.send_packet(f"#req_exc^5^{session_id}")   # rechazar

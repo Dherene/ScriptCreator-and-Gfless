@@ -1,0 +1,17 @@
+send_packet
+1
+self.members_received_items = getattr(self, "members_received_items", set())
+if packet.startswith("#req_exc^2^"):
+        print("2-Wait to registered item by leader")
+        time.sleep(self.randomize_delay(3,5))
+        trade_mode = getattr(self, "trade_mode", "receive")
+        if trade_mode == "receive":
+                self.put_items_in_trade([(1, 1010, 20), (1, 1012, 20), (2, 2026, 30), (2, 2071, 4), (2, 2070, 4)])
+		print("Leader registered items")
+                self.members_received_items.add(self.current_trader)
+        time.sleep(self.randomize_delay(2,3))
+        if trade_mode == "pay":
+                self.api.send_packet("exc_list 0 0")
+		print("Leader confirm to receive gold")
+                time.sleep(self.randomize_delay(1,2))
+        self.api.send_packet("req_exc 3")
