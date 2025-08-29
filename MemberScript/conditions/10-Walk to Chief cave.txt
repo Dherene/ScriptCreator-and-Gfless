@@ -2,7 +2,6 @@ recv_packet
 1
 if packet.startswith("msgi 0 1508 0 0 0 0 0") and int(self.attr90) == 3 and int(self.map_id) == 20:
 	print(f"10-[MEMBER] {self.name} walk to Chief Cave")
-	self.attr1 = 1 #available condition 11
 	time.sleep(self.randomize_delay(0.75,1.5))
 	self.walk_to_point([35,72], 0)
 	time.sleep(self.randomize_delay(0.75,1.5))
