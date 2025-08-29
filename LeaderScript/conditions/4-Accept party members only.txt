@@ -16,9 +16,11 @@ if len(split_packet) >= 2 and split_packet[0] == "dlgi2" and split_packet[1].sta
     # Si el ID invitado ya pertenece a la party, se acepta la invitación
     if invitacion_id is not None and invitacion_id in allowed_ids:
         time.sleep(self.randomize_delay(1,2))
+        print(f"[LEADER] {self.name} accept party")
         self.api.send_packet(f"#pjoin^3^{invitacion_id_str}")   # aceptación
     else:
         time.sleep(self.randomize_delay(1,2))
+        print(f"[LEADER] {self.name} reject party")
         self.api.send_packet(f"#pjoin^4^{invitacion_id_str}")   # rechazo
 
 

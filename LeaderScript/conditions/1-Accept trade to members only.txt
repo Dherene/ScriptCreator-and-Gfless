@@ -17,9 +17,9 @@ if len(parts) >= 7 and parts[0] == "dlgi2" and parts[1].split("^")[0] == "#req_e
 
     if identifier in self.attr51:          # lista de miembros autorizados
         time.sleep(self.randomize_delay(1, 2))
-        print("Trade accepted by leader")
+        print(f"[LEADER] trade accepted by {self.name}")
         self.api.send_packet(f"#req_exc^2^{session_id}")   # aceptar
     else:
         time.sleep(self.randomize_delay(3, 5))
-        print("Trade Rejected by leader")
+        print(f"[LEADER] trade rejected by {self.name}")
         self.api.send_packet(f"#req_exc^5^{session_id}")   # rechazar
