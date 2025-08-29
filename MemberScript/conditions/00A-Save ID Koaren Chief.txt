@@ -1,0 +1,15 @@
+recv_packet
+1
+splitPacket = packet.split()
+if (
+    len(splitPacket) >= 6
+    and splitPacket[0] == "in"
+    and splitPacket[1] == "2"
+    and splitPacket[2] == "392"
+    and not hasattr(self, "Koaren") #para guardar la ID una sola vez y no repetir prints
+):
+    ID = int(splitPacket[3])
+    x = int(splitPacket[4])
+    y = int(splitPacket[5])
+    self.Koaren = {"ID": ID, "x": x, "y": y}
+    print(f"Saved Koaren: ID={ID}, x={x}, y={y}")

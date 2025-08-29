@@ -1,0 +1,7 @@
+periodical
+1
+if int(self.map_id) == 20 and int(self.attr1) == 26:
+	time.sleep(self.randomize_delay(0.75,1.5))
+	print("67-Walking to Anni Place")
+	self.walk_to_point([98,94])
+	time.sleep(self.randomize_delay(1,2))

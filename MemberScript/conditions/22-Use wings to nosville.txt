@@ -1,0 +1,15 @@
+periodical
+1
+if int(self.map_id) == 22 and int(self.attr1) == 12:
+	self.attr5 = 1 # activate the script to go krem again
+	self.api.player_walk(80, 48)
+	time.sleep(self.randomize_delay(2,3))
+	self.use_item(2070, "etc")
+	print("22-Trying to back to nosville")
+	time.sleep(self.randomize_delay(12,15))
+	
+	
+
+
+
+

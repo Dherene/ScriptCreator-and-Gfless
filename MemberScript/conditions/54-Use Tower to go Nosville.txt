@@ -1,0 +1,13 @@
+periodical
+1
+if int(self.attr1) == 18 and int(self.pos_x) == 40 and int(self.pos_y) == 93 and int(self.map_id) == 20:
+	print("54-Use TP to go Nosville")
+	ID = self.TowerTP["ID"]
+	time.sleep(self.randomize_delay(0.75,1.5))
+	self.api.send_packet(f"ncif 2 {ID}")
+	time.sleep(self.randomize_delay(0.75,1.5))
+	self.api.send_packet(f"npc_req 2 {ID}")
+	time.sleep(self.randomize_delay(0.75,1.5))
+	self.api.send_packet(f"n_run 16 0 2 {ID}")
+	time.sleep(self.randomize_delay(2,3))
+	self.attr1 = 19

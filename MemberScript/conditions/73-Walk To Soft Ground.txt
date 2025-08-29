@@ -1,0 +1,7 @@
+periodical
+1
+if int(self.attr1) == 31 and int(self.map_id) == 20:
+	print("73-GoToSoftGround")
+	self.walk_to_point([91,73])
+	time.sleep(self.randomize_delay(1,2))
+	self.attr1 = 32

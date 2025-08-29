@@ -1,0 +1,6 @@
+recv_packet
+1
+if packet.startswith("exc_close 1"):
+	print("Sending party to leader")
+	time.sleep(self.randomize_delay(1,2))
+	self.api.send_packet(f"pjoin 0 {self.leaderID}")

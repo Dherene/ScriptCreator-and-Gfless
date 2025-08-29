@@ -1,0 +1,8 @@
+periodical
+1
+import asyncio
+if int(self.map_id) == 20 and int(self.attr1) == 38:
+	print("Go close Leader")
+	await asyncio.sleep(self.randomize_delay(0.75,1.5))
+	await self.walk_to_point([17,92], 3)
+	self.attr1 = 39

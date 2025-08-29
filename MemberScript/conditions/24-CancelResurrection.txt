@@ -1,0 +1,6 @@
+recv_packet
+1
+if int(self.map_id) == 22 and int(self.attr1) == 9 and "dlgi #revival^0 #revival^1 571 0 0" in packet:
+	self.api.send_packet("#revival^1")
+	self.attr1 = 12
+	print("25-Revival canceled")

@@ -1,0 +1,17 @@
+periodical
+1
+if int(self.attr1) == 16 and int(self.map_id) == 20:
+	self.api.stop_bot()
+	self.attr6 = 0 #if we have 5 quest items desactive ts 56
+	self.attr1 = 17
+	self.api.send_packet("qt 4 5")
+	time.sleep(self.randomize_delay(2,3))
+	print("52-Taking Quest Reward")
+	time.sleep(self.randomize_delay(2,3))
+	self.api.send_packet(f"n_run 5 0 1 {self.id}")
+	time.sleep(self.randomize_delay(1,2))
+	self.api.send_packet("script 0 12 160")
+	time.sleep(self.randomize_delay(1,2))
+	
+	
+	

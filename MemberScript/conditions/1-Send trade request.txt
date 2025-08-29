@@ -1,0 +1,9 @@
+recv_packet
+1
+if packet.startswith("guri 6 1") and int(self.attr1) == 0 and int (self.attr90) == 1:
+	time.sleep(self.randomize_delay(0.75,1.5))
+	self.api.send_packet(f"req_exc 1 {self.leaderID}")
+	print("Member sending trade request")
+	self.attr90 = 2
+
+	

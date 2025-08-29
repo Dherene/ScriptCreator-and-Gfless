@@ -1,0 +1,10 @@
+recv_packet
+1
+if packet.startswith("dlgi2 #pjoin^6^"):
+	print(f"{self.name} Accept return spot")
+	self.attr90 =3                               #available condition 10
+	time.sleep(self.randomize_delay(2,3))
+	self.api.send_packet(f"#pjoin^6^{self.leaderID}")
+	time.sleep(self.randomize_delay(1,1.5))
+	self.api.send_packet("pleave")
+	

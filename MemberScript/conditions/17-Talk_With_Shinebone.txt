@@ -1,0 +1,12 @@
+periodical
+1
+if int(self.map_id) == 22 and int(self.attr1) == 8:
+	print("17- Talk with Shinebone")
+	ID = self.Shinebone["ID"]
+	time.sleep(self.randomize_delay(2,3))
+	self.api.send_packet(f"ncif 2 {ID}") 
+	time.sleep(self.randomize_delay(0.75,1.5))
+	self.api.send_packet(f"npc_req 2 {ID}")
+	time.sleep(self.randomize_delay(2,3))
+	self.api.send_packet("script 0 12 70")
+	self.attr1 = 9
