@@ -1,14 +1,12 @@
 recv_packet
 1
 import os
-if packet.startswith("guri 6 1") and int(self.attr1) == 0 and int(self.attr90) == 1:
+if packet.startswith("guri 6 1") and int(self.attr1) == 39 and int(self.attr90) == 91:
         lockfile = "/tmp/trade.lock"
         while os.path.exists(lockfile):
                 time.sleep(self.randomize_delay(1,2))
         open(lockfile, 'w').close()
         time.sleep(self.randomize_delay(0.75,1.5))
         self.api.send_packet(f"req_exc 1 {self.leaderID}")
-        print("Member sending trade request")
-        self.attr90 = 2
-
-	
+        print("Member sending gold trade request")
+        self.attr90 = 92
