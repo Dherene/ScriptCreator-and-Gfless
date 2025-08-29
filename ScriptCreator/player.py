@@ -23,8 +23,66 @@ import pywinctl as pwc
 
 from PyQt5 import QtWidgets
 
+
+# Syllable pools for roleplay-style name generation
+PREFIXES = [
+    "Ael", "Bel", "Cor", "Dar", "El", "Fen", "Gor", "Hal",
+    "Kal", "Mor", "Thal", "Vor", "Zel", "Ryn", "Syl", "Dra",
+    "Tor", "Val", "Xan", "Lys", "Kyr", "Ori", "Jor", "Ser",
+    "Mal", "Ner", "Ery", "Alar", "Vey", "Zor",
+    "aen", "belu", "corin", "daras", "elin", "fenra", "goran", "halis",
+    "kalem", "morin", "thalor", "voren", "zelen", "rynar", "sylen", "draven",
+    "torin", "valen", "xanor", "lysin", "kyral", "orien", "joren", "serin",
+    "malor", "neris", "eryn", "alaren", "veyra", "zorin",
+    # 50 únicos de 2 letras (se quedan con mayúscula inicial)
+    "Aa", "Ab", "Ac", "Ad", "Ae", "Af", "Ag", "Ah", "Ai", "Aj",
+    "Ak", "Al", "Am", "An", "Ao", "Ap", "Aq", "Ar", "As", "At",
+    "Au", "Av", "Aw", "Ax", "Ay", "Az", "Ba", "Bb", "Bc", "Bd",
+    "Be", "Bf", "Bg", "Bh", "Bi", "Bj", "Bk", "Bl", "Bm", "Bn",
+    "Bo", "Bp", "Bq", "Br", "Bs", "Bt", "Bu", "Bv", "Bw", "Bx"
+]
+
+ROOTS = [
+    "adan", "bar", "cor", "dun", "el", "far", "gar", "har", "ion",
+    "anor", "bel", "dros", "fal", "grim", "lor", "mir", "tor", "ul",
+    "thal", "rin", "vor", "sar", "mor", "kar", "nor", "tir", "zan",
+    "ryn", "gol", "fen",
+    "Adel", "Borin", "Calar", "Durel", "Emin", "Faron", "Galor", "Helin",
+    "Iron", "Jarel", "Korin", "Lunor", "Miran", "Narel", "Orrin", "Phael",
+    "Quen", "Ralos", "Selor", "Tarin", "Ulric", "Varon", "Worin", "Xarel",
+    "Ymir", "Zeran", "Thoren", "Brynn", "Cyran", "Drael",
+    # 50 únicos de 2 letras en minúscula
+    "ca", "cb", "cc", "cd", "ce", "cf", "cg", "ch", "ci", "cj",
+    "ck", "cl", "cm", "cn", "co", "cp", "cq", "cr", "cs", "ct",
+    "cu", "cv", "cw", "cx", "cy", "cz", "da", "db", "dc", "dd",
+    "de", "df", "dg", "dh", "di", "dj", "dk", "dl", "dm", "dn",
+    "do", "dp", "dq", "dr", "ds", "dt", "du", "dv", "dw", "dx"
+]
+
+SUFFIXES = [
+    "dor", "ion", "mir", "nar", "ric", "thas", "wen",
+    "as", "eth", "ian", "or", "uth", "ys", "en", "ir", "oth",
+    "el", "ar", "is", "al", "orim", "us", "ael", "ior",
+    "ien", "yr", "os", "ethar", "orn", "iel",
+    "Ael", "Ien", "Orn", "Eth", "Ul", "Yth", "On", "Er",
+    "As", "Ior", "Uth", "Ius", "Oth", "An", "Um", "Yr",
+    "Es", "Aris", "Is", "Olin", "Eus", "Ir", "Aur", "Enn",
+    "Orim", "Ath", "Ith", "Eal", "Uel", "Oros",
+    # 50 únicos de 2 letras en minúscula
+    "ea", "eb", "ec", "ed", "ee", "ef", "eg", "eh", "ei", "ej",
+    "ek", "el", "em", "en", "eo", "ep", "eq", "er", "es", "et",
+    "eu", "ev", "ew", "ex", "ey", "ez", "fa", "fb", "fc", "fd",
+    "fe", "ff", "fg", "fh", "fi", "fj", "fk", "fl", "fm", "fn",
+    "fo", "fp", "fq", "fr", "fs", "ft", "fu", "fv", "fw", "fx"
+]
+
+
+
 # player class which can be reused in other standalone apis
 class Player:
+    # shared storage for variables scoped per group (leader PID)
+    _group_vars = {}
+
     def __init__(self, name=None, on_disconnect=None):
         # player info
         self.name = name
@@ -131,6 +189,48 @@ class Player:
             self.loop.call_soon_threadsafe(
                 lambda: asyncio.create_task(self.exec_periodic_conditions())
             )
+
+    # ------------------------------------------------------------------ #
+    # Group-shared variable helpers
+    # ------------------------------------------------------------------ #
+    def get_group_var(self, name, default=None, group_id=None):
+        """Return the value of ``name`` for this group.
+
+        Parameters
+        ----------
+        name: str
+            Variable identifier.
+        default: Any
+            Fallback value when the variable is not set.
+        group_id: Optional[int]
+            Override the group ID. When omitted, ``self.leaderID`` is used.
+        """
+
+        gid = self.leaderID if group_id is None else group_id
+        group = Player._group_vars.setdefault(gid, {})
+        return group.get(name, default)
+
+    def set_group_var(self, name, value, group_id=None):
+        """Assign ``value`` to ``name`` for this group."""
+
+        gid = self.leaderID if group_id is None else group_id
+        Player._group_vars.setdefault(gid, {})[name] = value
+
+    def del_group_var(self, name, group_id=None):
+        """Remove ``name`` from this group if present."""
+
+        gid = self.leaderID if group_id is None else group_id
+        group = Player._group_vars.get(gid)
+        if not group:
+            return
+        group.pop(name, None)
+        if not group:
+            Player._group_vars.pop(gid, None)
+
+    def rolename(self) -> str:
+        """Return a fantasy-style name up to 12 characters."""
+        name = random.choice(PREFIXES) + random.choice(ROOTS) + random.choice(SUFFIXES)
+        return name[:12]
 
     def packetlogger(self):
         while self.api.working():
