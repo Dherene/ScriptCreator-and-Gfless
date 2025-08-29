@@ -950,6 +950,9 @@ class MyWindow(QMainWindow):
         self.text_editors.pop(index)
         self.start_stop_buttons.pop(index)
 
+        # Ensure remaining players have up-to-date party information
+        self.refresh()
+
     def mark_group_leaders(self):
         names = [p[0].name for p in self.players]
         dlg = LeaderSelectionDialog(names, self.group_leaders)
@@ -1023,6 +1026,30 @@ class MyWindow(QMainWindow):
         else:
             self.loadAction.setEnabled(True)
             self.saveAction.setEnabled(True)
+
+        self.update_group_party_info()
+
+    def update_group_party_info(self):
+        """Synchronize party names and IDs for players with group scripts."""
+        group_players = [p[0] for p in self.players if p[0].script_loaded]
+        if not group_players:
+            return
+
+        leader_obj = next((p for p in group_players if p.name in self.group_leaders), None)
+        if not leader_obj:
+            return
+
+        member_objs = [p for p in group_players if p is not leader_obj]
+        party_names = [leader_obj.name] + [m.name for m in member_objs]
+        party_ids = [leader_obj.id] + [m.id for m in member_objs]
+
+        for p in [leader_obj] + member_objs:
+            p.partyname = party_names
+            p.partyID = party_ids
+
+        leader_obj.attr51 = [m.name for m in member_objs]
+        for m in member_objs:
+            m.leaderID = leader_obj.id
 
     def add_tab(self, char_name):
         # Create a new tab and add it to the tab widget
