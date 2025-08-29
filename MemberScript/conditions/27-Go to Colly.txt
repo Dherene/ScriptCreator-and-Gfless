@@ -1,7 +1,0 @@
-periodical
-1
-if int(self.map_id) == 20 and int(self.attr1) == 12:
-	self.walk_to_point([35,72])
-	time.sleep(self.randomize_delay(1,2))
-	self.attr5 = 0 #desactivate script to go a krem
-	print("28-Go to molly")

@@ -1,6 +1,0 @@
-recv_packet
-1
-if int(self.attr3) == 12 and packet.startswith("gidx 1"):
-	self.api.start_bot()
-	self.attr3 = 13
-	print("43-Room6 Startbot")
