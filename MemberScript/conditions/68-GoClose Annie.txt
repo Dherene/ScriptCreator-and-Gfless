@@ -1,7 +1,0 @@
-periodical
-1
-if int(self.map_id) == 88 and int(self.attr1) == 26:
-	self.attr1 = 27
-	print("68-GoClose Annie")
-	self.walk_to_point([8,14])
-	time.sleep(self.randomize_delay(2,3))

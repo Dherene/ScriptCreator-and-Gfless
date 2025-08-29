@@ -1,8 +1,0 @@
-recv_packet
-1
-if packet.startswith(f"exc_list 1 {self.leaderID} -1 -1"):
-	time.sleep(self.randomize_delay(0.75,1))
-	print("Registered trade by member")
-	self.api.send_packet("exc_list 0 0")
-	time.sleep(self.randomize_delay(4,5))
-	self.api.send_packet("req_exc 3")

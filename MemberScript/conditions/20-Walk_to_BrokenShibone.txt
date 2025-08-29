@@ -1,6 +1,0 @@
-periodical
-1
-if int(self.map_id) == 22 and int(self.attr1) == 10:
-	self.walk_to_point([83,48])
-	print("20-Walk to Broken_Shinebune")
-	self.attr1= 11

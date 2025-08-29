@@ -1,8 +1,0 @@
-recv_packet
-1
-if int(self.attr3) != 14 and int(self.map_id) > 4799 and int(self.map_id) < 4850 and packet.startswith("11 698 4 -50 0 0 0"):
-	self.api.stop_bot()
-	time.sleep(self.randomize_delay(4,5))
-	self.attr3 = 0
-	self.attr6 = 1
-	print("48-Ts 56 failed, reset again")

@@ -1,6 +1,0 @@
-recv_packet
-1
-if packet.startswith("npc_req") and int(self.map_id) >= 4800:
-	time.sleep(self.randomize_delay(2,3))
-	self.api.send_packet(f"n_run 6 0 1 {self.id}")
-	print("50-SkipDialogue")
