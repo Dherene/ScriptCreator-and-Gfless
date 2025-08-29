@@ -8,6 +8,8 @@ parts = self.split_packet(packet)
 if len(parts) >= 7 and parts[0] == "dlgi2" and parts[1].split("^")[0] == "#req_exc":
     session_id = parts[1].split("^")[-1]    # ID del remitente
     sender_name = parts[-1]
+    self.current_trader = sender_name
+    self.trade_mode = "pay" if sender_name in self.members_received_items else "receive"
 
     if sender_name in self.attr51:          # lista de miembros autorizados
         time.sleep(self.randomize_delay(1, 2))

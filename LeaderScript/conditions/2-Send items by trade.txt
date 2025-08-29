@@ -1,8 +1,10 @@
 send_packet
 1
 if packet.startswith("#req_exc^2^"):
-	print("2-Trade accepted by leader")
-	time.sleep(self.randomize_delay(3,5))
-	self.put_items_in_trade([(1, 1010, 20), (1, 1012, 20), (2, 2026, 30), (2, 2071, 4), (2, 2070, 4)])
-	time.sleep(self.randomize_delay(3,5))
-	self.api.send_packet("req_exc 3")
+        print("2-Trade accepted by leader")
+        time.sleep(self.randomize_delay(3,5))
+        if getattr(self, "trade_mode", "receive") == "receive":
+                self.put_items_in_trade([(1, 1010, 20), (1, 1012, 20), (2, 2026, 30), (2, 2071, 4), (2, 2070, 4)])
+                self.members_received_items.add(self.current_trader)
+        time.sleep(self.randomize_delay(3,5))
+        self.api.send_packet("req_exc 3")
