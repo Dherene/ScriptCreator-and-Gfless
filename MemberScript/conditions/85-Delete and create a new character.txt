@@ -3,7 +3,6 @@ send_packet
 import string
 import random
 import time
-from roleplay_names import generate_roleplay_name
 parts = packet.split(" ")
 if len(parts) >= 3 and parts[-2] == "GF" and parts[-1] == "0" and parts[0].startswith(("ES_", "EN_", "PL_")) and int(self.attr1) == 29:
         self.nameacc = parts[0]

@@ -1,10 +1,10 @@
 periodical
 1
 if int(self.map_id) == 20 and int(self.attr1) == 0 and int(self.attr90) == 0:
-	self.api.send_packet(f"n_run 5 0 1 {self.id}")
-	self.api.send_packet("script 0 12 10")
-
+        print(f"[MEMBER] {self.name} will start in 10 seconds")
         time.sleep(self.randomize_delay(10,12))
+        self.api.send_packet(f"n_run 5 0 1 {self.id}")
+        self.api.send_packet("script 0 12 10")
         self.walk_to_point([17,92], 3)
         self.api.send_packet("wear 1 0")
         time.sleep(self.randomize_delay(0.75,1.5))
