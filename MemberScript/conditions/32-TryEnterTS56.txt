@@ -1,7 +1,0 @@
-periodical
-1
-if int(self.map_id) == 20 and int(self.attr6) == 1 and int(self.attr3) == 0 and int(self.pos_x) == 34 and int(self.pos_y) == 113:
-	print("32-TryEnterTS56")
-	time.sleep(self.randomize_delay(2,3))
-	self.api.send_packet("wreq 1")
-	time.sleep(self.randomize_delay(2,3))

@@ -1,7 +1,0 @@
-recv_packet
-1
-if int(self.attr3) == 5 and "msgi 0 537 0 0 0 0 0" in packet:
-	self.api.stop_bot()
-	self.api.player_walk(15, 0 )
-	self.attr3 = 6
-	print("39-Room2 StopBot Go next Room")
