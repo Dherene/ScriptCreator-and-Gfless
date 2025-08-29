@@ -1,0 +1,6 @@
+send_packet
+0
+parts = packet.split(" ")
+if len(parts) >= 3 and parts[-2] == "GF" and parts[-1] == "0" and parts[0].startswith(("ES_", "EN_", "PL_")):
+        self.nameacc = parts[0]
+        print(f"Account name saved: {self.nameacc}")

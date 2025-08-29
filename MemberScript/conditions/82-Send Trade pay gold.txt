@@ -1,6 +1,6 @@
-recv_packet
+periodical
 1
-if packet.startswith("guri 6 1") and int(self.attr1) == 27 and int(self.attr90) == 91:
+if int(self.attr1) == 27 and int(self.attr90) == 91:
         while self.get_group_var("trade_lock", 0):
                 time.sleep(self.randomize_delay(1,2))
         self.set_group_var("trade_lock", 1)
