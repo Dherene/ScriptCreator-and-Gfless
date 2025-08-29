@@ -8,4 +8,9 @@ pidnum = player.PIDnum
 # Gets all The players and remove current player to get alts
 alts = [sublist[0] if sublist[0] is not None else None for sublist in self.players]
 alts.remove(player)
-#charged
+
+# Track members that already received items
+if not hasattr(self, "members_received_items"):
+        self.members_received_items = set()
+self.current_trader = None
+self.trade_mode = "receive"
