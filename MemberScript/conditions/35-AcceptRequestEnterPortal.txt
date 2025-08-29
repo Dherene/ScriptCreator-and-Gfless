@@ -1,0 +1,6 @@
+recv_packet
+1
+if packet.startswith("dlgi #rstart^1 rstart 92 0") and int(self.attr6) == 1:
+	self.api.send_packet("#rstart^1")
+	print("35-AcceptRequestPortal")
+	

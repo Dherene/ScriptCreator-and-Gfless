@@ -1,0 +1,6 @@
+recv_packet
+1
+if packet.startswith(f"sayi2 1 {self.id} 10 237 1 {self.leadername} "):
+	print("Leader rejected party invitation")
+	time.sleep(self.randomize_delay(10,15))
+	self.api.send_packet(f"pjoin 0 {self.leaderID}")

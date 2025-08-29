@@ -1,0 +1,6 @@
+periodical
+1
+if int(self.map_id) >= 4800 and int(self.attr6) == 1 and int(self.attr3) == 0:
+	self.api.load_settings(r"C:\Users\valde\Desktop\QUEST CREATOR\HollyDMG-TS56-Part2.ini")
+	self.attr3 = 1
+	print("SettingCombatLoaded")

@@ -1,0 +1,7 @@
+periodical
+1
+if int(self.map_id) == 22 and int(self.attr1) == 9:
+	print("18-Use amulet of return to broken shibone")
+	time.sleep(self.randomize_delay(2,3))
+	self.use_item(2071, "etc") #use amulet of return
+	time.sleep(self.randomize_delay(10,12))

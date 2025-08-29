@@ -1,0 +1,6 @@
+recv_packet
+1
+if int(self.attr3) == 10 and packet.startswith("gidx 1"):
+	self.api.start_bot()
+	self.attr3 = 11
+	print("43-Room5 Startbot")
