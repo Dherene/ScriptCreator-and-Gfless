@@ -168,9 +168,17 @@ class ConditionReview(QDialog):
     def modify_condition(self):
         script = self.generated_script.toPlainText()
         if self.condition_type == 1:
+            name = self.player.recv_packet_conditions[self.index_to_replace][0]
             self.player.recv_packet_conditions[self.index_to_replace][1] = script
+            self.player._compiled_recv_conditions.pop(name, None)
         elif self.condition_type == 2:
+            name = self.player.send_packet_conditions[self.index_to_replace][0]
             self.player.send_packet_conditions[self.index_to_replace][1] = script
+            self.player._compiled_send_conditions.pop(name, None)
+        else:
+            name = self.player.periodical_conditions[self.index_to_replace][0]
+            self.player.periodical_conditions[self.index_to_replace][1] = script
+            self.player._compiled_periodical_conditions.pop(name, None)
         self.cond_modifier.refresh()
         self.accept()
 
@@ -1161,12 +1169,21 @@ class ConditionModifier(QDialog):
             condition_type = self.table_widget.selectedItems()[0].text()
 
             if condition_type == "recv_packet":
-                self.player.recv_packet_conditions.pop(self.table_widget.currentRow())
+                idx = self.table_widget.currentRow()
+                name = self.player.recv_packet_conditions[idx][0]
+                self.player.recv_packet_conditions.pop(idx)
+                self.player._compiled_recv_conditions.pop(name, None)
             elif condition_type == "send_packet":
-                self.player.send_packet_conditions.pop(self.table_widget.currentRow() - len(self.player.recv_packet_conditions))
+                idx = self.table_widget.currentRow() - len(self.player.recv_packet_conditions)
+                name = self.player.send_packet_conditions[idx][0]
+                self.player.send_packet_conditions.pop(idx)
+                self.player._compiled_send_conditions.pop(name, None)
             else:
-                self.player.periodical_conditions.pop(self.table_widget.currentRow() - len(self.player.recv_packet_conditions) - len(self.player.send_packet_conditions))
-        except:
+                idx = self.table_widget.currentRow() - len(self.player.recv_packet_conditions) - len(self.player.send_packet_conditions)
+                name = self.player.periodical_conditions[idx][0]
+                self.player.periodical_conditions.pop(idx)
+                self.player._compiled_periodical_conditions.pop(name, None)
+        except Exception:
             pass
         self.refresh()
 

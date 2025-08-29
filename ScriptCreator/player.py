@@ -68,6 +68,12 @@ class Player:
         self.periodical_conditions = []
         self._cond_counter = 0
 
+        # caches for compiled condition functions
+        # maps condition name to a tuple of (source_code, compiled_func)
+        self._compiled_recv_conditions = {}
+        self._compiled_send_conditions = {}
+        self._compiled_periodical_conditions = {}
+
         # internal state for periodical walking
         # track per-condition cooldowns and thread context
         self._periodic_walking = set()
@@ -340,11 +346,21 @@ class Player:
             else:
                 time.sleep(0.01)
         print(f"{self.name} lost connection")
-        self.stop_script = True
         self.api.close()
         # purge any queued walk commands to avoid errors after disconnect
         with self.walk_queue.mutex:
             self.walk_queue.queue.clear()
+        # attempt to reconnect before giving up
+        for delay in (1, 2, 4, 8):
+            if self.stop_script:
+                break
+            try:
+                self.api = phoenix.Api(self.port)
+                threading.Thread(target=self.packetlogger, daemon=True).start()
+                return
+            except OSError:
+                time.sleep(delay)
+        self.stop_script = True
         if callable(self.on_disconnect):
             try:
                 self.on_disconnect(self)
@@ -683,11 +699,12 @@ class Player:
     
     def exec_recv_packet_condition(self, code, packet, index, cond_name):
         try:
-            if not callable(code):
+            cached = self._compiled_recv_conditions.get(cond_name)
+            if not cached or cached[0] != code:
                 func = self._compile_condition(code, with_packet=True)
-                self.recv_packet_conditions[index][1] = func
+                self._compiled_recv_conditions[cond_name] = (code, func)
             else:
-                func = code
+                func = cached[1]
             asyncio.run_coroutine_threadsafe(
                 self._run_packet_condition(
                     cond_name, func, packet, self.recv_packet_conditions, "recv_packet"
@@ -697,6 +714,7 @@ class Player:
         except Exception as e:
             try:
                 self.recv_packet_conditions.pop(index)
+                self._compiled_recv_conditions.pop(cond_name, None)
                 print(
                     f"\nError executing recv_packet condition: {cond_name}\nError: {e}\nCondition was removed."
                 )
@@ -705,11 +723,12 @@ class Player:
 
     def exec_send_packet_condition(self, code, packet, index, cond_name):
         try:
-            if not callable(code):
+            cached = self._compiled_send_conditions.get(cond_name)
+            if not cached or cached[0] != code:
                 func = self._compile_condition(code, with_packet=True)
-                self.send_packet_conditions[index][1] = func
+                self._compiled_send_conditions[cond_name] = (code, func)
             else:
-                func = code
+                func = cached[1]
             asyncio.run_coroutine_threadsafe(
                 self._run_packet_condition(
                     cond_name, func, packet, self.send_packet_conditions, "send_packet"
@@ -719,6 +738,7 @@ class Player:
         except Exception as e:
             try:
                 self.send_packet_conditions.pop(index)
+                self._compiled_send_conditions.pop(cond_name, None)
                 print(
                     f"\nError executing send_packet condition: {cond_name}\nError: {e}\nCondition was removed."
                 )
@@ -735,14 +755,15 @@ class Player:
                 for idx, (name, code, active, interval) in enumerate(conds):
                     if not active or j % interval != 0:
                         continue
-                    if not callable(code):
+                    cached = self._compiled_periodical_conditions.get(name)
+                    if not cached or cached[0] != code:
                         func = self._compile_condition(code)
-                        with self._periodic_cond_lock:
-                            self.periodical_conditions[idx][1] = func
-                        code = func
+                        self._compiled_periodical_conditions[name] = (code, func)
+                    else:
+                        func = cached[1]
                     if name in running and not running[name].done():
                         continue
-                    task = asyncio.create_task(self._run_periodic_condition(name, code))
+                    task = asyncio.create_task(self._run_periodic_condition(name, func))
                     running[name] = task
             except Exception as e:
                 print(f"Error executing periodic conditions loop: {e}")
@@ -838,6 +859,7 @@ class Player:
                         if cond[0] == name:
                             self.periodical_conditions.pop(idx)
                             break
+                self._compiled_periodical_conditions.pop(name, None)
                 print(
                     f"\nError executing periodical condition: {name}\nError: {e}\nCondition was removed."
                 )

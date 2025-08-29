@@ -3,6 +3,7 @@ import socket
 import threading
 import json
 import enum
+import time
 
 class Type(enum.Enum):
     packet_send = 0
@@ -31,6 +32,7 @@ class Api:
     HOST = "127.0.0.1"
 
     def __init__(self, port : int) -> None:
+        self._port = port
         self._socket = socket.socket()
         self._socket.connect((Api.HOST, port))
 
@@ -49,7 +51,11 @@ class Api:
         data = ""
 
         while self._do_work:
-            buffer = self._socket.recv(buffer_size)
+            try:
+                buffer = self._socket.recv(buffer_size)
+            except ConnectionResetError:
+                self.handle_disconnect()
+                break
 
             if (len(buffer) <= 0):
                 break
@@ -81,6 +87,29 @@ class Api:
 
     def empty(self) -> bool:
         return self._messages.empty()
+        
+    def handle_disconnect(self) -> None:
+        try:
+            self._socket.close()
+        except Exception:
+            pass
+
+        backoff = 1
+        for _ in range(5):
+            if not self._do_work:
+                break
+            try:
+                self._socket = socket.socket()
+                self._socket.connect((Api.HOST, self._port))
+                self._worker = threading.Thread(target=self._work, daemon=True)
+                self._worker.start()
+                return
+            except OSError:
+                time.sleep(backoff)
+                backoff *= 2
+
+        self._do_work = False
+
 
     def send_packet(self, packet : str) -> bool:
         data = {
