@@ -1,0 +1,9 @@
+periodical
+1
+if int(self.map_id) == 22 and int(self.attr1) == 5 and getattr(self, "fruit_trees", []):
+        if not hasattr(self, "current_tree") or self.current_tree is None:
+                self.current_tree = self.fruit_trees.pop(0)
+        time.sleep(self.randomize_delay(1,1.5))
+        self.walk_to_point([self.current_tree["x"], self.current_tree["y"]])
+        print(f"15-[MEMBER] {self.name} Walk close juice")
+        self.attr1= 6

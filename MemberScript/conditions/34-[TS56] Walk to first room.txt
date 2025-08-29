@@ -1,0 +1,7 @@
+periodical
+1
+if int(self.map_id) > 4799 and int(self.attr6) == 1 and int(self.attr3) == 1:
+	time.sleep(self.randomize_delay(2,3))
+	print(f"34-[MEMBER][TS56] {self.name} Go to first room")
+	self.api.player_walk(15, 0)
+	self.attr3 = 2

@@ -1,0 +1,10 @@
+recv_packet
+1
+if packet.startswith("script 12 155") and int(self.map_id) > 4799 and int(self.map_id) < 4850:
+	self.attr6 = 0   #here whe desactive to make ts again
+	self.attr1 = 16
+	self.api.stop_bot()
+	time.sleep(self.randomize_delay(1,2))
+	self.api.send_packet("rxit 1")
+	time.sleep(self.randomize_delay(1,2))
+	print(f"49-[MEMBER][TS56] {self.name} complete quest and leaving TS")

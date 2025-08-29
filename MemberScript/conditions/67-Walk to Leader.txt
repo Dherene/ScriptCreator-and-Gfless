@@ -1,0 +1,9 @@
+periodical
+1
+if int(self.map_id) == 20 and int(self.attr1) == 27:
+        print(f"67-[MEMBER] {self.name} walk to {self.leadername}")
+        time.sleep(self.randomize_delay(0.75,1.5))
+        self.walk_to_point([17,92], 3)
+        self.attr1 = 28
+        self.attr90 = 91
+        self.attr95 = 2  # modo de comercio: entregar oro

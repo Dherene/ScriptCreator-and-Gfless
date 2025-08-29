@@ -1,0 +1,7 @@
+periodical
+1
+if int(self.attr1) == 26 and int(self.map_id) == 87:
+	time.sleep(self.randomize_delay(0.75,1.5))
+	print(f"66-[MEMBER] {self.name} walk out of Chief cave")
+	self.walk_to_point([19,24])
+	self.attr1 = 27

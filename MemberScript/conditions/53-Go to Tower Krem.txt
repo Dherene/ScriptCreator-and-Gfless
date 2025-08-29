@@ -1,0 +1,9 @@
+periodical
+1
+if int(self.attr1) == 17 and int(self.map_id) == 20:
+	self.api.stop_bot()
+	time.sleep(self.randomize_delay(8,10))
+	self.api.player_walk(40, 93)
+	time.sleep(self.randomize_delay(0.75,1.5))
+	print(f"53-[MEMBER] {self.name} walk to Tower in mountain krem")
+	self.attr1 = 18

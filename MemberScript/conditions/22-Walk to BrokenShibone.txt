@@ -1,0 +1,8 @@
+periodical
+1
+if int(self.map_id) == 22 and int(self.attr1) == 10:
+	time.sleep(self.randomize_delay(1,2))
+	self.walk_to_point([85,45])
+	print(f"22-[MEMBER] {self.name} Walk to Broken_Shinebune")
+	time.sleep(self.randomize_delay(1,2))
+	self.attr1= 11

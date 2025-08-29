@@ -1,0 +1,10 @@
+periodical
+1
+if int(self.map_id) == 87 and int(self.attr1) == 1:
+	print(f"11-[MEMBER] {self.name} walk to Koaren Chief")
+	time.sleep(self.randomize_delay(1,2))
+	self.walk_to_point([14,3])
+	time.sleep(self.randomize_delay(0.75,1.5))
+	self.attr1 = 2
+
+
