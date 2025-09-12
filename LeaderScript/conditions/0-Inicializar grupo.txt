@@ -1,0 +1,4 @@
+periodical
+1
+if selfgroup.get("trade") is None:
+    selfgroup.trade = "0"
