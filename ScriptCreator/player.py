@@ -467,7 +467,7 @@ class Player:
                     self.npcs = json_msg["npcs"]
                     self.players = json_msg["players"]
             else:
-                time.sleep(0.01)
+                time.sleep(0.003)
         print(f"{self.name} lost connection")
         self.api.close()
         # purge any queued walk commands to avoid errors after disconnect
@@ -596,7 +596,8 @@ class Player:
                         if walk_with_pet:
                             self.walk_queue.put((api.pets_walk, (x, y)))
                     startTimer = time.time()
-                    deadline = startTimer + timeout * 2
+                    resend = max(0.5, timeout / 3)
+                    deadline = startTimer + timeout * 4
                     last_send = startTimer
                     while True:
                         if self.map_id != start_map:
@@ -609,13 +610,13 @@ class Player:
                             break
                         if self.stop_script:
                             raise SystemExit
-                        if now - last_send >= timeout:
+                        if now - last_send >= resend:
                             with self.walk_lock:
                                 self.walk_queue.put((api.player_walk, (x, y)))
                                 if walk_with_pet:
                                     self.walk_queue.put((api.pets_walk, (x, y)))
                             last_send = now
-                        await asyncio.sleep(0.02)
+                        await asyncio.sleep(0.05)
                     if not success:
                         break
                 if success:
@@ -630,7 +631,7 @@ class Player:
                             self.walk_queue.put((api.pets_walk, (last_x, last_y)))
                     break
                 else:
-                    await asyncio.sleep(timeout)
+                    await asyncio.sleep(resend)
                     continue
         except Exception as e:
             print(f"Error in walk_to_point: {e}")
@@ -665,7 +666,6 @@ class Player:
                 self.map_id,
             )
             if Path:
-                lastpath = len(Path) - 1
                 for i in range(skip, len(Path), skip):
                     if self.stop_script:
                         raise SystemExit
@@ -680,18 +680,24 @@ class Player:
                         if walk_with_pet:
                             self.walk_queue.put((api.pets_walk, (x, y)))
                     startTimer = time.time()
+                    resend = max(0.5, timeout / 3)
+                    deadline = startTimer + timeout * 4
+                    last_send = startTimer
                     while True:
                         if abs(self.pos_x - x) <= 1 and abs(self.pos_y - y) <= 1:
                             break
-                        if time.time() - startTimer > timeout:
+                        now = time.time()
+                        if now >= deadline:
                             break
                         if self.stop_script:
                             raise SystemExit
-                        with self.walk_lock:
-                            self.walk_queue.put((api.player_walk, (x, y)))
-                            if walk_with_pet:
-                                self.walk_queue.put((api.pets_walk, (x, y)))
-                        await asyncio.sleep(timeout)
+                        if now - last_send >= resend:
+                            with self.walk_lock:
+                                self.walk_queue.put((api.player_walk, (x, y)))
+                                if walk_with_pet:
+                                    self.walk_queue.put((api.pets_walk, (x, y)))
+                            last_send = now
+                        await asyncio.sleep(0.05)
                 start = time.time()
                 while not self.map_changed and time.time() - start < 10:
                     random_x = random.choice([-1, 1, 0])
@@ -888,10 +894,11 @@ class Player:
                         continue
                     task = asyncio.create_task(self._run_periodic_condition(name, func))
                     running[name] = task
+                    await asyncio.sleep(0)
             except Exception as e:
                 print(f"Error executing periodic conditions loop: {e}")
             j += 1
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.02)
 
     def _compile_condition(self, script, with_packet=False):
         """Compile a condition script into an async callable, replacing time.sleep with await asyncio.sleep."""
