@@ -1,7 +1,8 @@
 periodical
 1
-if int(self.attr1) == 0 and int(self.attr90) == 1 and int(selfgroup.trade) == 0:
-        self.attr90 = 2 #desactivar esta condición y activar la siguiente
+if int(self.attr1) == 0 and int(self.attr90) == 1 and selfgroup.trade == "0":
+        self.attr90 = 2  # desactivar esta condición y activar la siguiente
+        selfgroup.trade = "1"  # cerrar comercio para otros miembros
         time.sleep(self.randomize_delay(0.75,1.5))
         self.api.send_packet(f"req_exc 1 {self.leaderID}")
         print(f"2-[MEMBER] {self.name} sending trade request")
