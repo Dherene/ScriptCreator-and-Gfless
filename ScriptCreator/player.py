@@ -4,8 +4,9 @@ import phoenix
 import threading
 import asyncio
 import ast
+from dataclasses import dataclass, field
 from concurrent.futures import ThreadPoolExecutor
-from typing import Optional
+from typing import Optional, Callable
 from queue import Queue
 from getports import returnCorrectPort, returnCorrectPID
 from path import loadMap, findPath
@@ -98,10 +99,24 @@ class GroupNamespace:
         return self._player.get_group_var(name, default)
 
 
+# encapsulation for periodical conditions so each player can manage its own
+# execution task and compiled function without interfering with others
+@dataclass
+class PeriodicCondition:
+    name: str
+    code: str
+    active: bool
+    interval: float
+    func: Optional[Callable] = field(default=None, repr=False)
+    task: Optional[asyncio.Task] = field(default=None, repr=False)
+    _code_cache: str = field(default="", repr=False)
+
+
 # player class which can be reused in other standalone apis
 class Player:
     # shared storage for variables scoped per group (leader PID)
     _group_vars = {}
+    _group_var_lock = threading.Lock()
 
     def __init__(self, name=None, on_disconnect=None):
         # player info
@@ -143,14 +158,13 @@ class Player:
         
         self.recv_packet_conditions = []
         self.send_packet_conditions = []
-        self.periodical_conditions = []
+        self.periodical_conditions: list[PeriodicCondition] = []
         self._cond_counter = 0
 
         # caches for compiled condition functions
         # maps condition name to a tuple of (source_code, compiled_func)
         self._compiled_recv_conditions = {}
         self._compiled_send_conditions = {}
-        self._compiled_periodical_conditions = {}
 
         # internal state for periodical walking
         # track per-condition cooldowns and thread context
@@ -158,7 +172,6 @@ class Player:
         self._last_periodic_walk = {}
         self._periodic_ctx = threading.local()
         self._periodic_cond_lock = threading.Lock()
-        self._periodic_tasks = {}
 
         # walking coordination
         self.walk_lock = threading.Lock()
@@ -182,6 +195,10 @@ class Player:
         self.leaderID = 0
         self.partyname = []
         self.partyID = []
+
+        # unique identifier for isolated group namespace before leaderID is known
+        self._unique_group_id = id(self)
+        self._current_gid = self._unique_group_id
 
         # proxy for group-shared variables
         self._group = GroupNamespace(self)
@@ -217,6 +234,18 @@ class Player:
     # ------------------------------------------------------------------ #
     # Group-shared variable helpers
     # ------------------------------------------------------------------ #
+    def _resolve_gid(self, group_id):
+        if group_id is not None:
+            return group_id
+        gid = self.leaderID if self.leaderID else self._unique_group_id
+        if gid != self._current_gid:
+            with Player._group_var_lock:
+                Player._group_vars.setdefault(gid, {}).update(
+                    Player._group_vars.pop(self._current_gid, {})
+                )
+            self._current_gid = gid
+        return gid
+
     def get_group_var(self, name, default=None, group_id=None):
         """Return the value of ``name`` for this group.
 
@@ -230,26 +259,29 @@ class Player:
             Override the group ID. When omitted, ``self.leaderID`` is used.
         """
 
-        gid = self.leaderID if group_id is None else group_id
-        group = Player._group_vars.setdefault(gid, {})
-        return group.get(name, default)
+        gid = self._resolve_gid(group_id)
+        with Player._group_var_lock:
+            group = Player._group_vars.setdefault(gid, {})
+            return group.get(name, default)
 
     def set_group_var(self, name, value, group_id=None):
         """Assign ``value`` to ``name`` for this group."""
 
-        gid = self.leaderID if group_id is None else group_id
-        Player._group_vars.setdefault(gid, {})[name] = value
+        gid = self._resolve_gid(group_id)
+        with Player._group_var_lock:
+            Player._group_vars.setdefault(gid, {})[name] = value
 
     def del_group_var(self, name, group_id=None):
         """Remove ``name`` from this group if present."""
 
-        gid = self.leaderID if group_id is None else group_id
-        group = Player._group_vars.get(gid)
-        if not group:
-            return
-        group.pop(name, None)
-        if not group:
-            Player._group_vars.pop(gid, None)
+        gid = self._resolve_gid(group_id)
+        with Player._group_var_lock:
+            group = Player._group_vars.get(gid)
+            if not group:
+                return
+            group.pop(name, None)
+            if not group:
+                Player._group_vars.pop(gid, None)
 
     def rolename(self) -> str:
         """Return a fantasy-style name up to 12 characters."""
@@ -885,41 +917,30 @@ class Player:
             try:
                 with self._periodic_cond_lock:
                     conds = list(self.periodical_conditions)
-                active_names = {name for name, _, active, _ in conds if active}
-                for name, code, active, interval in conds:
-                    if not active:
-                        if name in self._periodic_tasks:
-                            self._periodic_tasks[name].cancel()
-                            self._periodic_tasks.pop(name, None)
+                for cond in conds:
+                    if not cond.active:
+                        if cond.task:
+                            cond.task.cancel()
+                            cond.task = None
                         continue
-                    cached = self._compiled_periodical_conditions.get(name)
-                    if not cached or cached[0] != code:
-                        func = self._compile_condition(code)
-                        self._compiled_periodical_conditions[name] = (code, func)
-                        if name in self._periodic_tasks:
-                            self._periodic_tasks[name].cancel()
-                            self._periodic_tasks.pop(name, None)
-                    else:
-                        func = cached[1]
-                    if name not in self._periodic_tasks or self._periodic_tasks[name].done():
-                        self._periodic_tasks[name] = asyncio.create_task(
-                            self._run_periodic_loop(name, func, interval)
-                        )
-                for name in list(self._periodic_tasks):
-                    if name not in active_names:
-                        self._periodic_tasks[name].cancel()
-                        self._periodic_tasks.pop(name, None)
-                        self._compiled_periodical_conditions.pop(name, None)
+                    if cond.func is None or cond._code_cache != cond.code:
+                        cond.func = self._compile_condition(cond.code)
+                        cond._code_cache = cond.code
+                        if cond.task:
+                            cond.task.cancel()
+                            cond.task = None
+                    if cond.task is None or cond.task.done():
+                        cond.task = asyncio.create_task(self._run_periodic_loop(cond))
                 await asyncio.sleep(0.1)
             except Exception as e:
                 print(f"Error executing periodic conditions loop: {e}")
                 await asyncio.sleep(0.1)
 
-    async def _run_periodic_loop(self, name, func, interval):
+    async def _run_periodic_loop(self, cond: PeriodicCondition):
         try:
             while True:
-                await self._run_periodic_condition(name, func)
-                await asyncio.sleep(interval * 0.02)
+                await self._run_periodic_condition(cond.name, cond.func)
+                await asyncio.sleep(cond.interval * 0.02)
         except asyncio.CancelledError:
             pass
 
@@ -1009,10 +1030,11 @@ class Player:
             try:
                 with self._periodic_cond_lock:
                     for idx, cond in enumerate(self.periodical_conditions):
-                        if cond[0] == name:
+                        if cond.name == name:
+                            if cond.task:
+                                cond.task.cancel()
                             self.periodical_conditions.pop(idx)
                             break
-                self._compiled_periodical_conditions.pop(name, None)
                 print(
                     f"\nError executing periodical condition: {name}\nError: {e}\nCondition was removed."
                 )

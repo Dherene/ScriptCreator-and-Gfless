@@ -46,7 +46,7 @@ from PyQt5.Qsci import QsciScintilla
 
 from license_manager import prompt_for_license
 
-from player import Player
+from player import Player, PeriodicCondition
 from getports import returnAllPorts
 from funcs import randomize_time
 from conditioncreator import ConditionModifier
@@ -683,7 +683,7 @@ class GroupScriptDialog(QDialog):
                 elif ctype == "send_packet":
                     player_obj.send_packet_conditions.append([name, cscript, running_bool])
                 else:
-                    player_obj.periodical_conditions.append([name, cscript, running_bool, 1])
+                    player_obj.periodical_conditions.append(PeriodicCondition(name, cscript, running_bool, 1))
 
             if role == "leader":
                 player_obj.attr19 = 0
@@ -904,7 +904,7 @@ class MyWindow(QMainWindow):
             for condition in player.send_packet_conditions:
                 send_packet_conds.append([condition[0], condition[1], condition[2], "send_packet"])
             for condition in player.periodical_conditions:
-                periodic_conds.append([condition[0], condition[1], condition[2], "periodical"])
+                periodic_conds.append([condition.name, condition.code, condition.active, "periodical"])
 
             scripts_and_conds.append([[player.name, script], recv_packet_conds, send_packet_conds, periodic_conds])
 
