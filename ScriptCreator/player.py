@@ -78,6 +78,26 @@ SUFFIXES = [
 
 
 
+# proxy object exposing group-scoped variables via attribute access
+class GroupNamespace:
+    """Allow scripts to access group variables as attributes."""
+
+    def __init__(self, player):
+        super().__setattr__("_player", player)
+
+    def __getattr__(self, name):
+        return self._player.get_group_var(name)
+
+    def __setattr__(self, name, value):
+        self._player.set_group_var(name, value)
+
+    def __delattr__(self, name):
+        self._player.del_group_var(name)
+
+    def get(self, name, default=None):
+        return self._player.get_group_var(name, default)
+
+
 # player class which can be reused in other standalone apis
 class Player:
     # shared storage for variables scoped per group (leader PID)
@@ -161,6 +181,9 @@ class Player:
         self.leaderID = 0
         self.partyname = []
         self.partyID = []
+
+        # proxy for group-shared variables
+        self._group = GroupNamespace(self)
 
         # callback when connection is lost
         self.on_disconnect = on_disconnect
@@ -719,14 +742,14 @@ class Player:
         print(f"Couldnt find item with vnum: {item_vnum} in inventory: {inventory_type}")
         return False
 
-    def put_items_in_trade(self, items):
+    def put_items_in_trade(self, items, gold=0):
         inv_blocks = {
             0: self.equip,
             1: self.main,
             2: self.etc,
         }
 
-        packet_parts = ["exc_list", "0", "0"]
+        packet_parts = ["exc_list", str(int(gold)), "0"]
         for inv_type, vnum, amount in items:
             block = inv_blocks.get(inv_type, [])
             best_slot = None
@@ -747,14 +770,14 @@ class Player:
                 return False
             packet_parts.extend([str(inv_type), str(best_slot), str(best_qty)])
 
-        if len(packet_parts) > 3:
+        if gold > 0 or len(packet_parts) > 3:
             self.api.send_packet(" ".join(packet_parts))
             return True
         print("Insufficient items to exchange")
         return False
 
-    def put_item_in_trade(self, items):
-        return self.put_items_in_trade(items)
+    def put_item_in_trade(self, items, gold=0):
+        return self.put_items_in_trade(items, gold=gold)
 
     def update_map_change(self):
         self.map_changed = True
@@ -929,7 +952,7 @@ class Player:
         module = ast.Module(body=[func_def], type_ignores=[])
         ast.fix_missing_locations(func_def)
         ast.fix_missing_locations(module)
-        globs = {"asyncio": asyncio, "time": time}
+        globs = {"asyncio": asyncio, "time": time, "selfgroup": self._group}
         exec(compile(module, func_name, "exec"), globs)
         return globs[func_name]
 
