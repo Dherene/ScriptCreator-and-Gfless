@@ -100,6 +100,19 @@ class GroupNamespace:
         return self._player.get_group_var(name, default)
 
 
+# helper object to allow jumping between conditions using attribute assignment
+class _GotoProxy:
+    """Expose ``goto.cond = X`` syntax inside condition scripts."""
+
+    def __init__(self, player):
+        super().__setattr__("_player", player)
+
+    def __setattr__(self, name, value):
+        if name == "cond":
+            self._player.goto_condition(value)
+        else:
+            raise AttributeError("Only 'cond' attribute is supported")
+
 # encapsulation for periodical conditions so each player can manage its own
 # execution task and compiled function without interfering with others
 @dataclass
@@ -208,6 +221,9 @@ class Player:
         # proxy for group-shared variables
         self._group = GroupNamespace(self)
 
+        # proxy to allow script-level condition jumps via ``goto.cond``
+        self.goto = _GotoProxy(self)
+
         # callback when connection is lost
         self.on_disconnect = on_disconnect
         
@@ -255,8 +271,6 @@ class Player:
     def _update_condition_window(self):
         start = max(0, self._current_condition - 3)
         end = self._current_condition + 7
-        if self._current_condition < 3:
-            end = 9
         def should_enable(name):
             if name.startswith("00") and (len(name) >= 3 and not name[2].isdigit()):
                 return True
@@ -273,7 +287,9 @@ class Player:
     def _advance_condition(self, name):
         num = self._parse_condition_number(name)
         if num is not None:
-            self._current_condition = num
+            # move to the next condition after successfully running ``name``
+            # so the scheduler continues with subsequent steps
+            self._current_condition = num + 1
             self._update_condition_window()
 
     def goto_condition(self, number):
@@ -1074,13 +1090,25 @@ class Player:
         module = ast.Module(body=[func_def], type_ignores=[])
         ast.fix_missing_locations(func_def)
         ast.fix_missing_locations(module)
-        globs = {"asyncio": asyncio, "time": time, "selfgroup": self._group}
+        globs = {
+            "asyncio": asyncio,
+            "time": time,
+            "selfgroup": self._group,
+            "goto": self.goto,
+        }
         exec(compile(module, func_name, "exec"), globs)
         return globs[func_name]
 
     async def _run_packet_condition(self, name, func, packet, store_list, cond_type):
         try:
+            num = self._parse_condition_number(name)
+            if num is not None:
+                self._current_condition = num
+                self._update_condition_window()
+            before = self._current_condition
             result = await func(self, packet)
+            if self._current_condition != before:
+                return
             if result:
                 self._advance_condition(name)
         except Exception as e:
@@ -1098,11 +1126,16 @@ class Player:
     async def _run_periodic_condition(self, name, func):
         self._periodic_ctx.current = name
         try:
+            num = self._parse_condition_number(name)
+            if num is not None:
+                self._current_condition = num
+                self._update_condition_window()
             loop = asyncio.get_running_loop()
+            before = self._current_condition
             result = await loop.run_in_executor(
                 self._cond_executor, lambda: asyncio.run(func(self))
             )
-            if result:
+            if self._current_condition == before and result:
                 self._advance_condition(name)
             return result
         except Exception as e:
