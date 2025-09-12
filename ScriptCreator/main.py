@@ -712,6 +712,10 @@ class GroupScriptDialog(QDialog):
             for m in member_objs:
                 m.leaderID = leader_id
 
+        # start condition loops for all participants in parallel
+        for p in [leader_obj] + member_objs:
+            threading.Thread(target=p.start_condition_loop, daemon=True).start()
+
         QMessageBox.information(self, "Group Script Setup", "Setup successfully loaded.")
         self.accept()
 
@@ -984,6 +988,8 @@ class MyWindow(QMainWindow):
         )
         if dlg.exec_():
             self.group_script_group_counter += 1
+            # start all scripts for this group asynchronously
+            self.start_group_scripts()
 
     def set_group_script_paths(self):
         leader_path = QFileDialog.getExistingDirectory(self, "Select Leader Setup Folder")
@@ -1140,6 +1146,19 @@ class MyWindow(QMainWindow):
         else:
             print("empty")
 
+    def start_group_scripts(self):
+        """Launch scripts for all group members in parallel threads."""
+        for idx, (player, thread) in enumerate(self.players):
+            if player.script_loaded and (not thread or not thread.is_alive()):
+                script = self.text_editors[idx].text()
+                if script.strip():
+                    t = thread_with_trace(target=self.run_script, args=[script, idx])
+                    t.start()
+                    player.stop_script = False
+                    self.players[idx][1] = t
+                    self.start_stop_buttons[idx][0].hide()
+                    self.start_stop_buttons[idx][1].show()
+
     def stop_script_clicked(self):
         # Handle the stop script button click
         # You may want to perform some actions here when the script stops
@@ -1156,11 +1175,13 @@ class MyWindow(QMainWindow):
         self.tab_widget.tabBar().setTabTextColor(self.tab_widget.currentIndex(), QColor("#e88113"))
         
     def run_script(self, script, index = None):
-        index = self.tab_widget.currentIndex()
+        if index is None:
+            index = self.tab_widget.currentIndex()
+        player = self.players[index][0]
         try:
-            # Execute the Python script
+            # Execute the Python script in the context of this player
             self.tab_widget.tabBar().setTabTextColor(index, QColor("green"))
-            exec(script)
+            exec(script, globals(), {"self": self, "player": player, "index": index})
             self.tab_widget.tabBar().setTabTextColor(index, QColor("#e88113"))
         except Exception as e:
             # Handle any exceptions that occur during execution

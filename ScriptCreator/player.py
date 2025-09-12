@@ -172,6 +172,9 @@ class Player:
         self._last_periodic_walk = {}
         self._periodic_ctx = threading.local()
         self._periodic_cond_lock = threading.Lock()
+        # dedicated executor so multiple conditions can run in parallel
+        self._cond_executor = ThreadPoolExecutor(max_workers=4)
+        self._periodic_main_task = None
 
         # walking coordination
         self.walk_lock = threading.Lock()
@@ -227,13 +230,18 @@ class Player:
             t.start()
 
             # start periodic conditions loop
-            self.loop.call_soon_threadsafe(
-                lambda: asyncio.create_task(self.exec_periodic_conditions())
-            )
+            self.start_condition_loop()
 
     # ------------------------------------------------------------------ #
     # Group-shared variable helpers
     # ------------------------------------------------------------------ #
+
+    def start_condition_loop(self):
+        """Ensure the periodic condition scheduler is running."""
+        def _start():
+            if self._periodic_main_task is None or self._periodic_main_task.done():
+                self._periodic_main_task = asyncio.create_task(self.exec_periodic_conditions())
+        self.loop.call_soon_threadsafe(_start)
     def _resolve_gid(self, group_id):
         if group_id is not None:
             return group_id
@@ -1046,7 +1054,10 @@ class Player:
     async def _run_periodic_condition(self, name, func):
         self._periodic_ctx.current = name
         try:
-            await func(self)
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(
+                self._cond_executor, lambda: asyncio.run(func(self))
+            )
         except Exception as e:
             try:
                 with self._periodic_cond_lock:

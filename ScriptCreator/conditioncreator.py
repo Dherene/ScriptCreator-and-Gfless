@@ -180,6 +180,8 @@ class ConditionReview(QDialog):
             cond = self.player.periodical_conditions[self.index_to_replace]
             cond.code = script
             cond.func = None
+        # ensure condition scheduler is active
+        self.player.start_condition_loop()
         self.cond_modifier.refresh()
         self.accept()
 
@@ -205,6 +207,8 @@ class ConditionReview(QDialog):
             self.player.periodical_conditions.append(
                 PeriodicCondition(self.condition_name.text(), script, False, 1)
             )
+        # start condition checks if needed
+        self.player.start_condition_loop()
         self.cond_modifier.refresh()
         self.cond_creator.accept()
         self.accept()
@@ -231,6 +235,7 @@ class ConditionReview(QDialog):
             self.player.periodical_conditions.append(
                 PeriodicCondition(self.condition_name.text(), script, True, 1)
             )
+        self.player.start_condition_loop()
         self.cond_modifier.refresh()
         self.cond_creator.accept()
         self.accept()
