@@ -976,6 +976,27 @@ class Player:
                         "walk_and_switch_map",
                     }:
                         return ast.Await(value=node)
+                    # Offload known blocking Player methods to a thread so
+                    # condition execution doesn't block the event loop.
+                    if node.func.value.id == "self" and node.func.attr in {
+                        "queries",
+                        "update_map_change",
+                    }:
+                        player_method = ast.Attribute(
+                            value=ast.Name(id="self", ctx=ast.Load()),
+                            attr=node.func.attr,
+                            ctx=ast.Load(),
+                        )
+                        new_call = ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Name(id="asyncio", ctx=ast.Load()),
+                                attr="to_thread",
+                                ctx=ast.Load(),
+                            ),
+                            args=[player_method] + node.args,
+                            keywords=node.keywords,
+                        )
+                        return ast.Await(value=new_call)
                 return node
 
         tree = AwaitTransformer().visit(tree)

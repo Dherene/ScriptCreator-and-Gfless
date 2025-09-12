@@ -27,13 +27,19 @@ class Condition:
 
     async def try_execute(self) -> bool:
         """Run the condition and execute its action if the check passes."""
-        result = self.check()
-        if asyncio.iscoroutine(result):
-            result = await result
+        # ``check`` may be synchronous or asynchronous.  If it's a regular
+        # function we offload it to ``asyncio.to_thread`` so the event loop
+        # remains responsive even for CPU bound work.
+        if asyncio.iscoroutinefunction(self.check):
+            result = await self.check()
+        else:
+            result = await asyncio.to_thread(self.check)
+
         if result:
-            action_result = self.action()
-            if asyncio.iscoroutine(action_result):
-                await action_result
+            if asyncio.iscoroutinefunction(self.action):
+                await self.action()
+            else:
+                await asyncio.to_thread(self.action)
             return True
         return False
 
