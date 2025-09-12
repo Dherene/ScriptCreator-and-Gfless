@@ -158,6 +158,7 @@ class Player:
         self._last_periodic_walk = {}
         self._periodic_ctx = threading.local()
         self._periodic_cond_lock = threading.Lock()
+        self._periodic_tasks = {}
 
         # walking coordination
         self.walk_lock = threading.Lock()
@@ -875,30 +876,52 @@ class Player:
                 print(f"Error removing faulty send_packet condition: {e2}")
 
     async def exec_periodic_conditions(self):
-        j = 0
-        running = {}
+        """Schedule active periodical conditions in independent tasks.
+
+        This avoids a global tick loop where every condition is checked on
+        each iteration, allowing characters with many conditions to run more
+        smoothly and independently."""
         while True:
             try:
                 with self._periodic_cond_lock:
                     conds = list(self.periodical_conditions)
-                for idx, (name, code, active, interval) in enumerate(conds):
-                    if not active or j % interval != 0:
+                active_names = {name for name, _, active, _ in conds if active}
+                for name, code, active, interval in conds:
+                    if not active:
+                        if name in self._periodic_tasks:
+                            self._periodic_tasks[name].cancel()
+                            self._periodic_tasks.pop(name, None)
                         continue
                     cached = self._compiled_periodical_conditions.get(name)
                     if not cached or cached[0] != code:
                         func = self._compile_condition(code)
                         self._compiled_periodical_conditions[name] = (code, func)
+                        if name in self._periodic_tasks:
+                            self._periodic_tasks[name].cancel()
+                            self._periodic_tasks.pop(name, None)
                     else:
                         func = cached[1]
-                    if name in running and not running[name].done():
-                        continue
-                    task = asyncio.create_task(self._run_periodic_condition(name, func))
-                    running[name] = task
-                    await asyncio.sleep(0)
+                    if name not in self._periodic_tasks or self._periodic_tasks[name].done():
+                        self._periodic_tasks[name] = asyncio.create_task(
+                            self._run_periodic_loop(name, func, interval)
+                        )
+                for name in list(self._periodic_tasks):
+                    if name not in active_names:
+                        self._periodic_tasks[name].cancel()
+                        self._periodic_tasks.pop(name, None)
+                        self._compiled_periodical_conditions.pop(name, None)
+                await asyncio.sleep(0.1)
             except Exception as e:
                 print(f"Error executing periodic conditions loop: {e}")
-            j += 1
-            await asyncio.sleep(0.02)
+                await asyncio.sleep(0.1)
+
+    async def _run_periodic_loop(self, name, func, interval):
+        try:
+            while True:
+                await self._run_periodic_condition(name, func)
+                await asyncio.sleep(interval * 0.02)
+        except asyncio.CancelledError:
+            pass
 
     def _compile_condition(self, script, with_packet=False):
         """Compile a condition script into an async callable, replacing time.sleep with await asyncio.sleep."""
