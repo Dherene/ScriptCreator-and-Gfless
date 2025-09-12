@@ -1,11 +1,7 @@
 periodical
 1
-if (int(self.attr1) == 28
-    and int(self.attr90) == 91
-    and self.get_group_var(f"gold_done_{self.pidnum}", 0) == 0):
-        while self.get_group_var("trade_lock", 0):
-                time.sleep(self.randomize_delay(1,2))
-        self.set_group_var("trade_lock", 1)
+if int(self.attr1) == 28 and int(self.attr90) == 91 and int(selfgroup.trade) == 0:
+        time.sleep(self.randomize_delay(1,2))
         self.attr90 = 92
         time.sleep(self.randomize_delay(1,1.5))
         self.api.send_packet(f"req_exc 1 {self.leaderID}")

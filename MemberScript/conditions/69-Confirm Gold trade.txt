@@ -9,8 +9,4 @@ if packet.startswith(f"exc_list 1 {self.leaderID} -1 -1") and int(self.attr90) =
         self.attr90 = 93
         time.sleep(self.randomize_delay(6,8))
         self.attr1 = 29
-        if self.get_group_var("trade_lock", 0):
-                self.set_group_var("trade_lock", 0)
-        self.set_group_var(f"gold_done_{self.pidnum}", 1)
-        self.set_group_var("trade_counter", self.get_group_var("trade_counter", 0) + 1)
         self.attr95 = 0

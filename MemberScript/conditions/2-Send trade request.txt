@@ -1,14 +1,7 @@
-recv_packet
+periodical
 1
-if (packet.startswith("guri 6 1")
-    and int(self.attr1) == 0
-    and int(self.attr90) == 1
-    and int(self.attr99) == 0
-    and self.get_group_var(f"trade_done_{self.pidnum}", 0) == 0):
-        while self.get_group_var("trade_lock", 0):
-                time.sleep(self.randomize_delay(1,2))
-        self.set_group_var("trade_lock", 1)
-        self.attr90 = 2
+if int(self.attr1) == 0 and int(self.attr90) == 1 and int(selfgroup.trade) == 0:
+        self.attr90 = 2 #desactivar esta condición y activar la siguiente
         time.sleep(self.randomize_delay(0.75,1.5))
         self.api.send_packet(f"req_exc 1 {self.leaderID}")
         print(f"2-[MEMBER] {self.name} sending trade request")

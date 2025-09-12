@@ -9,7 +9,5 @@ if packet.startswith("dlgi2 #pjoin^6^"):
         self.api.send_packet(f"#pjoin^6^{self.leaderID}")
         time.sleep(self.randomize_delay(1,1.5))
         self.api.send_packet("pleave")
-        if self.get_group_var("trade_lock", 0):
-                self.set_group_var("trade_lock", 0)
-        self.set_group_var(f"trade_done_{self.pidnum}", 1)
-        self.set_group_var("trade_counter", self.get_group_var("trade_counter", 0) + 1)
+        time.sleep(self.randomize_delay(1,1.5))
+        selfgroup.trade = 1
