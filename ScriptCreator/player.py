@@ -16,6 +16,7 @@ import math
 import subprocess
 import gfless_api
 import textwrap
+import re
 try:
     import psutil
 except ImportError:  # psutil is optional but recommended
@@ -160,6 +161,7 @@ class Player:
         self.send_packet_conditions = []
         self.periodical_conditions: list[PeriodicCondition] = []
         self._cond_counter = 0
+        self._current_condition = 0
 
         # caches for compiled condition functions
         # maps condition name to a tuple of (source_code, compiled_func)
@@ -239,9 +241,49 @@ class Player:
     def start_condition_loop(self):
         """Ensure the periodic condition scheduler is running."""
         def _start():
+            self._update_condition_window()
             if self._periodic_main_task is None or self._periodic_main_task.done():
                 self._periodic_main_task = asyncio.create_task(self.exec_periodic_conditions())
         self.loop.call_soon_threadsafe(_start)
+
+    def _parse_condition_number(self, name):
+        if name.startswith("00") and (len(name) >= 3 and not name[2].isdigit()):
+            return None
+        match = re.match(r"^(\d+)", name)
+        return int(match.group(1)) if match else None
+
+    def _update_condition_window(self):
+        start = max(0, self._current_condition - 3)
+        end = self._current_condition + 7
+        if self._current_condition < 3:
+            end = 9
+        def should_enable(name):
+            if name.startswith("00") and (len(name) >= 3 and not name[2].isdigit()):
+                return True
+            num = self._parse_condition_number(name)
+            return num is not None and start <= num <= end
+        with self._periodic_cond_lock:
+            for cond in self.periodical_conditions:
+                cond.active = should_enable(cond.name)
+            for cond in self.recv_packet_conditions:
+                cond[2] = should_enable(cond[0])
+            for cond in self.send_packet_conditions:
+                cond[2] = should_enable(cond[0])
+
+    def _advance_condition(self, name):
+        num = self._parse_condition_number(name)
+        if num is not None:
+            self._current_condition = num
+            self._update_condition_window()
+
+    def goto_condition(self, number):
+        try:
+            num = int(number)
+        except (ValueError, TypeError):
+            return
+        self._current_condition = max(0, min(999, num))
+        self._update_condition_window()
+
     def _resolve_gid(self, group_id):
         if group_id is not None:
             return group_id
@@ -1038,7 +1080,9 @@ class Player:
 
     async def _run_packet_condition(self, name, func, packet, store_list, cond_type):
         try:
-            await func(self, packet)
+            result = await func(self, packet)
+            if result:
+                self._advance_condition(name)
         except Exception as e:
             try:
                 for idx, cond in enumerate(store_list):
@@ -1055,9 +1099,12 @@ class Player:
         self._periodic_ctx.current = name
         try:
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(
+            result = await loop.run_in_executor(
                 self._cond_executor, lambda: asyncio.run(func(self))
             )
+            if result:
+                self._advance_condition(name)
+            return result
         except Exception as e:
             try:
                 with self._periodic_cond_lock:
@@ -1074,6 +1121,7 @@ class Player:
                 print(
                     f"\nError executing periodical condition: {name}\nError: {e}\nCondition was removed."
                 )
+            return False
         finally:
             self._periodic_ctx.current = None
    
