@@ -52,17 +52,6 @@ from funcs import randomize_time
 from conditioncreator import ConditionModifier
 from editor import Editor
 
-
-def _to_bool(value, default=False):
-    if isinstance(value, bool):
-        return value
-    if value in {None, ""}:
-        return default
-    if isinstance(value, str):
-        return value.lower() in {"1", "true", "yes", "on"}
-    return bool(value)
-
-
 class CheckableComboBox(QComboBox):
     """ComboBox that allows selecting multiple items using check boxes."""
 
@@ -461,11 +450,10 @@ class loadFull(QDialog):
                     )
                     if index is None:
                         continue
-                    player_obj = self.players[index][0]
                     loaded_names.append(name)
-                    player_obj.recv_packet_conditions = []
-                    player_obj.send_packet_conditions = []
-                    player_obj.periodical_conditions = []
+                    self.players[index][0].recv_packet_conditions = []
+                    self.players[index][0].send_packet_conditions = []
+                    self.players[index][0].periodical_conditions = []
                     self.players[i][0].periodical_conditions = []
                     self.text_editors[i].setText("""import gfless_api
 # Gets current player object
@@ -476,26 +464,20 @@ alts = [sublist[0] if sublist[0] is not None else None for sublist in self.playe
 alts.remove(player)
 
 """)
-                    player_obj.script_loaded = True
+                    self.players[index][0].script_loaded = True
 
                     # load scripts
                     script_files = os.listdir(f"{self.folder_path}/{self.setup_widgets[i][0].text()}/script")
-                    script_txt_files = sorted(
-                        [file for file in script_files if file.endswith(".txt")],
-                        key=str.lower,
-                    )
+                    script_txt_files = [file for file in script_files if file.endswith(".txt")]
                     if len(script_txt_files) > 0:
                         with open(f"{self.folder_path}/{self.setup_widgets[i][0].text()}/script/{script_txt_files[0]}", 'r') as file:
                             self.text_editors[index].setText(file.read())
 
                     # load conditions
                     conditions_files = os.listdir(f"{self.folder_path}/{self.setup_widgets[i][0].text()}/conditions")
-                    conditions_txt_files = sorted(
-                        [file for file in conditions_files if file.endswith(".txt")],
-                        key=str.lower,
-                    )
-                    for cond_file in conditions_txt_files:
-                        cond_path = f"{self.folder_path}/{self.setup_widgets[i][0].text()}/conditions/{cond_file}"
+                    conditions_txt_files = [file for file in conditions_files if file.endswith(".txt")]
+                    for k in range(len(conditions_txt_files)):
+                        cond_path = f"{self.folder_path}/{self.setup_widgets[i][0].text()}/conditions/{conditions_txt_files[k]}"
                         with open(cond_path, 'r') as file:
                             cond_type = file.readline().strip()
                             running = file.readline().strip()
@@ -505,16 +487,13 @@ alts.remove(player)
                             base_name = os.path.splitext(os.path.basename(cond_path))[0]
 
                             if cond_type == "recv_packet":
-                                player_obj.recv_packet_conditions.append([base_name, script, running_bool])
+                                self.players[index][0].recv_packet_conditions.append([base_name, script, running_bool])
                             elif cond_type == "send_packet":
-                                player_obj.send_packet_conditions.append([base_name, script, running_bool])
+                                self.players[index][0].send_packet_conditions.append([base_name, script, running_bool])
                             else:
-                                player_obj.periodical_conditions.append(
-                                    PeriodicCondition(base_name, script, running_bool, 1)
+                                self.players[index][0].periodical_conditions.append(
+                                    [base_name, script, running_bool, 1]
                                 )
-
-                    player_obj.sort_conditions()
-                    player_obj.reset_condition_pointer()
 
                 if selected_names:
                     self.setup_widgets[i][1].removeItems(selected_names)
@@ -670,7 +649,7 @@ class GroupScriptDialog(QDialog):
                 QMessageBox.warning(self, "Load Failed", f"Invalid setup folder: {setup_path}")
                 return
 
-            script_files = sorted([f for f in os.listdir(script_dir) if f.endswith('.txt')], key=str.lower)
+            script_files = sorted([f for f in os.listdir(script_dir) if f.endswith('.txt')])
             if not script_files:
                 QMessageBox.warning(self, "Load Failed", f"No scripts found in {script_dir}")
                 return
@@ -683,7 +662,7 @@ class GroupScriptDialog(QDialog):
             with open(os.path.join(script_dir, chosen), "r") as file:
                 script_text = file.read()
 
-            cond_files = sorted([f for f in os.listdir(cond_dir) if f.endswith('.txt')], key=str.lower)
+            cond_files = sorted([f for f in os.listdir(cond_dir) if f.endswith('.txt')])
             cond_data = []
             for cf in cond_files:
                 with open(os.path.join(cond_dir, cf), "r") as cfile:
@@ -691,8 +670,6 @@ class GroupScriptDialog(QDialog):
                     running = cfile.readline().strip()
                     script = cfile.read().strip()
                 cond_data.append((os.path.splitext(cf)[0], c_type, script, running))
-
-            cond_data.sort(key=lambda item: item[0].lower())
 
             self.text_editors[idx].setText(script_text)
             player_obj.recv_packet_conditions = []
@@ -707,8 +684,6 @@ class GroupScriptDialog(QDialog):
                     player_obj.send_packet_conditions.append([name, cscript, running_bool])
                 else:
                     player_obj.periodical_conditions.append(PeriodicCondition(name, cscript, running_bool, 1))
-
-            player_obj.sort_conditions()
 
             if role == "leader":
                 player_obj.attr19 = 0
@@ -756,9 +731,6 @@ class MyWindow(QMainWindow):
         self.group_member_setup_path = self.settings.value("groupMemberSetupPath")
         self.group_script_group_counter = 0
         self.group_leaders = []
-        self.use_sequential_conditions = _to_bool(
-            self.settings.value("useSequentialConditions", False)
-        )
 
         if windowScreenGeometry:
             self.restoreGeometry( windowScreenGeometry )
@@ -901,15 +873,6 @@ class MyWindow(QMainWindow):
         setLightTheme()
         self.settings.setValue("colorTheme", 1)
 
-    def set_sequential_conditions_enabled(self, enabled: bool):
-        self.use_sequential_conditions = bool(enabled)
-        self.settings.setValue("useSequentialConditions", int(enabled))
-        for player_obj, _ in self.players:
-            try:
-                player_obj.set_sequential_conditions(self.use_sequential_conditions)
-            except Exception:
-                pass
-
     def open_server_config(self):
         from server_config import ServerConfigDialog
         dialog = ServerConfigDialog(parent=self)
@@ -977,7 +940,6 @@ class MyWindow(QMainWindow):
         player.recv_packet_conditions = []
         player.send_packet_conditions = []
         player.periodical_conditions = []
-        player.reset_condition_pointer()
         player.script_loaded = False
 
         try:
@@ -1105,11 +1067,10 @@ class MyWindow(QMainWindow):
 
         player = Player(char_name, on_disconnect=self.player_disconnected)
         self.players.append([player, None])
-        player.set_sequential_conditions(self.use_sequential_conditions)
 
         # Create a layout for the tab
         tab_layout = QVBoxLayout(tab)
-
+   
         # Create a text editor with light blue background
         text_editor = Editor(tab)
         self.text_editors.append(text_editor)
