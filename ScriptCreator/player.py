@@ -174,6 +174,8 @@ class Player:
         self._periodic_ctx = threading.local()
         self._periodic_cond_lock = threading.Lock()
         self._condition_status = {}
+        self.use_sequential_conditions = False
+        self._manual_condition_state = {}
         # dedicated executor so multiple conditions can run in parallel
         self._cond_executor = ThreadPoolExecutor(max_workers=4)
         self._periodic_main_task = None
@@ -254,6 +256,10 @@ class Player:
 
     def _update_condition_window(self):
         with self._periodic_cond_lock:
+            if not self.use_sequential_conditions:
+                self._condition_status = {}
+                return
+
             entries: list[tuple[str, object, str, Optional[int]]] = []
             numeric_values: list[int] = []
 
@@ -335,6 +341,8 @@ class Player:
             self._update_condition_window()
 
     def _advance_condition(self, name):
+        if not self.use_sequential_conditions:
+            return
         num = self._parse_condition_number(name)
         if num is not None:
             # Move pointer to the next numeric condition after the one just
@@ -348,7 +356,62 @@ class Player:
         except (ValueError, TypeError):
             return
         self._current_condition = max(0, min(999, num))
-        self._update_condition_window()
+        if self.use_sequential_conditions:
+            self._update_condition_window()
+
+    def reset_condition_pointer(self):
+        with self._periodic_cond_lock:
+            numeric_values = []
+            for cond in self.recv_packet_conditions:
+                num = self._parse_condition_number(cond[0])
+                if num is not None:
+                    numeric_values.append(num)
+            for cond in self.send_packet_conditions:
+                num = self._parse_condition_number(cond[0])
+                if num is not None:
+                    numeric_values.append(num)
+            for cond in self.periodical_conditions:
+                num = self._parse_condition_number(cond.name)
+                if num is not None:
+                    numeric_values.append(num)
+
+        self._current_condition = min(numeric_values) if numeric_values else 0
+        if self.use_sequential_conditions:
+            self.request_condition_status_refresh()
+
+    def set_sequential_conditions(self, enabled: bool):
+        enabled = bool(enabled)
+        if enabled == self.use_sequential_conditions:
+            return
+
+        if enabled:
+            with self._periodic_cond_lock:
+                snapshot = {}
+                for cond in self.recv_packet_conditions:
+                    snapshot[("recv_packet", cond[0])] = cond[2]
+                for cond in self.send_packet_conditions:
+                    snapshot[("send_packet", cond[0])] = cond[2]
+                for cond in self.periodical_conditions:
+                    snapshot[("periodical", cond.name)] = cond.active
+            self._manual_condition_state = snapshot
+            self.use_sequential_conditions = True
+            self.reset_condition_pointer()
+            return
+
+        # disabling sequential mode
+        self.use_sequential_conditions = False
+        with self._periodic_cond_lock:
+            for cond in self.recv_packet_conditions:
+                key = ("recv_packet", cond[0])
+                cond[2] = self._manual_condition_state.get(key, cond[2])
+            for cond in self.send_packet_conditions:
+                key = ("send_packet", cond[0])
+                cond[2] = self._manual_condition_state.get(key, cond[2])
+            for cond in self.periodical_conditions:
+                key = ("periodical", cond.name)
+                cond.active = self._manual_condition_state.get(key, cond.active)
+        self._manual_condition_state = {}
+        self.request_condition_status_refresh()
 
     def _resolve_gid(self, group_id):
         if group_id is not None:
