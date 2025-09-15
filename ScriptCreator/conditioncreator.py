@@ -20,7 +20,6 @@ from PyQt5.QtCore import QTimer, Qt, QSettings, QSize
 from PyQt5.QtGui import QFont, QFontMetricsF, QColor, QIcon
 import os
 import gfless_api
-from player import PeriodicCondition
 
 class ConditionReview(QDialog):
     def __init__(self, player, script, condition_type, cond_modifier, cond_creator, replace_index = None, cond_name = None):
@@ -169,19 +168,9 @@ class ConditionReview(QDialog):
     def modify_condition(self):
         script = self.generated_script.toPlainText()
         if self.condition_type == 1:
-            name = self.player.recv_packet_conditions[self.index_to_replace][0]
             self.player.recv_packet_conditions[self.index_to_replace][1] = script
-            self.player._compiled_recv_conditions.pop(name, None)
         elif self.condition_type == 2:
-            name = self.player.send_packet_conditions[self.index_to_replace][0]
             self.player.send_packet_conditions[self.index_to_replace][1] = script
-            self.player._compiled_send_conditions.pop(name, None)
-        else:
-            cond = self.player.periodical_conditions[self.index_to_replace]
-            cond.code = script
-            cond.func = None
-        # ensure condition scheduler is active
-        self.player.start_condition_loop()
         self.cond_modifier.refresh()
         self.accept()
 
@@ -200,15 +189,11 @@ class ConditionReview(QDialog):
                     return
             self.player.send_packet_conditions.append([self.condition_name.text(), script, False])
         else:
-            for cond in self.player.periodical_conditions:
-                if cond.name == self.condition_name.text():
+            for i in range(len(self.player.periodical_conditions)):
+                if self.player.periodical_conditions[i][0] == self.condition_name.text():
                     self.condition_name_already_exists_msg_box()
                     return
-            self.player.periodical_conditions.append(
-                PeriodicCondition(self.condition_name.text(), script, False, 1)
-            )
-        # start condition checks if needed
-        self.player.start_condition_loop()
+            self.player.periodical_conditions.append([self.condition_name.text(), script, False, 1])
         self.cond_modifier.refresh()
         self.cond_creator.accept()
         self.accept()
@@ -228,14 +213,11 @@ class ConditionReview(QDialog):
                     return
             self.player.send_packet_conditions.append([self.condition_name.text(), script, True])
         else:
-            for cond in self.player.periodical_conditions:
-                if cond.name == self.condition_name.text():
+            for i in range(len(self.player.periodical_conditions)):
+                if self.player.periodical_conditions[i][0] == self.condition_name.text():
                     self.condition_name_already_exists_msg_box()
                     return
-            self.player.periodical_conditions.append(
-                PeriodicCondition(self.condition_name.text(), script, True, 1)
-            )
-        self.player.start_condition_loop()
+            self.player.periodical_conditions.append([self.condition_name.text(), script, True, 1])
         self.cond_modifier.refresh()
         self.cond_creator.accept()
         self.accept()
@@ -584,14 +566,6 @@ class ConditionCreator(QDialog):
             self.action_widgets[index].append(new_item_vnum)
             self.action_widgets[index].append(new_inventory_type)
         elif condition == "put_item_in_trade":
-            gold_label = QLabel("Gold:")
-            gold_edit = QLineEdit()
-
-            group_box_layout.addWidget(gold_label, 0, 2)
-            group_box_layout.addWidget(gold_edit, 0, 3)
-
-            self.action_widgets[index].extend([gold_label, gold_edit])
-
             for n in range(10):
                 inv_combo = QComboBox()
                 inv_combo.addItems(["equip", "main", "etc"])
@@ -600,12 +574,11 @@ class ConditionCreator(QDialog):
                 q_label = QLabel("qty:")
                 q_edit = QLineEdit()
 
-                row_offset = n + 1
-                group_box_layout.addWidget(inv_combo, row_offset, 2)
-                group_box_layout.addWidget(v_label, row_offset, 3)
-                group_box_layout.addWidget(v_edit, row_offset, 4)
-                group_box_layout.addWidget(q_label, row_offset, 5)
-                group_box_layout.addWidget(q_edit, row_offset, 6)
+                group_box_layout.addWidget(inv_combo, n, 2)
+                group_box_layout.addWidget(v_label, n, 3)
+                group_box_layout.addWidget(v_edit, n, 4)
+                group_box_layout.addWidget(q_label, n, 5)
+                group_box_layout.addWidget(q_edit, n, 6)
 
                 self.action_widgets[index].extend([inv_combo, v_label, v_edit, q_label, q_edit])
         elif condition == "auto_login":
@@ -766,12 +739,9 @@ class ConditionCreator(QDialog):
 
     def construct_script(self, conditions_array, actions_array):
         need_import = any(action[0] in ("auto_login", "relogin") for action in actions_array)
-        need_asyncio = any(action[0] in ("wait", "walk_to_point") for action in actions_array)
         script = ""
         if need_import:
             script += "import gfless_api\n"
-        if need_asyncio:
-            script += "import asyncio\n"
         if conditions_array[0][0] == "IF":
             script += "if "
         else:
@@ -854,7 +824,7 @@ class ConditionCreator(QDialog):
         for i in range(len(actions_array)):
             script += "\n\t"
             if actions_array[i][0] == "wait":
-                script += f'await asyncio.sleep(self.randomize_delay({actions_array[i][1]},{actions_array[i][2]}))'
+                script += f'time.sleep(self.randomize_delay({actions_array[i][1]},{actions_array[i][2]}))'
             elif actions_array[i][0] == "send_packet":
                 if actions_array[i][2] == "string":
                     script += f'self.api.send_packet("{actions_array[i][1]}")'
@@ -876,31 +846,30 @@ class ConditionCreator(QDialog):
             elif actions_array[i][0] == "walk_to_point":
                 if len(actions_array[i]) >= 6:
                     script += (
-                        f'await self.walk_to_point([{actions_array[i][1]},{actions_array[i][2]}], '
+                        f'self.walk_to_point([{actions_array[i][1]},{actions_array[i][2]}], '
                         f'{actions_array[i][3]}, skip={actions_array[i][4]}, timeout={actions_array[i][5]})'
                     )
                 elif len(actions_array[i]) >= 4:
-                    script += f'await self.walk_to_point([{actions_array[i][1]},{actions_array[i][2]}], {actions_array[i][3]})'
+                    script += f'self.walk_to_point([{actions_array[i][1]},{actions_array[i][2]}], {actions_array[i][3]})'
                 else:
-                    script += f'await self.walk_to_point([{actions_array[i][1]},{actions_array[i][2]}])'
+                    script += f'self.walk_to_point([{actions_array[i][1]},{actions_array[i][2]}])'
             elif actions_array[i][0] == "player_walk" or actions_array[i][0] == "pets_walk":
                 script += f'self.api.{actions_array[i][0]}({actions_array[i][1]}, {actions_array[i][2]})'
             elif actions_array[i][0] == "use_item":
                 script += f'self.use_item({int(actions_array[i][1])}, "{actions_array[i][2]}")'
             elif actions_array[i][0] == "put_item_in_trade":
-                inv_map = {"equip": 0, "main": 1, "etc": 2}
-                gold = int(actions_array[i][1]) if len(actions_array[i]) > 1 and actions_array[i][1] else 0
                 items = []
-                for j in range(2, len(actions_array[i]), 3):
+                inv_map = {"equip": 0, "main": 1, "etc": 2}
+                for j in range(1, len(actions_array[i]), 3):
                     inv = actions_array[i][j]
                     v = actions_array[i][j+1] if j+1 < len(actions_array[i]) else ""
                     q = actions_array[i][j+2] if j+2 < len(actions_array[i]) else ""
                     if inv and v and q:
                         inv_code = inv_map.get(inv, inv)
                         items.append((int(inv_code), int(v), int(q)))
-                if items or gold:
+                if items:
                     items_str = ", ".join(f"({inv}, {v}, {q})" for inv, v, q in items)
-                    script += f'self.put_items_in_trade([{items_str}], gold={gold})'
+                    script += f'self.put_items_in_trade([{items_str}])'
             elif actions_array[i][0] == "auto_login":
                 script += (
                     "# Save parameters and login (performs DLL injection)\n"
@@ -1038,33 +1007,24 @@ class ConditionModifier(QDialog):
             index = self.table_widget.currentRow()
             cond = self.player.recv_packet_conditions[index]
             script += "recv_packet"
-            active = cond[2]
-            code = cond[1]
-            name = cond[0]
         elif condition_type == "send_packet":
             index = self.table_widget.currentRow() - len(self.player.recv_packet_conditions)
             cond = self.player.send_packet_conditions[index]
             script += "send_packet"
-            active = cond[2]
-            code = cond[1]
-            name = cond[0]
         else:
             index = self.table_widget.currentRow() - len(self.player.recv_packet_conditions) - len(self.player.send_packet_conditions)
             cond = self.player.periodical_conditions[index]
             script += "periodical"
-            active = cond.active
-            code = cond.code
-            name = cond.name
 
-        if active:
+        if cond[2]:
             script += "\n1\n"
         else:
             script += "\n0\n"
 
-        script += code
+        script += cond[1]
 
         file_dialog = QFileDialog()
-        file_name, _ = file_dialog.getSaveFileName(self, "Save Condition", name, "Text Files (*.txt);;All Files (*)")
+        file_name, _ = file_dialog.getSaveFileName(self, "Save Condition", cond[0], "Text Files (*.txt);;All Files (*)")
         if file_name:
             with open(file_name, 'w') as file:
                 file.write(script)
@@ -1091,9 +1051,7 @@ class ConditionModifier(QDialog):
                     elif cond_type == "send_packet":
                         self.player.send_packet_conditions.append([base_name, script, running_bool])
                     else:
-                        self.player.periodical_conditions.append(
-                            PeriodicCondition(base_name, script, running_bool, 1)
-                        )
+                        self.player.periodical_conditions.append([base_name, script, running_bool, 1])
 
         self.refresh()
 
@@ -1145,22 +1103,22 @@ class ConditionModifier(QDialog):
             else:
                 self.set_row_background_color(self.table_widget.rowCount()-1, QColor(214, 139, 139))
 
-        for cond in periodical_conditions:
+        for i in range(len(periodical_conditions)):
             self.table_widget.insertRow(self.table_widget.rowCount())
 
             cond_type = QTableWidgetItem()
             cond_type.setText("periodical")
             cond_type.setFlags(cond_type.flags() & ~Qt.ItemIsEditable)
-            cond_type.setForeground(QColor(0, 0, 0))
+            cond_type.setForeground(QColor(0, 0, 0))  # Set text color to black
             self.table_widget.setItem(self.table_widget.rowCount()-1, 0, cond_type)
 
             cond_name = QTableWidgetItem()
-            cond_name.setText(cond.name)
+            cond_name.setText(periodical_conditions[i][0])
             cond_name.setFlags(cond_name.flags() & ~Qt.ItemIsEditable)
-            cond_name.setForeground(QColor(0, 0, 0))
+            cond_name.setForeground(QColor(0, 0, 0))  # Set text color to black
             self.table_widget.setItem(self.table_widget.rowCount()-1, 1, cond_name)
 
-            if cond.active:
+            if periodical_conditions[i][2]:
                 self.set_row_background_color(self.table_widget.rowCount()-1, QColor(127, 250, 160))
             else:
                 self.set_row_background_color(self.table_widget.rowCount()-1, QColor(214, 139, 139))
@@ -1190,7 +1148,7 @@ class ConditionModifier(QDialog):
         else:
             index = self.table_widget.currentRow() - len(self.player.recv_packet_conditions) - len(self.player.send_packet_conditions)
             cond = self.player.periodical_conditions[index]
-            condition_review = ConditionReview(self.player, cond.code, 0, self, None, index, cond.name)
+            condition_review = ConditionReview(self.player, cond[1], 0, self, None, index, cond[0])
             condition_review.exec_()
 
         #self.refresh()
@@ -1200,21 +1158,12 @@ class ConditionModifier(QDialog):
             condition_type = self.table_widget.selectedItems()[0].text()
 
             if condition_type == "recv_packet":
-                idx = self.table_widget.currentRow()
-                name = self.player.recv_packet_conditions[idx][0]
-                self.player.recv_packet_conditions.pop(idx)
-                self.player._compiled_recv_conditions.pop(name, None)
+                self.player.recv_packet_conditions.pop(self.table_widget.currentRow())
             elif condition_type == "send_packet":
-                idx = self.table_widget.currentRow() - len(self.player.recv_packet_conditions)
-                name = self.player.send_packet_conditions[idx][0]
-                self.player.send_packet_conditions.pop(idx)
-                self.player._compiled_send_conditions.pop(name, None)
+                self.player.send_packet_conditions.pop(self.table_widget.currentRow() - len(self.player.recv_packet_conditions))
             else:
-                idx = self.table_widget.currentRow() - len(self.player.recv_packet_conditions) - len(self.player.send_packet_conditions)
-                cond = self.player.periodical_conditions.pop(idx)
-                if cond.task:
-                    cond.task.cancel()
-        except Exception:
+                self.player.periodical_conditions.pop(self.table_widget.currentRow() - len(self.player.recv_packet_conditions) - len(self.player.send_packet_conditions))
+        except:
             pass
         self.refresh()
 
@@ -1227,8 +1176,7 @@ class ConditionModifier(QDialog):
             elif condition_type == "send_packet":
                 self.player.send_packet_conditions[self.table_widget.currentRow() - len(self.player.recv_packet_conditions)][2] = True
             else:
-                index = self.table_widget.currentRow() - len(self.player.recv_packet_conditions) - len(self.player.send_packet_conditions)
-                self.player.periodical_conditions[index].active = True
+                self.player.periodical_conditions[self.table_widget.currentRow() - len(self.player.recv_packet_conditions) - len(self.player.send_packet_conditions)][2] = True
         except:
             pass
         self.refresh()
@@ -1242,8 +1190,7 @@ class ConditionModifier(QDialog):
             elif condition_type == "send_packet":
                 self.player.send_packet_conditions[self.table_widget.currentRow() - len(self.player.recv_packet_conditions)][2] = False
             else:
-                index = self.table_widget.currentRow() - len(self.player.recv_packet_conditions) - len(self.player.send_packet_conditions)
-                self.player.periodical_conditions[index].active = False
+                self.player.periodical_conditions[self.table_widget.currentRow() - len(self.player.recv_packet_conditions) - len(self.player.send_packet_conditions)][2] = False
         except:
             pass
         self.refresh()
@@ -1271,8 +1218,7 @@ class ConditionModifier(QDialog):
                     self.pause_condition_button.setVisible(False)
                     self.run_condition_button.setVisible(True)
             else:
-                index = self.table_widget.currentRow() - len(self.player.recv_packet_conditions) - len(self.player.send_packet_conditions)
-                if self.player.periodical_conditions[index].active:
+                if self.player.periodical_conditions[self.table_widget.currentRow() - len(self.player.recv_packet_conditions) - len(self.player.send_packet_conditions)][2]:
                     self.pause_condition_button.setVisible(True)
                     self.run_condition_button.setVisible(False)
                 else:
