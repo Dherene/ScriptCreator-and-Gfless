@@ -109,6 +109,59 @@ class PeriodicCondition:
     task: Optional[asyncio.Task] = field(default=None, repr=False)
     _code_cache: str = field(default="", repr=False)
 
+    # ------------------------------------------------------------------ #
+    # Legacy list-style access helpers
+    # ------------------------------------------------------------------ #
+
+    def _as_tuple(self):
+        """Return the condition data using the legacy list layout.
+
+        Older scripts treated conditions as ``[name, code, active, interval]``
+        lists.  Exposing the values as a tuple allows ``__getitem__`` and
+        slicing to behave identically without copying in the common case.
+        """
+
+        return (self.name, self.code, self.active, self.interval)
+
+    def __len__(self):  # pragma: no cover - trivial
+        return 4
+
+    def __iter__(self):  # pragma: no cover - trivial
+        return iter(self._as_tuple())
+
+    def __getitem__(self, index):
+        data = self._as_tuple()
+        if isinstance(index, slice):
+            return list(data[index])
+        try:
+            return data[index]
+        except IndexError as exc:  # pragma: no cover - defensive
+            raise IndexError("PeriodicCondition index out of range") from exc
+
+    def __setitem__(self, index, value):
+        if isinstance(index, slice):  # pragma: no cover - defensive
+            raise TypeError("PeriodicCondition does not support slice assignment")
+
+        if index == 0:
+            self.name = str(value)
+            return
+        if index == 1:
+            self.code = str(value)
+            # Force recompilation on the next loop iteration
+            self._code_cache = ""
+            return
+        if index == 2:
+            self.active = bool(value)
+            return
+        if index == 3:
+            try:
+                self.interval = float(value)
+            except (TypeError, ValueError) as exc:  # pragma: no cover - defensive
+                raise TypeError("interval must be a number") from exc
+            return
+
+        raise IndexError("PeriodicCondition index out of range")
+
 
 # player class which can be reused in other standalone apis
 class Player:
