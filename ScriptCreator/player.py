@@ -4,6 +4,7 @@ import phoenix
 import threading
 import asyncio
 import ast
+import contextlib
 from dataclasses import dataclass, field
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Callable
@@ -1099,6 +1100,38 @@ class Player:
         self._init_script_attrs()
         self.leadername = ""
         self.leaderID = 0
+
+    def clear_conditions(self):
+        """Remove all scripted conditions and cancel any running periodic tasks."""
+
+        self.recv_packet_conditions.clear()
+        self.send_packet_conditions.clear()
+        self._compiled_recv_conditions.clear()
+        self._compiled_send_conditions.clear()
+
+        async def _cancel_periodic():
+            with self._periodic_cond_lock:
+                conds = list(self.periodical_conditions)
+                self.periodical_conditions.clear()
+            for cond in conds:
+                task = cond.task
+                if task is not None:
+                    task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await task
+                cond.task = None
+                cond.func = None
+            self._periodic_walking.clear()
+            self._last_periodic_walk.clear()
+
+        try:
+            if self.loop.is_running():
+                future = asyncio.run_coroutine_threadsafe(_cancel_periodic(), self.loop)
+                future.result()
+            else:
+                asyncio.run(_cancel_periodic())
+        except Exception as exc:
+            print(f"Error clearing periodical conditions: {exc}")
 
     def invite_members(self):
         """Invite all stored group members with a 3-second delay between invites."""

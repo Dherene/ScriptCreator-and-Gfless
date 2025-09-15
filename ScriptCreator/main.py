@@ -451,9 +451,8 @@ class loadFull(QDialog):
                     if index is None:
                         continue
                     loaded_names.append(name)
-                    self.players[index][0].recv_packet_conditions = []
-                    self.players[index][0].send_packet_conditions = []
-                    self.players[index][0].periodical_conditions = []
+                    player = self.players[index][0]
+                    player.clear_conditions()
                     self.players[i][0].periodical_conditions = []
                     self.text_editors[i].setText("""import gfless_api
 # Gets current player object
@@ -464,7 +463,7 @@ alts = [sublist[0] if sublist[0] is not None else None for sublist in self.playe
 alts.remove(player)
 
 """)
-                    self.players[index][0].script_loaded = True
+                    player.script_loaded = True
 
                     # load scripts
                     script_files = os.listdir(f"{self.folder_path}/{self.setup_widgets[i][0].text()}/script")
@@ -487,12 +486,12 @@ alts.remove(player)
                             base_name = os.path.splitext(os.path.basename(cond_path))[0]
 
                             if cond_type == "recv_packet":
-                                self.players[index][0].recv_packet_conditions.append([base_name, script, running_bool])
+                                player.recv_packet_conditions.append([base_name, script, running_bool])
                             elif cond_type == "send_packet":
-                                self.players[index][0].send_packet_conditions.append([base_name, script, running_bool])
+                                player.send_packet_conditions.append([base_name, script, running_bool])
                             else:
-                                self.players[index][0].periodical_conditions.append(
-                                    [base_name, script, running_bool, 1]
+                                player.periodical_conditions.append(
+                                    PeriodicCondition(base_name, script, running_bool, 1)
                                 )
 
                 if selected_names:
@@ -640,10 +639,12 @@ class GroupScriptDialog(QDialog):
                 continue
 
             player_obj.reset_attrs()
+            player_obj.clear_conditions()
 
             setup_path, role = roles[player_obj.name]
             script_dir = os.path.join(setup_path, "script")
             cond_dir = os.path.join(setup_path, "conditions")
+
 
             if not os.path.isdir(script_dir) or not os.path.isdir(cond_dir):
                 QMessageBox.warning(self, "Load Failed", f"Invalid setup folder: {setup_path}")
@@ -672,10 +673,6 @@ class GroupScriptDialog(QDialog):
                 cond_data.append((os.path.splitext(cf)[0], c_type, script, running))
 
             self.text_editors[idx].setText(script_text)
-            player_obj.recv_packet_conditions = []
-            player_obj.send_packet_conditions = []
-            player_obj.periodical_conditions = []
-
             for name, ctype, cscript, running in cond_data:
                 running_bool = True if running == "1" else False
                 if ctype == "recv_packet":
@@ -690,6 +687,7 @@ class GroupScriptDialog(QDialog):
                 player_obj.attr20 = player_obj.name
                 player_obj.leadername = player_obj.name
                 player_obj.leaderID = player_obj.id
+                player_obj.script_loaded = True
                 leader_obj = player_obj
             else:
                 player_obj.attr19 = self.group_id
@@ -712,9 +710,15 @@ class GroupScriptDialog(QDialog):
             for m in member_objs:
                 m.leaderID = leader_id
 
+        participants = [p for p in [leader_obj] + member_objs if p]
+
         # start condition loops for all participants in parallel
-        for p in [leader_obj] + member_objs:
+        for p in participants:
             threading.Thread(target=p.start_condition_loop, daemon=True).start()
+
+        # refresh party data now that scripts are in place
+        if participants:
+            self.update_group_party_info()
 
         QMessageBox.information(self, "Group Script Setup", "Setup successfully loaded.")
         self.accept()
@@ -937,9 +941,7 @@ class MyWindow(QMainWindow):
         except StopIteration:
             return
 
-        player.recv_packet_conditions = []
-        player.send_packet_conditions = []
-        player.periodical_conditions = []
+        player.clear_conditions()
         player.script_loaded = False
 
         try:
