@@ -254,8 +254,6 @@ class Player:
     def _update_condition_window(self):
         start = max(0, self._current_condition - 3)
         end = self._current_condition + 7
-        if self._current_condition < 3:
-            end = 9
         
         def should_enable(name):
             if name.startswith("00") and (len(name) >= 3 and not name[2].isdigit()):
@@ -273,7 +271,9 @@ class Player:
     def _advance_condition(self, name):
         num = self._parse_condition_number(name)
         if num is not None:
-            self._current_condition = num
+            # Move pointer to the next numeric condition after the one just
+            # executed so the sequence progresses forward.
+            self._current_condition = min(999, num + 1)
             self._update_condition_window()
 
     def goto_condition(self, number):
@@ -1081,7 +1081,11 @@ class Player:
     async def _run_packet_condition(self, name, func, packet, store_list, cond_type):
         try:
             result = await func(self, packet)
-            if result:
+            # Advance to the next condition unless the function explicitly
+            # returns False. This allows condition scripts that don't
+            # return anything to still move the sequence forward, while
+            # giving scripts the option to return False to retry.
+            if result is not False:
                 self._advance_condition(name)
         except Exception as e:
             try:
@@ -1102,7 +1106,9 @@ class Player:
             result = await loop.run_in_executor(
                 self._cond_executor, lambda: asyncio.run(func(self))
             )
-            if result:
+            # Move the condition pointer forward unless the condition
+            # explicitly signals a retry by returning False.
+            if result is not False:
                 self._advance_condition(name)
             return result
         except Exception as e:
