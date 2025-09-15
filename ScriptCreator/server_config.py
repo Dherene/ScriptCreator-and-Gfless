@@ -1,10 +1,27 @@
 """Dialog to configure server login using gfless_api."""
 
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QLabel, QComboBox, QPushButton, QLineEdit
+    QDialog,
+    QVBoxLayout,
+    QLabel,
+    QComboBox,
+    QPushButton,
+    QLineEdit,
+    QCheckBox,
 )
 from PyQt5.QtCore import QSettings
 import gfless_api
+
+
+def _to_bool(value, default=False):
+    if isinstance(value, bool):
+        return value
+    if value in {None, ""}:
+        return default
+    if isinstance(value, str):
+        return value.lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
 
 class ServerConfigDialog(QDialog):
     """Dialog to select language, server, channel and character."""
@@ -50,6 +67,9 @@ class ServerConfigDialog(QDialog):
         self.pid_edit.setPlaceholderText("auto")
         layout.addWidget(self.pid_edit)
 
+        self.sequential_checkbox = QCheckBox("Use sequential conditions")
+        layout.addWidget(self.sequential_checkbox)
+
         self.confirm_button = QPushButton("Confirm")
         self.confirm_button.clicked.connect(self.apply)
         layout.addWidget(self.confirm_button)
@@ -63,10 +83,19 @@ class ServerConfigDialog(QDialog):
         server = self.server_combo.currentIndex()
         channel = self.channel_combo.currentIndex()
         char = self.char_combo.currentIndex() - 1
+        use_sequential = self.sequential_checkbox.isChecked()
 
         gfless_api.save_config(lang, server, channel, char)
         # persist the last used PID for convenience
         self.settings.setValue("pid", pid_text)
+        self.settings.setValue("useSequentialConditions", int(use_sequential))
+
+        parent = self.parent()
+        if parent and hasattr(parent, "set_sequential_conditions_enabled"):
+            try:
+                parent.set_sequential_conditions_enabled(use_sequential)
+            except Exception:
+                pass
 
         gfless_api.close_login_pipe()
         try:
@@ -86,6 +115,7 @@ class ServerConfigDialog(QDialog):
     def load_settings(self):
         lang, server, channel, char = gfless_api.load_config()
         pid = self.settings.value("pid", "")
+        use_sequential = _to_bool(self.settings.value("useSequentialConditions", False))
 
         self.lang_combo.setCurrentIndex(lang)
         self.server_combo.setCurrentIndex(server)
@@ -93,6 +123,7 @@ class ServerConfigDialog(QDialog):
         self.char_combo.setCurrentIndex(char + 1)
         if pid:
             self.pid_edit.setText(str(pid))
+        self.sequential_checkbox.setChecked(use_sequential)
 
     def _login_failed(self, message: str) -> None:
         """Handle a failed background login."""
