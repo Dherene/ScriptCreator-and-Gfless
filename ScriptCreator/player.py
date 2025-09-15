@@ -209,11 +209,7 @@ class Player:
         self.on_disconnect = on_disconnect
         
         # initialize 100 empty attributes so user can use them as he wants
-        for i in range(1, 50):
-            setattr(self, f'attr{i}', 0)
-
-        for i in range(51, 101):
-            setattr(self, f'attr{i}', [])
+        self._init_script_attrs()
 
         if name is not None:
             # initialize api
@@ -1081,10 +1077,26 @@ class Player:
     def split_packet(self, packet, delimeter = " "):
         return packet.split(delimeter)
 
-    def reset_attrs(self):
-        """Reset attr1 through attr99 to 0 and clear leader info."""
+    def _init_script_attrs(self):
+        """Assign default values for attr1 through attr99."""
+
+        attr_defaults = {i: list for i in range(51, 100)}
+        attr_defaults.update({
+            60: lambda: "",  # last attacker identifier
+            90: 0,  # trade workflow state
+            95: 0,  # trade mode flag
+            99: 0,  # general purpose flag used in scripts
+        })
+
         for i in range(1, 100):
-            setattr(self, f'attr{i}', 0)
+            default = attr_defaults.get(i, 0)
+            value = default() if callable(default) else default
+            setattr(self, f"attr{i}", value)
+
+    def reset_attrs(self):
+        """Reset attr1 through attr99 to their defaults and clear leader info."""
+
+        self._init_script_attrs()
         self.leadername = ""
         self.leaderID = 0
 
