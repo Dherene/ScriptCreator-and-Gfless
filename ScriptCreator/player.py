@@ -173,6 +173,7 @@ class Player:
         self._last_periodic_walk = {}
         self._periodic_ctx = threading.local()
         self._periodic_cond_lock = threading.Lock()
+        self._condition_status = {}
         # dedicated executor so multiple conditions can run in parallel
         self._cond_executor = ThreadPoolExecutor(max_workers=4)
         self._periodic_main_task = None
@@ -252,21 +253,86 @@ class Player:
         return int(match.group(1)) if match else None
 
     def _update_condition_window(self):
-        start = max(0, self._current_condition - 3)
-        end = self._current_condition + 7
-        
-        def should_enable(name):
-            if name.startswith("00") and (len(name) >= 3 and not name[2].isdigit()):
-                return True
-            num = self._parse_condition_number(name)
-            return num is not None and start <= num <= end
         with self._periodic_cond_lock:
+            entries: list[tuple[str, object, str, Optional[int]]] = []
+            numeric_values: list[int] = []
+
             for cond in self.periodical_conditions:
-                cond.active = should_enable(cond.name)
+                name = cond.name
+                num = self._parse_condition_number(name)
+                entries.append(("periodical", cond, name, num))
+                if num is not None:
+                    numeric_values.append(num)
+
             for cond in self.recv_packet_conditions:
-                cond[2] = should_enable(cond[0])
+                name = cond[0]
+                num = self._parse_condition_number(name)
+                entries.append(("recv_packet", cond, name, num))
+                if num is not None:
+                    numeric_values.append(num)
+
             for cond in self.send_packet_conditions:
-                cond[2] = should_enable(cond[0])
+                name = cond[0]
+                num = self._parse_condition_number(name)
+                entries.append(("send_packet", cond, name, num))
+                if num is not None:
+                    numeric_values.append(num)
+
+            current = self._current_condition
+            start = max(0, current - 3)
+            end = current + 7
+
+            if numeric_values:
+                numeric_values = sorted(set(numeric_values))
+                if current < numeric_values[0]:
+                    current = numeric_values[0]
+                else:
+                    current = next(
+                        (n for n in numeric_values if n >= current), numeric_values[-1]
+                    )
+                self._current_condition = current
+                start = max(0, current - 3)
+                end = current + 7
+
+            statuses = {}
+
+            def classify(name: str, num: Optional[int]):
+                if name.startswith("00") and (len(name) >= 3 and not name[2].isdigit()):
+                    return "always", True
+                if num is None:
+                    return "inactive", False
+                if num == self._current_condition:
+                    return "current", True
+                if start <= num <= end:
+                    return "window", True
+                return "inactive", False
+
+            for cond_type, container, name, num in entries:
+                status, active = classify(name, num)
+                statuses[(cond_type, name)] = status
+                if cond_type == "periodical":
+                    container.active = active
+                else:
+                    container[2] = active
+
+            self._condition_status = statuses
+
+    def sort_conditions(self):
+        with self._periodic_cond_lock:
+            self.recv_packet_conditions.sort(key=lambda cond: cond[0].lower())
+            self.send_packet_conditions.sort(key=lambda cond: cond[0].lower())
+            self.periodical_conditions.sort(key=lambda cond: cond.name.lower())
+        self.request_condition_status_refresh()
+
+    def get_condition_status(self, cond_type: str, name: str) -> Optional[str]:
+        with self._periodic_cond_lock:
+            return self._condition_status.get((cond_type, name))
+
+    def request_condition_status_refresh(self):
+        try:
+            self.loop.call_soon_threadsafe(self._update_condition_window)
+        except RuntimeError:
+            self._update_condition_window()
 
     def _advance_condition(self, name):
         num = self._parse_condition_number(name)

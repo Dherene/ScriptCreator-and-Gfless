@@ -468,16 +468,22 @@ alts.remove(player)
 
                     # load scripts
                     script_files = os.listdir(f"{self.folder_path}/{self.setup_widgets[i][0].text()}/script")
-                    script_txt_files = [file for file in script_files if file.endswith(".txt")]
+                    script_txt_files = sorted(
+                        [file for file in script_files if file.endswith(".txt")],
+                        key=str.lower,
+                    )
                     if len(script_txt_files) > 0:
                         with open(f"{self.folder_path}/{self.setup_widgets[i][0].text()}/script/{script_txt_files[0]}", 'r') as file:
                             self.text_editors[index].setText(file.read())
 
                     # load conditions
                     conditions_files = os.listdir(f"{self.folder_path}/{self.setup_widgets[i][0].text()}/conditions")
-                    conditions_txt_files = [file for file in conditions_files if file.endswith(".txt")]
-                    for k in range(len(conditions_txt_files)):
-                        cond_path = f"{self.folder_path}/{self.setup_widgets[i][0].text()}/conditions/{conditions_txt_files[k]}"
+                    conditions_txt_files = sorted(
+                        [file for file in conditions_files if file.endswith(".txt")],
+                        key=str.lower,
+                    )
+                    for cond_file in conditions_txt_files:
+                        cond_path = f"{self.folder_path}/{self.setup_widgets[i][0].text()}/conditions/{cond_file}"
                         with open(cond_path, 'r') as file:
                             cond_type = file.readline().strip()
                             running = file.readline().strip()
@@ -492,8 +498,10 @@ alts.remove(player)
                                 self.players[index][0].send_packet_conditions.append([base_name, script, running_bool])
                             else:
                                 self.players[index][0].periodical_conditions.append(
-                                    [base_name, script, running_bool, 1]
+                                    PeriodicCondition(base_name, script, running_bool, 1)
                                 )
+
+                    self.players[index][0].sort_conditions()
 
                 if selected_names:
                     self.setup_widgets[i][1].removeItems(selected_names)
@@ -649,7 +657,7 @@ class GroupScriptDialog(QDialog):
                 QMessageBox.warning(self, "Load Failed", f"Invalid setup folder: {setup_path}")
                 return
 
-            script_files = sorted([f for f in os.listdir(script_dir) if f.endswith('.txt')])
+            script_files = sorted([f for f in os.listdir(script_dir) if f.endswith('.txt')], key=str.lower)
             if not script_files:
                 QMessageBox.warning(self, "Load Failed", f"No scripts found in {script_dir}")
                 return
@@ -662,7 +670,7 @@ class GroupScriptDialog(QDialog):
             with open(os.path.join(script_dir, chosen), "r") as file:
                 script_text = file.read()
 
-            cond_files = sorted([f for f in os.listdir(cond_dir) if f.endswith('.txt')])
+            cond_files = sorted([f for f in os.listdir(cond_dir) if f.endswith('.txt')], key=str.lower)
             cond_data = []
             for cf in cond_files:
                 with open(os.path.join(cond_dir, cf), "r") as cfile:
@@ -670,6 +678,8 @@ class GroupScriptDialog(QDialog):
                     running = cfile.readline().strip()
                     script = cfile.read().strip()
                 cond_data.append((os.path.splitext(cf)[0], c_type, script, running))
+
+            cond_data.sort(key=lambda item: item[0].lower())
 
             self.text_editors[idx].setText(script_text)
             player_obj.recv_packet_conditions = []
@@ -684,6 +694,8 @@ class GroupScriptDialog(QDialog):
                     player_obj.send_packet_conditions.append([name, cscript, running_bool])
                 else:
                     player_obj.periodical_conditions.append(PeriodicCondition(name, cscript, running_bool, 1))
+
+            player_obj.sort_conditions()
 
             if role == "leader":
                 player_obj.attr19 = 0

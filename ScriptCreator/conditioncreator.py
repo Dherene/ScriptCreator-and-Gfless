@@ -207,6 +207,7 @@ class ConditionReview(QDialog):
             self.player.periodical_conditions.append(
                 PeriodicCondition(self.condition_name.text(), script, False, 1)
             )
+        self.player.sort_conditions()
         # start condition checks if needed
         self.player.start_condition_loop()
         self.cond_modifier.refresh()
@@ -235,6 +236,7 @@ class ConditionReview(QDialog):
             self.player.periodical_conditions.append(
                 PeriodicCondition(self.condition_name.text(), script, True, 1)
             )
+        self.player.sort_conditions()
         self.player.start_condition_loop()
         self.cond_modifier.refresh()
         self.cond_creator.accept()
@@ -1095,9 +1097,12 @@ class ConditionModifier(QDialog):
                             PeriodicCondition(base_name, script, running_bool, 1)
                         )
 
+        if file_names:
+            self.player.sort_conditions()
         self.refresh()
 
     def refresh(self):
+        self.player.request_condition_status_refresh()
         while self.table_widget.rowCount() > 0:
             self.table_widget.removeRow(0)
 
@@ -1120,10 +1125,12 @@ class ConditionModifier(QDialog):
             cond_name.setForeground(QColor(0, 0, 0))  # Set text color to black
             self.table_widget.setItem(self.table_widget.rowCount()-1, 1, cond_name)
 
-            if recv_conds[i][2]:
-                self.set_row_background_color(self.table_widget.rowCount()-1, QColor(127, 250, 160))
-            else:
-                self.set_row_background_color(self.table_widget.rowCount()-1, QColor(214, 139, 139))
+            self._apply_condition_status(
+                self.table_widget.rowCount() - 1,
+                "recv_packet",
+                recv_conds[i][0],
+                recv_conds[i][2],
+            )
 
         for i in range(len(send_conds)):
             self.table_widget.insertRow(self.table_widget.rowCount())
@@ -1140,10 +1147,12 @@ class ConditionModifier(QDialog):
             cond_name.setForeground(QColor(0, 0, 0))  # Set text color to black
             self.table_widget.setItem(self.table_widget.rowCount()-1, 1, cond_name)
 
-            if send_conds[i][2]:
-                self.set_row_background_color(self.table_widget.rowCount()-1, QColor(127, 250, 160))
-            else:
-                self.set_row_background_color(self.table_widget.rowCount()-1, QColor(214, 139, 139))
+            self._apply_condition_status(
+                self.table_widget.rowCount() - 1,
+                "send_packet",
+                send_conds[i][0],
+                send_conds[i][2],
+            )
 
         for cond in periodical_conditions:
             self.table_widget.insertRow(self.table_widget.rowCount())
@@ -1160,15 +1169,29 @@ class ConditionModifier(QDialog):
             cond_name.setForeground(QColor(0, 0, 0))
             self.table_widget.setItem(self.table_widget.rowCount()-1, 1, cond_name)
 
-            if cond.active:
-                self.set_row_background_color(self.table_widget.rowCount()-1, QColor(127, 250, 160))
-            else:
-                self.set_row_background_color(self.table_widget.rowCount()-1, QColor(214, 139, 139))
+            self._apply_condition_status(
+                self.table_widget.rowCount() - 1,
+                "periodical",
+                cond.name,
+                cond.active,
+            )
 
     def set_row_background_color(self, row, color):
         for column in range(self.table_widget.columnCount()):
             item = self.table_widget.item(row, column)
             item.setBackground(color)
+
+    def _apply_condition_status(self, row, cond_type, name, fallback_active):
+        status = self.player.get_condition_status(cond_type, name)
+        if status == "current":
+            color = QColor(255, 244, 141)
+        elif status in {"window", "always"}:
+            color = QColor(127, 250, 160)
+        elif status is None:
+            color = QColor(127, 250, 160) if fallback_active else QColor(214, 139, 139)
+        else:
+            color = QColor(214, 139, 139)
+        self.set_row_background_color(row, color)
 
     def create_condition(self):
         condition_editor = ConditionCreator(self.player, self)
