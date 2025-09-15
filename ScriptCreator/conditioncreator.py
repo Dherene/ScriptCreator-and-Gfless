@@ -189,11 +189,15 @@ class ConditionReview(QDialog):
                     return
             self.player.send_packet_conditions.append([self.condition_name.text(), script, False])
         else:
-            for i in range(len(self.player.periodical_conditions)):
-                if self.player.periodical_conditions[i][0] == self.condition_name.text():
+            for cond in self.player.periodical_conditions:
+                if cond.name == self.condition_name.text():
                     self.condition_name_already_exists_msg_box()
                     return
-            self.player.periodical_conditions.append([self.condition_name.text(), script, False, 1])
+            self.player.periodical_conditions.append(
+                PeriodicCondition(self.condition_name.text(), script, False, 1)
+            )
+        # start condition checks if needed
+        self.player.start_condition_loop()
         self.cond_modifier.refresh()
         self.cond_creator.accept()
         self.accept()
@@ -213,11 +217,14 @@ class ConditionReview(QDialog):
                     return
             self.player.send_packet_conditions.append([self.condition_name.text(), script, True])
         else:
-            for i in range(len(self.player.periodical_conditions)):
-                if self.player.periodical_conditions[i][0] == self.condition_name.text():
+            for cond in self.player.periodical_conditions:
+                if cond.name == self.condition_name.text():
                     self.condition_name_already_exists_msg_box()
                     return
-            self.player.periodical_conditions.append([self.condition_name.text(), script, True, 1])
+            self.player.periodical_conditions.append(
+                PeriodicCondition(self.condition_name.text(), script, True, 1)
+            )
+        self.player.start_condition_loop()
         self.cond_modifier.refresh()
         self.cond_creator.accept()
         self.accept()
@@ -1007,24 +1014,33 @@ class ConditionModifier(QDialog):
             index = self.table_widget.currentRow()
             cond = self.player.recv_packet_conditions[index]
             script += "recv_packet"
+            active = cond[2]
+            code = cond[1]
+            name = cond[0]
         elif condition_type == "send_packet":
             index = self.table_widget.currentRow() - len(self.player.recv_packet_conditions)
             cond = self.player.send_packet_conditions[index]
             script += "send_packet"
+            active = cond[2]
+            code = cond[1]
+            name = cond[0]
         else:
             index = self.table_widget.currentRow() - len(self.player.recv_packet_conditions) - len(self.player.send_packet_conditions)
             cond = self.player.periodical_conditions[index]
             script += "periodical"
+            active = cond.active
+            code = cond.code
+            name = cond.name
 
-        if cond[2]:
+        if active:
             script += "\n1\n"
         else:
             script += "\n0\n"
 
-        script += cond[1]
+        script += code
 
         file_dialog = QFileDialog()
-        file_name, _ = file_dialog.getSaveFileName(self, "Save Condition", cond[0], "Text Files (*.txt);;All Files (*)")
+        file_name, _ = file_dialog.getSaveFileName(self, "Save Condition", name, "Text Files (*.txt);;All Files (*)")
         if file_name:
             with open(file_name, 'w') as file:
                 file.write(script)
@@ -1051,7 +1067,9 @@ class ConditionModifier(QDialog):
                     elif cond_type == "send_packet":
                         self.player.send_packet_conditions.append([base_name, script, running_bool])
                     else:
-                        self.player.periodical_conditions.append([base_name, script, running_bool, 1])
+                        self.player.periodical_conditions.append(
+                            PeriodicCondition(base_name, script, running_bool, 1)
+                        )
 
         self.refresh()
 
@@ -1103,22 +1121,22 @@ class ConditionModifier(QDialog):
             else:
                 self.set_row_background_color(self.table_widget.rowCount()-1, QColor(214, 139, 139))
 
-        for i in range(len(periodical_conditions)):
+        for cond in periodical_conditions:
             self.table_widget.insertRow(self.table_widget.rowCount())
 
             cond_type = QTableWidgetItem()
             cond_type.setText("periodical")
             cond_type.setFlags(cond_type.flags() & ~Qt.ItemIsEditable)
-            cond_type.setForeground(QColor(0, 0, 0))  # Set text color to black
+            cond_type.setForeground(QColor(0, 0, 0))
             self.table_widget.setItem(self.table_widget.rowCount()-1, 0, cond_type)
 
             cond_name = QTableWidgetItem()
-            cond_name.setText(periodical_conditions[i][0])
+            cond_name.setText(cond.name)
             cond_name.setFlags(cond_name.flags() & ~Qt.ItemIsEditable)
-            cond_name.setForeground(QColor(0, 0, 0))  # Set text color to black
+            cond_name.setForeground(QColor(0, 0, 0))
             self.table_widget.setItem(self.table_widget.rowCount()-1, 1, cond_name)
 
-            if periodical_conditions[i][2]:
+            if cond.active:
                 self.set_row_background_color(self.table_widget.rowCount()-1, QColor(127, 250, 160))
             else:
                 self.set_row_background_color(self.table_widget.rowCount()-1, QColor(214, 139, 139))
@@ -1127,6 +1145,18 @@ class ConditionModifier(QDialog):
         for column in range(self.table_widget.columnCount()):
             item = self.table_widget.item(row, column)
             item.setBackground(color)
+
+    def _apply_condition_status(self, row, cond_type, name, fallback_active):
+        status = self.player.get_condition_status(cond_type, name)
+        if status == "current":
+            color = QColor(255, 244, 141)
+        elif status in {"window", "always"}:
+            color = QColor(127, 250, 160)
+        elif status is None:
+            color = QColor(127, 250, 160) if fallback_active else QColor(214, 139, 139)
+        else:
+            color = QColor(214, 139, 139)
+        self.set_row_background_color(row, color)
 
     def create_condition(self):
         condition_editor = ConditionCreator(self.player, self)
@@ -1148,7 +1178,7 @@ class ConditionModifier(QDialog):
         else:
             index = self.table_widget.currentRow() - len(self.player.recv_packet_conditions) - len(self.player.send_packet_conditions)
             cond = self.player.periodical_conditions[index]
-            condition_review = ConditionReview(self.player, cond[1], 0, self, None, index, cond[0])
+            condition_review = ConditionReview(self.player, cond.code, 0, self, None, index, cond.name)
             condition_review.exec_()
 
         #self.refresh()
@@ -1158,12 +1188,21 @@ class ConditionModifier(QDialog):
             condition_type = self.table_widget.selectedItems()[0].text()
 
             if condition_type == "recv_packet":
-                self.player.recv_packet_conditions.pop(self.table_widget.currentRow())
+                idx = self.table_widget.currentRow()
+                name = self.player.recv_packet_conditions[idx][0]
+                self.player.recv_packet_conditions.pop(idx)
+                self.player._compiled_recv_conditions.pop(name, None)
             elif condition_type == "send_packet":
-                self.player.send_packet_conditions.pop(self.table_widget.currentRow() - len(self.player.recv_packet_conditions))
+                idx = self.table_widget.currentRow() - len(self.player.recv_packet_conditions)
+                name = self.player.send_packet_conditions[idx][0]
+                self.player.send_packet_conditions.pop(idx)
+                self.player._compiled_send_conditions.pop(name, None)
             else:
-                self.player.periodical_conditions.pop(self.table_widget.currentRow() - len(self.player.recv_packet_conditions) - len(self.player.send_packet_conditions))
-        except:
+                idx = self.table_widget.currentRow() - len(self.player.recv_packet_conditions) - len(self.player.send_packet_conditions)
+                cond = self.player.periodical_conditions.pop(idx)
+                if cond.task:
+                    cond.task.cancel()
+        except Exception:
             pass
         self.refresh()
 
@@ -1176,7 +1215,8 @@ class ConditionModifier(QDialog):
             elif condition_type == "send_packet":
                 self.player.send_packet_conditions[self.table_widget.currentRow() - len(self.player.recv_packet_conditions)][2] = True
             else:
-                self.player.periodical_conditions[self.table_widget.currentRow() - len(self.player.recv_packet_conditions) - len(self.player.send_packet_conditions)][2] = True
+                index = self.table_widget.currentRow() - len(self.player.recv_packet_conditions) - len(self.player.send_packet_conditions)
+                self.player.periodical_conditions[index].active = True
         except:
             pass
         self.refresh()
@@ -1190,7 +1230,8 @@ class ConditionModifier(QDialog):
             elif condition_type == "send_packet":
                 self.player.send_packet_conditions[self.table_widget.currentRow() - len(self.player.recv_packet_conditions)][2] = False
             else:
-                self.player.periodical_conditions[self.table_widget.currentRow() - len(self.player.recv_packet_conditions) - len(self.player.send_packet_conditions)][2] = False
+                index = self.table_widget.currentRow() - len(self.player.recv_packet_conditions) - len(self.player.send_packet_conditions)
+                self.player.periodical_conditions[index].active = False
         except:
             pass
         self.refresh()
@@ -1218,7 +1259,8 @@ class ConditionModifier(QDialog):
                     self.pause_condition_button.setVisible(False)
                     self.run_condition_button.setVisible(True)
             else:
-                if self.player.periodical_conditions[self.table_widget.currentRow() - len(self.player.recv_packet_conditions) - len(self.player.send_packet_conditions)][2]:
+                index = self.table_widget.currentRow() - len(self.player.recv_packet_conditions) - len(self.player.send_packet_conditions)
+                if self.player.periodical_conditions[index].active:
                     self.pause_condition_button.setVisible(True)
                     self.run_condition_button.setVisible(False)
                 else:

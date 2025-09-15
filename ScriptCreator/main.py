@@ -459,6 +459,7 @@ class loadFull(QDialog):
 # Gets current player object
 player = self.players[self.tab_widget.currentIndex()][0]
 
+
 # Gets all The players and remove current player to get alts
 alts = [sublist[0] if sublist[0] is not None else None for sublist in self.players]
 alts.remove(player)
