@@ -254,8 +254,6 @@ class Player:
     def _update_condition_window(self):
         start = max(0, self._current_condition - 3)
         end = self._current_condition + 7
-        if self._current_condition < 3:
-            end = 9
         
         def should_enable(name):
             if name.startswith("00") and (len(name) >= 3 and not name[2].isdigit()):
