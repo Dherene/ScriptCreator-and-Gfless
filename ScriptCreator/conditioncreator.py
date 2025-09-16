@@ -1000,7 +1000,7 @@ class ConditionModifier(QDialog):
 
         self.sequential_checkbox = QCheckBox("Secuential Condition")
         sequential_default = self.settings.value(
-            "condition_modifier_sequential", False, type=bool
+            "condition_modifier_sequential", True, type=bool
         )
         self.sequential_checkbox.setChecked(sequential_default)
         self.sequential_checkbox.toggled.connect(self.on_sequential_toggled)
@@ -1017,6 +1017,11 @@ class ConditionModifier(QDialog):
         self.setLayout(self.main_layout)
 
         self.refresh()
+
+        self.status_timer = QTimer(self)
+        self.status_timer.setInterval(250)
+        self.status_timer.timeout.connect(self.update_row_colors)
+        self.status_timer.start()
 
     def on_sequential_toggled(self, checked):
         self.settings.setValue("condition_modifier_sequential", checked)
@@ -1163,10 +1168,12 @@ class ConditionModifier(QDialog):
             cond_name.setForeground(QColor(0, 0, 0))
             self.table_widget.setItem(row, 1, cond_name)
 
-            if entry["active"]:
-                self.set_row_background_color(row, QColor(127, 250, 160))
-            else:
-                self.set_row_background_color(row, QColor(214, 139, 139))
+            self._apply_condition_status(
+                row,
+                entry["type"],
+                entry["name"],
+                entry["active"],
+            )
 
         self.table_widget.blockSignals(False)
 
@@ -1181,11 +1188,26 @@ class ConditionModifier(QDialog):
             self.table_widget.clearSelection()
 
         self.on_selection_changed()
+        self.update_row_colors()
 
     def set_row_background_color(self, row, color):
         for column in range(self.table_widget.columnCount()):
             item = self.table_widget.item(row, column)
             item.setBackground(color)
+
+    def update_row_colors(self):
+        row_count = min(len(self.row_mapping), self.table_widget.rowCount())
+        for row in range(row_count):
+            entry = self.row_mapping[row]
+            cond, active = self._get_condition(entry)
+            fallback_active = active if cond is not None else entry.get("active", False)
+            entry["active"] = fallback_active
+            self._apply_condition_status(
+                row,
+                entry["type"],
+                entry["name"],
+                fallback_active,
+            )
 
     def _apply_condition_status(self, row, cond_type, name, fallback_active):
         status = self.player.get_condition_status(cond_type, name)
@@ -1198,6 +1220,11 @@ class ConditionModifier(QDialog):
         else:
             color = QColor(214, 139, 139)
         self.set_row_background_color(row, color)
+
+    def closeEvent(self, event):
+        if hasattr(self, "status_timer"):
+            self.status_timer.stop()
+        super().closeEvent(event)
 
     def create_condition(self):
         condition_editor = ConditionCreator(self.player, self)

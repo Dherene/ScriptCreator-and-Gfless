@@ -165,6 +165,14 @@ class Player:
         self._compiled_recv_conditions = {}
         self._compiled_send_conditions = {}
 
+        # track current execution status per condition type
+        self._condition_state = {
+            "recv_packet": set(),
+            "send_packet": set(),
+            "periodical": set(),
+        }
+        self._condition_state_lock = threading.Lock()
+
         # internal state for periodical walking
         # track per-condition cooldowns and thread context
         self._periodic_walking = set()
@@ -1080,7 +1088,23 @@ class Player:
         exec(compile(module, func_name, "exec"), globs)
         return globs[func_name]
 
+    def _set_condition_running(self, cond_type, name, running):
+        with self._condition_state_lock:
+            state = self._condition_state.setdefault(cond_type, set())
+            if running:
+                state.add(name)
+            else:
+                state.discard(name)
+
+    def get_condition_status(self, cond_type, name):
+        with self._condition_state_lock:
+            state = self._condition_state.get(cond_type, set())
+            if name in state:
+                return "current"
+        return None
+
     async def _run_packet_condition(self, name, func, packet, store_list, cond_type):
+        self._set_condition_running(cond_type, name, True)
         try:
             await func(self, packet)
         except Exception as e:
@@ -1094,8 +1118,11 @@ class Player:
                 )
             except Exception as e2:
                 print(f"Error removing faulty {cond_type} condition: {e2}")
+        finally:
+            self._set_condition_running(cond_type, name, False)
 
     async def _run_periodic_condition(self, name, func):
+        self._set_condition_running("periodical", name, True)
         self._periodic_ctx.current = name
         try:
             await func(self)
@@ -1116,6 +1143,7 @@ class Player:
                     f"\nError executing periodical condition: {name}\nError: {e}\nCondition was removed."
                 )
         finally:
+            self._set_condition_running("periodical", name, False)
             self._periodic_ctx.current = None
    
     # there was some issue with calling packet.split directly in some rare cases, hence this function

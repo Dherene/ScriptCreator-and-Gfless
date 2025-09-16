@@ -115,7 +115,7 @@ class ServerConfigDialog(QDialog):
     def load_settings(self):
         lang, server, channel, char = gfless_api.load_config()
         pid = self.settings.value("pid", "")
-        use_sequential = _to_bool(self.settings.value("useSequentialConditions", False))
+        use_sequential = _to_bool(self.settings.value("useSequentialConditions", True), True)
 
         self.lang_combo.setCurrentIndex(lang)
         self.server_combo.setCurrentIndex(server)
