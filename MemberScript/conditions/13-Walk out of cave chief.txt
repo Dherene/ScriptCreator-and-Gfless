@@ -1,7 +1,0 @@
-periodical
-1
-if int(self.attr1) == 3 and int(self.map_id) == 87:
-	time.sleep(self.randomize_delay(2,3))
-	print(f"13-[MEMBER] {self.name} Go out of Cave")
-	self.walk_to_point([19,24])
-	self.attr1 = 4

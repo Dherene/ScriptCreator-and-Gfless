@@ -1,7 +1,0 @@
-periodical
-1
-if int(self.map_id) == 22 and int(self.attr1) == 7:
-	print(f"18-[MEMBER] {self.name} walk to shinebone")
-	time.sleep(self.randomize_delay(0.75,1.5))
-	self.walk_to_point([31,27])
-	self.attr1= 8

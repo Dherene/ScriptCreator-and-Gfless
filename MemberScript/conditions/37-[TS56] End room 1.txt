@@ -1,8 +1,0 @@
-recv_packet
-1
-if int(self.attr3) == 3 and packet.startswith("msgi 0 537 0 0 0 0 0") and int(self.attr6) == 1:
-	self.api.stop_bot()
-	time.sleep(self.randomize_delay(2,3))
-	self.api.player_walk(29, 14 )
-	self.attr3 = 4
-	print(f"37-[MEMBER][TS56] {self.name} stop room 1")

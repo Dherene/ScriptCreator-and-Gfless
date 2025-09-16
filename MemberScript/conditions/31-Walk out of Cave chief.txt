@@ -1,9 +1,0 @@
-periodical
-1
-if int(self.attr1) == 14 and int(self.map_id) == 87:
-	self.walk_to_point([19,24])
-	time.sleep(self.randomize_delay(2,3))
-	self.attr1 = 15
-	self.attr6 = 1   #activate ts 56
-	self.attr3 = 0    #reset rooms ts 56
-	print(f"31-[MEMBER] {self.name} walk out of cave")
