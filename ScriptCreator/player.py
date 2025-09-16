@@ -228,10 +228,60 @@ class Player:
             t = threading.Thread(target=self.queries, args=[0.25, ])
             t.start()
 
-            # start periodic conditions loop
-            self.loop.call_soon_threadsafe(
-                lambda: asyncio.create_task(self.exec_periodic_conditions())
+            # ensure condition loops are ready
+            self.start_condition_loop()
+
+    def start_condition_loop(self):
+        """Ensure background condition tasks are running.
+
+        Conditions can be added or toggled from different threads (e.g. the
+        GUI).  This helper restarts the asyncio supervisor task when needed and
+        keeps the per-condition tasks in sync with their ``active`` flag.  It
+        is safe to call multiple times and from any thread."""
+
+        # ``self.loop`` is created in ``__init__`` but can be stopped if the
+        # client was disconnected.  Recreate it when necessary so conditions
+        # can continue running after a reconnection or setup load.
+        if not hasattr(self, "loop") or self.loop.is_closed():
+            self.loop = asyncio.new_event_loop()
+            self._loop_thread = threading.Thread(
+                target=self.loop.run_forever, daemon=True
             )
+            self._loop_thread.start()
+            self._periodic_main_task = None
+            with self._periodic_cond_lock:
+                conds = list(self.periodical_conditions)
+            for cond in conds:
+                cond.task = None
+        elif not getattr(self, "_loop_thread", None) or not self._loop_thread.is_alive():
+            self._loop_thread = threading.Thread(
+                target=self.loop.run_forever, daemon=True
+            )
+            self._loop_thread.start()
+            self._periodic_main_task = None
+            with self._periodic_cond_lock:
+                conds = list(self.periodical_conditions)
+            for cond in conds:
+                cond.task = None
+
+        def _ensure_tasks():
+            if self._periodic_main_task is None or self._periodic_main_task.done():
+                self._periodic_main_task = asyncio.create_task(
+                    self.exec_periodic_conditions()
+                )
+
+            # Cancel tasks that should not be running and reset finished ones.
+            with self._periodic_cond_lock:
+                conds = list(self.periodical_conditions)
+            for cond in conds:
+                if not cond.active:
+                    if cond.task and not cond.task.done():
+                        cond.task.cancel()
+                    cond.task = None
+                elif cond.task and cond.task.done():
+                    cond.task = None
+
+        self.loop.call_soon_threadsafe(_ensure_tasks)
 
     # ------------------------------------------------------------------ #
     # Group-shared variable helpers
