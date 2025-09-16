@@ -1,0 +1,8 @@
+send_packet
+0
+if packet.startswith("#u_i") and int(self.map_id) == 1 and int(self.attr1) == 22:
+    segments = packet.split("^")
+    if len(segments) >= 6 and segments[5] == "2":
+        cond.on = 77
+        time.sleep(self.randomize_delay(1,2))
+        self.attr1 = 23

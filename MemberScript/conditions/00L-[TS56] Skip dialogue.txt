@@ -1,0 +1,6 @@
+recv_packet
+0
+if packet.startswith("npc_req") and int(self.map_id) >= 4800 and int(self.attr6) == 1:
+	time.sleep(self.randomize_delay(2,3))
+	self.api.send_packet(f"n_run 6 0 1 {self.id}")
+	print(f"50-[MEMBER][TS56] {self.name} skip dialogue")
