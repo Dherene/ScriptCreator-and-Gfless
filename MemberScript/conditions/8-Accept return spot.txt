@@ -14,3 +14,4 @@ if packet.startswith("dlgi2 #pjoin^6^"):
         self.api.send_packet("pleave")
         time.sleep(self.randomize_delay(1,1.5))
         selfgroup.trade = "0"
+        selfgroup.trade_candidate = None
