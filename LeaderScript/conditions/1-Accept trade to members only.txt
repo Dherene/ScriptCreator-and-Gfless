@@ -19,7 +19,8 @@ if len(parts) >= 7 and parts[0] == "dlgi2" and parts[1].split("^")[0] == "#req_e
         time.sleep(self.randomize_delay(1, 2))
         print(f"[LEADER] trade accepted by {self.name}")
         self.api.send_packet(f"#req_exc^2^{session_id}")   # aceptar
-        selfgroup.trade = 1  # cerrar comercio para otros miembros
+        selfgroup.trade = "1"  # cerrar comercio para otros miembros
+        selfgroup.trade_candidate = None
     else:
         time.sleep(self.randomize_delay(3, 5))
         print(f"[LEADER] trade rejected by {self.name}")

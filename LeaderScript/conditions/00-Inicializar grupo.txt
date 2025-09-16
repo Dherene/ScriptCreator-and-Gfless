@@ -2,3 +2,5 @@ periodical
 1
 if selfgroup.get("trade") is None:
     selfgroup.trade = "0"
+if selfgroup.get("trade_candidate") is None:
+    selfgroup.trade_candidate = None
