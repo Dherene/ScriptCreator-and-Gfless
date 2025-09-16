@@ -3,9 +3,9 @@ recv_packet
 import gfless_api
 import asyncio
 if int(self.map_id) == 20 and int(self.attr1) == 29:
+        self.attr1 = 30
         cond.off = 86
         cond.on = 88
-        self.attr1 = 30
         self._old_name = self.name
         self._old_id = self.id
         time.sleep(self.randomize_delay(1,2))

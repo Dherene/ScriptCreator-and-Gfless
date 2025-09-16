@@ -4,7 +4,7 @@ import time
 parts = packet.split(" ")
 
 # Tras seleccionar el nuevo personaje, esperar a que self.name/self.id se actualicen
-if packet == "select 0" and hasattr(self, "_old_name"):
+if packet == "select 0":
     time.sleep(self.randomize_delay(5, 6))
     old_name = self._old_name
     old_id = self._old_id
