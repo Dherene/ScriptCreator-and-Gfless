@@ -17,7 +17,7 @@ from PyQt5.QtWidgets import (
     QSizePolicy,
 )
 from PyQt5.QtCore import QTimer, Qt, QSettings, QSize
-from PyQt5.QtGui import QFont, QFontMetricsF, QColor, QIcon
+from PyQt5.QtGui import QFont, QFontMetricsF, QColor, QIcon, QIntValidator
 import os
 import re
 import gfless_api
@@ -311,6 +311,13 @@ class ConditionCreator(QDialog):
         self.group_boxes_layout = QVBoxLayout()
         self.main_layout.addLayout(self.group_boxes_layout, 3, 0, 1, 6)
 
+        self.cond_helper_label = QLabel(
+            "Tip: cond.on / cond.off require the target condition's number "
+            "in the sequential conditions list."
+        )
+        self.cond_helper_label.setWordWrap(True)
+        self.main_layout.addWidget(self.cond_helper_label, 5, 0, 1, 6)
+
         #self.setMaximumWidth(500)
         #self.setMinimumWidth(500)
 
@@ -402,6 +409,7 @@ class ConditionCreator(QDialog):
         new_max_wait = QLineEdit("1.5")
         elements_list = [
             "wait", "walk_to_point", "send_packet", "recv_packet",
+            "cond.on", "cond.off",
             "start_bot", "stop_bot", "continue_bot", "load_settings",
             "attack", "player_skill", "player_walk", "pets_walk",
             "start_minigame_bot", "stop_minigame_bot", "use_item", "put_item_in_trade", 
@@ -491,6 +499,21 @@ class ConditionCreator(QDialog):
             self.action_widgets[index].append(new_packet_label)
             self.action_widgets[index].append(new_packet)
             self.action_widgets[index].append(new_type_decision)
+
+        elif condition == "cond.on" or condition == "cond.off":
+            index_label = QLabel("number:")
+            index_input = QLineEdit()
+            index_input.setValidator(QIntValidator(1, 9999, index_input))
+            index_input.setPlaceholderText("Sequential list index")
+            index_input.setToolTip(
+                "Specify the condition number from the sequential list."
+            )
+
+            group_box_layout.addWidget(index_label, 0, 2)
+            group_box_layout.addWidget(index_input, 0, 3)
+
+            self.action_widgets[index].append(index_label)
+            self.action_widgets[index].append(index_input)
 
         elif condition == "walk_to_point" or condition == "player_walk" or condition == "pets_walk":
             new_x = QLineEdit()
@@ -740,7 +763,21 @@ class ConditionCreator(QDialog):
                     elif widget.__class__.__name__ == "QComboBox":
                         new_row.append(widget.currentText())
             actions_array.append(new_row)
-        
+
+        for action in actions_array:
+            if action[0] in {"cond.on", "cond.off"}:
+                if len(action) < 2 or not action[1]:
+                    message_box = QMessageBox()
+                    message_box.setIcon(QMessageBox.Warning)
+                    message_box.setText(
+                        "Please provide the sequential list number for cond.on / cond.off.\n"
+                    )
+                    message_box.setStandardButtons(QMessageBox.Ok)
+                    message_box.setDefaultButton(QMessageBox.Ok)
+                    message_box.setWindowTitle("Missing condition number")
+                    message_box.exec_()
+                    return
+
         script = self.construct_script(conditions_array, actions_array)
         condition_review = ConditionReview(self.player, script, condition_type, self.cond_modifier, self)
         condition_review.exec_()
@@ -889,6 +926,13 @@ class ConditionCreator(QDialog):
                 )
             elif actions_array[i][0] == "relogin":
                 script += f'gfless_api.inject_dll(pid=int({actions_array[i][1]}))'
+            elif actions_array[i][0] == "cond.on" or actions_array[i][0] == "cond.off":
+                try:
+                    number = int(actions_array[i][1])
+                except (TypeError, ValueError):
+                    number = 0
+                attr = actions_array[i][0].split(".")[-1]
+                script += f'cond.{attr} = {number}'
             elif actions_array[i][0] == "python_code":
                 script += f'{actions_array[i][1]}'
             elif actions_array[i][0] == "delete_condition":
@@ -1213,12 +1257,9 @@ class ConditionModifier(QDialog):
         status = self.player.get_condition_status(cond_type, name)
         if status == "current":
             color = QColor(255, 244, 141)
-        elif status in {"window", "always"}:
-            color = QColor(127, 250, 160)
-        elif status is None:
-            color = QColor(127, 250, 160) if fallback_active else QColor(214, 139, 139)
         else:
-            color = QColor(214, 139, 139)
+            is_active = fallback_active or status in {"window", "always"}
+            color = QColor(127, 250, 160) if is_active else QColor(214, 139, 139)
         self.set_row_background_color(row, color)
 
     def closeEvent(self, event):

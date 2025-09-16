@@ -4,6 +4,7 @@ import phoenix
 import threading
 import asyncio
 import ast
+import re
 from dataclasses import dataclass, field
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Callable
@@ -98,6 +99,36 @@ class GroupNamespace:
     def get(self, name, default=None):
         return self._player.get_group_var(name, default)
 
+
+class ConditionControl:
+    """Expose ``cond.on`` and ``cond.off`` helpers to toggle conditions."""
+
+    def __init__(self, player):
+        object.__setattr__(self, "_player", player)
+
+    def _toggle(self, attribute, value):
+        if isinstance(value, bool) or not isinstance(value, int):
+            print(f"cond.{attribute} expects an integer index.")
+            return
+        self._player._set_condition_active_by_number(value, attribute == "on")
+
+    @property
+    def on(self):
+        return None
+
+    @on.setter
+    def on(self, value):
+        self._toggle("on", value)
+
+    @property
+    def off(self):
+        return None
+
+    @off.setter
+    def off(self, value):
+        self._toggle("off", value)
+
+
 # encapsulation for periodical conditions so each player can manage its own
 # execution task and compiled function without interfering with others
 @dataclass
@@ -159,6 +190,7 @@ class Player:
         self.send_packet_conditions = []
         self.periodical_conditions: list[PeriodicCondition] = []
         self._cond_counter = 0
+        self._cond_control = ConditionControl(self)
 
         # caches for compiled condition functions
         # maps condition name to a tuple of (source_code, compiled_func)
@@ -290,6 +322,58 @@ class Player:
                     cond.task = None
 
         self.loop.call_soon_threadsafe(_ensure_tasks)
+
+    @staticmethod
+    def _condition_sort_key(name):
+        parts = re.split(r"(\d+)", name)
+        return [int(part) if part.isdigit() else part.lower() for part in parts]
+
+    def _build_condition_sequence(self):
+        entries = []
+        for idx, cond in enumerate(self.recv_packet_conditions):
+            entries.append(("recv_packet", idx, cond[0]))
+        for idx, cond in enumerate(self.send_packet_conditions):
+            entries.append(("send_packet", idx, cond[0]))
+        with self._periodic_cond_lock:
+            for idx, cond in enumerate(self.periodical_conditions):
+                entries.append(("periodical", idx, cond.name))
+        entries.sort(key=lambda item: self._condition_sort_key(item[2]))
+        return entries
+
+    def _set_condition_active_by_number(self, seq_number, active):
+        if isinstance(seq_number, bool) or not isinstance(seq_number, int):
+            print("Condition numbers must be integers.")
+            return
+        if seq_number <= 0:
+            print("Condition numbers start at 1.")
+            return
+        entries = self._build_condition_sequence()
+        if not entries:
+            print("No conditions available to toggle.")
+            return
+        if seq_number > len(entries):
+            print(
+                f"Condition index {seq_number} is out of range (max {len(entries)})."
+            )
+            return
+
+        cond_type, idx, name = entries[seq_number - 1]
+        if cond_type == "recv_packet":
+            self.recv_packet_conditions[idx][2] = active
+        elif cond_type == "send_packet":
+            self.send_packet_conditions[idx][2] = active
+        else:
+            with self._periodic_cond_lock:
+                cond = self.periodical_conditions[idx]
+                cond.active = active
+                if not active and cond.task and not cond.task.done():
+                    cond.task.cancel()
+                    cond.task = None
+
+        self.start_condition_loop()
+        state = "enabled" if active else "disabled"
+        attr = "on" if active else "off"
+        print(f"Condition '{name}' {state} via cond.{attr} = {seq_number}")
 
     # ------------------------------------------------------------------ #
     # Group-shared variable helpers
@@ -1084,7 +1168,12 @@ class Player:
         module = ast.Module(body=[func_def], type_ignores=[])
         ast.fix_missing_locations(func_def)
         ast.fix_missing_locations(module)
-        globs = {"asyncio": asyncio, "time": time, "selfgroup": self._group}
+        globs = {
+            "asyncio": asyncio,
+            "time": time,
+            "selfgroup": self._group,
+            "cond": self._cond_control,
+        }
         exec(compile(module, func_name, "exec"), globs)
         return globs[func_name]
 
