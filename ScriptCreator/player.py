@@ -140,6 +140,7 @@ class PeriodicCondition:
     func: Optional[Callable] = field(default=None, repr=False)
     task: Optional[asyncio.Task] = field(default=None, repr=False)
     _code_cache: str = field(default="", repr=False)
+    last_error: Optional[str] = field(default=None, repr=False)
 
 
 # player class which can be reused in other standalone apis
@@ -1060,21 +1061,57 @@ class Player:
         while True:
             try:
                 with self._periodic_cond_lock:
-                    conds = list(self.periodical_conditions)
-                for cond in conds:
-                    if not cond.active:
+                    conds = list(enumerate(self.periodical_conditions))
+                for idx, cond in conds:
+                    try:
+                        if not cond.active:
+                            if cond.task:
+                                cond.task.cancel()
+                                cond.task = None
+                            cond.last_error = None
+                            continue
+                        if cond.func is None or cond._code_cache != cond.code:
+                            if cond.task:
+                                cond.task.cancel()
+                                cond.task = None
+                            cond.func = None
+                            cond._code_cache = ""
+                            cond.func = self._compile_condition(cond.code)
+                            cond._code_cache = cond.code
+                        if cond.task is None or cond.task.done():
+                            cond.task = asyncio.create_task(self._run_periodic_loop(cond))
+                        cond.last_error = None
+                    except Exception as cond_error:
+                        error_text = f"{cond_error}"
+                        signature = f"{error_text}\n{cond.code}"
                         if cond.task:
                             cond.task.cancel()
                             cond.task = None
-                        continue
-                    if cond.func is None or cond._code_cache != cond.code:
-                        cond.func = self._compile_condition(cond.code)
-                        cond._code_cache = cond.code
-                        if cond.task:
-                            cond.task.cancel()
-                            cond.task = None
-                    if cond.task is None or cond.task.done():
-                        cond.task = asyncio.create_task(self._run_periodic_loop(cond))
+                        cond.func = None
+                        cond._code_cache = ""
+                        if cond.last_error != signature:
+                            error_type = type(cond_error).__name__
+                            print(
+                                f"\nError preparing periodical condition '{cond.name}' "
+                                f"(index {idx}): {error_type}: {cond_error}"
+                            )
+                            lineno = getattr(cond_error, "lineno", None)
+                            offset = getattr(cond_error, "offset", None)
+                            if lineno is not None:
+                                location = f"line {lineno}"
+                                if offset is not None:
+                                    location += f", column {offset}"
+                                print(f"    Reported location: {location}.")
+                            code_lines = cond.code.splitlines()
+                            if code_lines:
+                                print("    Condition source:")
+                                highlight = lineno
+                                for line_no, line_text in enumerate(code_lines, start=1):
+                                    marker = "->" if highlight == line_no else "  "
+                                    print(f"    {marker} {line_no:>4}: {line_text}")
+                            else:
+                                print("    Condition source is empty.")
+                        cond.last_error = signature
                 await asyncio.sleep(0.1)
             except Exception as e:
                 print(f"Error executing periodic conditions loop: {e}")
