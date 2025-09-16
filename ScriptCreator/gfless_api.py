@@ -227,41 +227,29 @@ def _create_pipe() -> Optional[int]:
     sd.SetSecurityDescriptorDacl(True, None, False)
     sa.SECURITY_DESCRIPTOR = sd
 
-    try:
-        return win32pipe.CreateNamedPipe(
-            PIPE_NAME,
-            win32pipe.PIPE_ACCESS_DUPLEX,
-            win32pipe.PIPE_TYPE_BYTE
-            | win32pipe.PIPE_READMODE_BYTE
-            | win32pipe.PIPE_WAIT,
-            1,
-            255,
-            255,
-            0,
-            sa,
-        )
-    except pywintypes.error as exc:
-        if exc.winerror == 5:
-            _terminate_login_servers()
-            time.sleep(0.5)
-            try:
-                return win32pipe.CreateNamedPipe(
-                    PIPE_NAME,
-                    win32pipe.PIPE_ACCESS_DUPLEX,
-                    win32pipe.PIPE_TYPE_BYTE
-                    | win32pipe.PIPE_READMODE_BYTE
-                    | win32pipe.PIPE_WAIT,
-                    1,
-                    255,
-                    255,
-                    0,
-                    sa,
-                )
-            except pywintypes.error as exc2:
-                if exc2.winerror == 5:
-                    return None
-                raise
-        raise
+    # retry a few times in case a previous instance is still shutting down
+    for _ in range(3):
+        try:
+            return win32pipe.CreateNamedPipe(
+                PIPE_NAME,
+                win32pipe.PIPE_ACCESS_DUPLEX,
+                win32pipe.PIPE_TYPE_BYTE
+                | win32pipe.PIPE_READMODE_BYTE
+                | win32pipe.PIPE_WAIT,
+                1,
+                255,
+                255,
+                0,
+                sa,
+            )
+        except pywintypes.error as exc:
+            if exc.winerror in (5, 231):
+                # either access denied or pipe already exists/busy
+                _terminate_login_servers()
+                time.sleep(0.5)
+                continue
+            raise
+    return None
 
 
 def _serve_pipe(
@@ -382,8 +370,11 @@ def close_login_pipe() -> None:
         win32file.CloseHandle(pipe)
     except Exception:
         pass
-    if thread is not None and thread.is_alive():
-        thread.join(timeout=0.1)
+    if thread is not None:
+        # allow the server thread time to exit so the pipe is released
+        thread.join(timeout=2.0)
+    # ensure no external login servers keep the pipe busy
+    _terminate_login_servers()
 
 def login(
     lang: int,
