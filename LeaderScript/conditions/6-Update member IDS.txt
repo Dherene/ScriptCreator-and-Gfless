@@ -3,46 +3,71 @@ periodical
 
 updates = self.get_group_var("id_update", {})
 if updates:
-    # Inicializar diccionarios/listas si no existen
+    # Inicializar estructuras si no existen
     if not hasattr(self, "account_map"):
         self.account_map = {}
     if not hasattr(self, "name_to_account"):
         self.name_to_account = {}
-    if not hasattr(self, "partyID"):
+    if not hasattr(self, "partyID") or not isinstance(self.partyID, list):
         self.partyID = []
+    if not hasattr(self, "authorized_members"):
+        self.authorized_members = {}
+
+    attr51_value = getattr(self, "attr51", [])
+    attr51_list = attr51_value if isinstance(attr51_value, list) else []
+    authorized_names = set(getattr(self, "authorized_names", []))
+    authorized_names.update(name for name in attr51_list if isinstance(name, str))
+
+    def _to_int(value):
+        try:
+            return int(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
 
     for account, info in updates.items():
         new_name = info.get("name")
         old_name = info.get("old_name")
-        new_id = info.get("id")
-        old_id = info.get("old_id")
+        new_id = _to_int(info.get("id"))
+        old_id = _to_int(info.get("old_id"))
 
-        if old_name and old_name in self.name_to_account:
-            del self.name_to_account[old_name]
+        if account in attr51_list:
+            attr51_list = [name for name in attr51_list if name != account]
+        authorized_names.discard(account)
 
-        if account in self.account_map:
-            prev_name = self.account_map[account]
-            if prev_name in self.name_to_account:
-                del self.name_to_account[prev_name]
+        if old_name:
+            self.name_to_account.pop(old_name, None)
+            authorized_names.discard(old_name)
+            if old_name in attr51_list:
+                attr51_list = [name for name in attr51_list if name != old_name]
 
-        self.account_map[account] = new_name
-        self.name_to_account[new_name] = account
-        if account not in self.attr51:
-            self.attr51.append(account)
+        prev_name = self.account_map.get(account)
+        if prev_name and prev_name != new_name:
+            self.name_to_account.pop(prev_name, None)
+            authorized_names.discard(prev_name)
+            if prev_name in attr51_list:
+                attr51_list = [name for name in attr51_list if name != prev_name]
 
-        if old_id:
-            try:
-                old_id_int = int(old_id)
-            except ValueError:
-                old_id_int = None
-            if old_id_int is not None and old_id_int in self.partyID:
-                self.partyID.remove(old_id_int)
-        if new_id:
-            try:
-                new_id_int = int(new_id)
-            except ValueError:
-                new_id_int = None
-            if new_id_int is not None and new_id_int not in self.partyID:
-                self.partyID.append(new_id_int)
+        if new_name:
+            self.account_map[account] = new_name
+            self.name_to_account[new_name] = account
+            authorized_names.add(new_name)
+            if new_name not in attr51_list:
+                attr51_list.append(new_name)
 
+        member_entry = self.authorized_members.get(account, {})
+        if new_name:
+            member_entry["name"] = new_name
+
+        if old_id is not None and old_id in self.partyID:
+            self.partyID.remove(old_id)
+
+        if new_id is not None:
+            member_entry["id"] = new_id
+            if new_id not in self.partyID:
+                self.partyID.append(new_id)
+
+        self.authorized_members[account] = member_entry
+
+    self.attr51 = attr51_list
+    self.authorized_names = authorized_names
     self.set_group_var("id_update", {})

@@ -13,9 +13,25 @@ if len(parts) >= 7 and parts[0] == "dlgi2" and parts[1].split("^")[0] == "#req_e
     self.trade_mode = "pay" if sender_name in self.members_received_items else "receive"
 
     # Obtener identificador estable (ID de cuenta si está disponible)
-    identifier = getattr(self, "name_to_account", {}).get(sender_name, sender_name)
+    identifier = getattr(self, "name_to_account", {}).get(sender_name)
+    if identifier is None:
+        identifier = sender_name
 
-    if identifier in self.attr51:          # lista de miembros autorizados
+    authorized_members = getattr(self, "authorized_members", {})
+    authorized_accounts = set(authorized_members.keys())
+    known_names = {
+        info.get("name")
+        for info in authorized_members.values()
+        if info.get("name")
+    }
+    known_names.update(getattr(self, "authorized_names", set()))
+    attr51_value = getattr(self, "attr51", [])
+    if isinstance(attr51_value, list):
+        known_names.update(name for name in attr51_value if isinstance(name, str))
+
+    is_authorized = identifier in authorized_accounts or sender_name in known_names
+
+    if is_authorized:
         time.sleep(self.randomize_delay(1, 2))
         print(f"[LEADER] trade accepted by {self.name}")
         self.api.send_packet(f"#req_exc^2^{session_id}")   # aceptar
@@ -23,5 +39,9 @@ if len(parts) >= 7 and parts[0] == "dlgi2" and parts[1].split("^")[0] == "#req_e
         selfgroup.trade_candidate = None
     else:
         time.sleep(self.randomize_delay(3, 5))
-        print(f"[LEADER] trade rejected by {self.name}")
+        print(f"[LEADER] trade rejected by {self.name}: {sender_name} no autorizado")
         self.api.send_packet(f"#req_exc^5^{session_id}")   # rechazar
+        selfgroup.trade = "0"
+        selfgroup.trade_candidate = None
+        self.current_trader = None
+        self.trade_mode = "receive"
