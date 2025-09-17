@@ -6,13 +6,16 @@ if int(self.map_id) == 20 and int(self.attr1) == 29:
         self.attr1 = 30
         cond.off = 86
         cond.on = 88
+        cond.on = 90
         self._old_name = self.name
         self._old_id = self.id
         time.sleep(self.randomize_delay(1,2))
+        self.api.recv_packet("svrlist")
         print(f"70-[MEMBER] {self.name} will create another character")
         # Save parameters and login (performs DLL injection)
         gfless_api.save_config(int(0), int(0), int(6), int(-1))
         gfless_api.close_login_pipe()
         gfless_api.login(int(0), int(0), int(6), int(-1), pid=self.PIDnum, force_reinject=True)
-        await asyncio.sleep(self.randomize_delay(2,3))
-        self.api.recv_packet("svrlist")
+        await asyncio.sleep(self.randomize_delay(1,2))
+        selfgroup.trade = "0"  # liberar comercio para otros miembros
+

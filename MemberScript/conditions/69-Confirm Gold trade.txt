@@ -9,8 +9,7 @@ if packet.startswith(f"exc_list 1 {self.leaderID} -1 -1") and int(self.attr90) =
         time.sleep(self.randomize_delay(4,5))
         self.api.send_packet("req_exc 3")
         self.attr90 = 93
-        selfgroup.trade = "0"  # liberar comercio para otros miembros
         selfgroup.trade_candidate = None
-        time.sleep(self.randomize_delay(6,8))
+        time.sleep(self.randomize_delay(3,4))
         self.attr1 = 29
         self.attr95 = 0
