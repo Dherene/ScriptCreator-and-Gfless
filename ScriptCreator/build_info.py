@@ -1,3 +1,3 @@
 # Auto-generated build information
-BUILD_EXPIRATION = "2025-09-28"
-BUILD_LICENSE_KEY = "10ba7b9c7b2343b2"
+BUILD_EXPIRATION = "2025-10-16"
+BUILD_LICENSE_KEY = "1c6ac78aeca048c1"
