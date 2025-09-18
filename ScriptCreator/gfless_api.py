@@ -16,6 +16,7 @@ import pywintypes
 
 _current_pipe: Optional[int] = None
 _server_thread: Optional[threading.Thread] = None
+_pipe_guard = threading.Lock()
 
 
 def _get_dll_path() -> str:
@@ -284,21 +285,27 @@ def _serve_pipe(
                 win32file.WriteFile(pipe, b"0")
                 continue
             command = parts[1]
-            if command == "DisableNosmall":
-                win32file.WriteFile(pipe, b"1" if disable_nosmall else b"0")
-            elif command == "AutoLogin":
-                win32file.WriteFile(pipe, b"1" if auto_login else b"0")
-            elif command == "ServerLanguage":
-                win32file.WriteFile(pipe, str(lang).encode())
-            elif command == "Server":
-                win32file.WriteFile(pipe, str(server).encode())
-            elif command == "Channel":
-                win32file.WriteFile(pipe, str(channel).encode())
-            elif command == "Character":
-                win32file.WriteFile(pipe, str(character).encode())
-            else:
-                win32file.WriteFile(pipe, b"0")
-                continue
+            try:
+                if command == "DisableNosmall":
+                    win32file.WriteFile(pipe, b"1" if disable_nosmall else b"0")
+                elif command == "AutoLogin":
+                    win32file.WriteFile(pipe, b"1" if auto_login else b"0")
+                elif command == "ServerLanguage":
+                    win32file.WriteFile(pipe, str(lang).encode())
+                elif command == "Server":
+                    win32file.WriteFile(pipe, str(server).encode())
+                elif command == "Channel":
+                    win32file.WriteFile(pipe, str(channel).encode())
+                elif command == "Character":
+                    win32file.WriteFile(pipe, str(character).encode())
+                else:
+                    win32file.WriteFile(pipe, b"0")
+                    continue
+            except pywintypes.error as exc:
+                if exc.winerror == 232:
+                    # Pipe closed while responding; stop the server gracefully.
+                    break
+                raise
             served.add(command)
             if required.issubset(served):
                 try:
@@ -316,6 +323,52 @@ def _serve_pipe(
             _current_pipe = None
         if _server_thread is threading.current_thread():
             _server_thread = None
+        if _pipe_guard.locked():
+            _pipe_guard.release()
+
+
+def _start_pipe_server(
+    lang: int,
+    server: int,
+    channel: int,
+    character: int,
+    *,
+    auto_login: bool = True,
+    disable_nosmall: bool = False,
+) -> None:
+    """Start a background thread to serve login parameters.
+
+    The caller must acquire ``_pipe_guard`` before invoking this helper.  The
+    guard is released automatically once the server thread finishes so that
+    subsequent login attempts wait for the handshake to complete.
+    """
+
+    pipe = _create_pipe()
+    if pipe is None:
+        raise RuntimeError(
+            "Another Gfless instance is providing login parameters "
+            "and could not be closed automatically."
+        )
+
+    server_thread = threading.Thread(
+        target=_serve_pipe,
+        args=(
+            pipe,
+            lang,
+            server,
+            channel,
+            character,
+        ),
+        kwargs={
+            "auto_login": auto_login,
+            "disable_nosmall": disable_nosmall,
+        },
+        daemon=True,
+    )
+    global _current_pipe, _server_thread
+    _current_pipe = pipe
+    _server_thread = server_thread
+    server_thread.start()
 
 
 def _send_relogin_command(
@@ -394,12 +447,8 @@ def login(
     ``1``–``4`` to pick a character, so we map it automatically.
     """
 
-    close_login_pipe()
-
     dll_character = 0 if character == -1 else character + 1
 
-    # If the DLL is already injected try to update the login parameters first.
-    need_reinject = force_reinject
     if is_dll_injected(pid, exe_name) and not force_reinject:
         try:
             update_login(
@@ -413,41 +462,42 @@ def login(
             return
         except RuntimeError:
             close_login_pipe()
-            need_reinject = True
 
+    _pipe_guard.acquire()
+    guard_released = False
     try:
-        pipe = _create_pipe()
-    except pywintypes.error as exc:
-        if exc.winerror == 231:
-            raise RuntimeError(
-                "Another Gfless instance is providing login parameters "
-                "and could not be closed automatically."
-            ) from exc
-        raise
-    if pipe is None:
-        raise RuntimeError(
-            "Another Gfless instance is providing login parameters "
-            "and could not be closed automatically."
-        )
-
-    server_thread = threading.Thread(
-        target=_serve_pipe,
-        args=(pipe, lang, server, channel, dll_character),
-        daemon=True,
-    )
-    global _current_pipe, _server_thread
-    _current_pipe = pipe
-    _server_thread = server_thread
-    server_thread.start()
-    try:
-        if is_dll_injected(pid, exe_name):
-            _send_relogin_command(lang, server, channel, dll_character)
-        else:
-            if not ensure_injected(pid, exe_name):
-                raise RuntimeError("Failed to inject GflessDLL.dll")
-    except Exception:
         close_login_pipe()
-        raise
+
+        try:
+            _start_pipe_server(
+                lang,
+                server,
+                channel,
+                dll_character,
+                auto_login=True,
+                disable_nosmall=False,
+            )
+            guard_released = True
+        except pywintypes.error as exc:
+            if exc.winerror == 231:
+                raise RuntimeError(
+                    "Another Gfless instance is providing login parameters "
+                    "and could not be closed automatically."
+                ) from exc
+            raise
+
+        try:
+            if is_dll_injected(pid, exe_name):
+                _send_relogin_command(lang, server, channel, dll_character)
+            else:
+                if not ensure_injected(pid, exe_name):
+                    raise RuntimeError("Failed to inject GflessDLL.dll")
+        except Exception:
+            close_login_pipe()
+            raise
+    finally:
+        if not guard_released and _pipe_guard.locked():
+            _pipe_guard.release()
 
 
 def update_login(
@@ -487,36 +537,35 @@ def update_login(
 
     dll_character = 0 if character == -1 else character + 1
 
-    close_login_pipe()
-
+    _pipe_guard.acquire()
+    guard_released = False
     try:
-        pipe = _create_pipe()
-    except pywintypes.error as exc:
-        if exc.winerror == 231:
-            raise RuntimeError(
-                "Another Gfless instance is providing login parameters "
-                "and could not be closed automatically."
-            ) from exc
-        raise
-    if pipe is None:
-        raise RuntimeError(
-            "Another Gfless instance is providing login parameters "
-            "and could not be closed automatically."
-        )
-
-    server_thread = threading.Thread(
-        target=_serve_pipe,
-        args=(pipe, lang, server, channel, dll_character),
-        daemon=True,
-    )
-    global _current_pipe, _server_thread
-    _current_pipe = pipe
-    _server_thread = server_thread
-    server_thread.start()
-
-    try:
-        ensure_injected(pid, exe_name, force=force_reinject)
-        _send_relogin_command(lang, server, channel, dll_character)
-    except Exception:
         close_login_pipe()
-        raise
+
+        try:
+            _start_pipe_server(
+                lang,
+                server,
+                channel,
+                dll_character,
+                auto_login=True,
+                disable_nosmall=False,
+            )
+            guard_released = True
+        except pywintypes.error as exc:
+            if exc.winerror == 231:
+                raise RuntimeError(
+                    "Another Gfless instance is providing login parameters "
+                    "and could not be closed automatically."
+                ) from exc
+            raise
+
+        try:
+            ensure_injected(pid, exe_name, force=force_reinject)
+            _send_relogin_command(lang, server, channel, dll_character)
+        except Exception:
+            close_login_pipe()
+            raise
+    finally:
+        if not guard_released and _pipe_guard.locked():
+            _pipe_guard.release()
