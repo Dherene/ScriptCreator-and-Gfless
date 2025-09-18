@@ -1,6 +1,6 @@
 recv_packet
 0
-if int(self.map_id) == 22 and int(self.attr1) == 12:
+if int(self.map_id) == 22:
 
     # Si nos ataca un enemigo
     if packet.startswith("su 3"):
@@ -13,8 +13,6 @@ if int(self.map_id) == 22 and int(self.attr1) == 12:
             time.sleep(self.randomize_delay(0.3, 0.5))
             self.api.send_packet(f"u_s 0 3 {mob_id}")
             print(f"[MEMBER] {self.name} Atacando a {mob_id}")
-            cond.on = 38
-            cond.on = 41
 
     # Si seguimos atacando y el mob sigue vivo (basado en vida)
     if packet.startswith("su 1") and hasattr(self, "attr60") and self.attr60 != "":

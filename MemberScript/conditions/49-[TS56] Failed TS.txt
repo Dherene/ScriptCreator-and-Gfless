@@ -2,7 +2,23 @@ recv_packet
 0
 if int(self.attr3) != 14 and int(self.map_id) > 4799 and int(self.map_id) < 4850 and packet.startswith("11 698 4 -50 0 0 0"):
 	self.api.stop_bot()
-	time.sleep(self.randomize_delay(4,5))
+	cond.off = 50
+	cond.off = 51
+	cond.off = 52
+	cond.off = 53
+	cond.off = 54
+	cond.off = 55
+	cond.off = 56
+	cond.off = 57
+	cond.off = 58
+	cond.off = 59
+	cond.off = 60
+	cond.off = 61
+	cond.off = 62
+	cond.off = 63
+	cond.off = 64
+	cond.off = 65
+	time.sleep(self.randomize_delay(2,3))
 	cond.on = 47
 	self.attr3 = 0
 	self.attr6 = 1

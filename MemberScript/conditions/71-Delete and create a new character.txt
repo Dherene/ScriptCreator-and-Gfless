@@ -8,7 +8,7 @@ if len(parts) >= 3 and parts[-2] == "GF" and parts[-1] == "0" and parts[0].start
         self.nameacc = parts[0]
         print(f"Account name saved: {self.nameacc}")
         cond.off = 87
-        time.sleep(self.randomize_delay(4,5))
+        time.sleep(self.randomize_delay(2,3))
         self.api.send_packet(f"Char_DEL 0 {self.nameacc}")
         time.sleep(self.randomize_delay(6,9))
         self.name = self.rolename()
@@ -16,7 +16,7 @@ if len(parts) >= 3 and parts[-2] == "GF" and parts[-1] == "0" and parts[0].start
         hair_style = random.randint(0,1)
         hair_type = random.randint(0,9)
         self.attr1 = 31
-        time.sleep(self.randomize_delay(0.5,1))
+        time.sleep(self.randomize_delay(1,2))
         self.api.send_packet(f"Char_NEW_JOB {self.name} 0 {gender} {hair_style} {hair_type} 4")
         print(f"[MEMBER] {self.nameacc} created character {self.name}")
 
