@@ -449,7 +449,7 @@ def login(
 
     dll_character = 0 if character == -1 else character + 1
 
-    if is_dll_injected(pid, exe_name) and not force_reinject:
+    if not force_reinject and is_dll_injected(pid, exe_name):
         try:
             update_login(
                 lang,
@@ -485,9 +485,12 @@ def login(
                     "and could not be closed automatically."
                 ) from exc
             raise
-
+            
         try:
-            if is_dll_injected(pid, exe_name):
+            if force_reinject:
+                if not ensure_injected(pid, exe_name, force=True):
+                    raise RuntimeError("Failed to inject GflessDLL.dll")
+            elif is_dll_injected(pid, exe_name):
                 _send_relogin_command(lang, server, channel, dll_character)
             else:
                 if not ensure_injected(pid, exe_name):
