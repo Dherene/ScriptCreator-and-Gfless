@@ -1,8 +1,0 @@
-recv_packet
-0
-if packet.startswith("dlgi #rstart^1 rstart 92 0") and int(self.attr6) == 1:
-	cond.off = 50
-	cond.on = 54
-	self.api.send_packet("#rstart^1")
-	print(f"35-[MEMBER][TS56] {self.name} accept enter first room")
-	

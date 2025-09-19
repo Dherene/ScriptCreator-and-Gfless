@@ -1,6 +1,0 @@
-recv_packet
-0
-if packet.startswith(f"sayi2 1 {self.id} 10 177 1 {self.leadername}") and int(self.attr99) == 0:
-	print(f"5-[LEADER] {self.leadername} rejected invitation to {self.name}")
-	time.sleep(self.randomize_delay(10,15))
-	self.api.send_packet(f"req_exc 1 {self.leaderID}")
