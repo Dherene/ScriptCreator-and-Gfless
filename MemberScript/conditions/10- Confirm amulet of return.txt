@@ -1,0 +1,12 @@
+recv_packet
+0
+# Ejecutar dentro de una condición tipo “recv_packet”
+if packet.startswith("rp"):
+    pos = packet.find("#u_i")
+    if pos != -1:
+        # Copiamos todo el paquete desde "#u_i", incluyendo el '#'
+        datos = packet[pos:]
+        datos = datos.replace("^", " ")  # En los logs se usa '^' en lugar de espacios
+        time.sleep(self.randomize_delay(1,1.5))
+        print(f"9-[MEMBER] {self.name} Use amulet of return")
+        self.api.send_packet(datos)

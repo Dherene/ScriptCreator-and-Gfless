@@ -1,0 +1,16 @@
+recv_packet
+0
+if packet.startswith(f"exc_list 1 {self.leaderID} -1 -1") and int(self.attr90) == 92:
+        cond.off = 85
+        cond.on = 87
+        time.sleep(self.randomize_delay(0.75,1))
+        print(f"69-[MEMBER] {self.name} registered gold trade and items")
+        self.put_items_in_trade([(1, 1010, 50), (1, 1012, 50)], gold=50000)
+        time.sleep(self.randomize_delay(2,3))
+        self.api.send_packet("req_exc 3")
+        self.attr90 = 93
+        cond.on = 13
+        selfgroup.trade_candidate = None
+        time.sleep(self.randomize_delay(2,3))
+        self.attr1 = 29
+        self.attr95 = 0

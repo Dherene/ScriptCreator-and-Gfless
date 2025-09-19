@@ -1,0 +1,9 @@
+recv_packet
+0
+if packet.startswith(f"infoi2 166 1 {self.leadername}"):
+        print(f"3-[MEMBER] {self.name} is busy to trading with {self.leadername}")
+        time.sleep(self.randomize_delay(25,25))
+        self.attr1 = 0
+        self.attr90 = 1
+        selfgroup.trade = "0"
+        selfgroup.trade_candidate = None

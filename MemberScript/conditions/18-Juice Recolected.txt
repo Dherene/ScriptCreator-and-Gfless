@@ -1,0 +1,7 @@
+recv_packet
+0
+if "msgi 0 973 2 2029 0 0 0" in packet and int(self.map_id) == 22:
+	cond.off = 31
+	cond.on = 33
+	self.attr1 = 7
+	print(f"17-[MEMBER] {self.name} doesn't have more bottles")

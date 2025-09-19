@@ -1,0 +1,14 @@
+periodical
+0
+if int(self.map_id) == 1 and int(self.attr5) == 1: #when attr5 = 1 bot will go to krem
+	print(f"27-[MEMBER] {self.name} walk to tower nosville")
+	cond.off = 40 
+	cond.off = 41
+	cond.off = 42
+	cond.off = 39
+	cond.off = 14
+	time.sleep(self.randomize_delay(1,2))
+	self.walk_to_point([68,57])
+	time.sleep(self.randomize_delay(1,2))
+	cond.on = 44
+	self.attr5 = 2 #disable option to walk to tower

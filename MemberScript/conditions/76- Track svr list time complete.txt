@@ -1,0 +1,31 @@
+periodical
+1
+import time
+import gfless_api
+import asyncio
+timeout_seconds = 40
+start_time = getattr(self, "_svrlist_login_started", None)
+pending = getattr(self, "_svrlist_login_pending", False)
+if pending and start_time is not None:
+        elapsed = time.monotonic() - start_time
+        if elapsed >= timeout_seconds and int(self.attr1) == 30:
+                self._svrlist_login_pending = False
+                self._svrlist_login_started = None
+                self.attr1 = 30
+                cond.off = 86
+                cond.off = 91
+                cond.on = 88
+                cond.on = 89
+                cond.on = 90
+                cond.on = 92
+                cond.on = 93
+                self._old_name = self.name
+                self._old_id = self.id
+                time.sleep(self.randomize_delay(1,2))
+                self.api.recv_packet("svrlist")
+                time.sleep(self.randomize_delay(3,4))
+                print(f"76-[MEMBER] {self.name} error to connect, try create other instance")
+                # Save parameters and login (performs DLL injection)
+                gfless_api.save_config(int(0), int(0), int(6), int(-1))
+                gfless_api.close_login_pipe()
+                gfless_api.login(int(0), int(0), int(6), int(-1), pid=self.PIDnum, force_reinject=True)
