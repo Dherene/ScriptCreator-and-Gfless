@@ -207,13 +207,29 @@ def login_from_config(delay: float = 1.0, *, pid: Optional[int] = None, exe_name
 PIPE_NAME = r"\\.\pipe\MiServidor"
 
 def _terminate_login_servers() -> None:
-    """Terminate any known processes that could own ``PIPE_NAME``."""
-    # GflessClient.exe is the official launcher that also provides this pipe.
-    names = {"gflessclient.exe"}
+    """Terminate any known processes that could own ``PIPE_NAME``.
+
+    The official launcher (``GflessClient.exe``) must remain open, so we keep
+    a list of protected executables and skip them when cleaning up stale pipe
+    servers.
+    """
+
+    protected = {"gflessclient.exe"}
+    # ``names`` contains executables that are safe to terminate automatically.
+    # It is intentionally empty so the launcher stays alive even when
+    # reinjecting the DLL.
+    names = set()
     for proc in psutil.process_iter(["pid", "name"]):
         try:
-            if proc.info["name"] and proc.info["name"].lower() in names \
-                    and proc.pid != os.getpid():
+            name = proc.info["name"]
+            if not name or proc.pid == os.getpid():
+                continue
+
+            name = name.lower()
+            if name in protected:
+                continue
+
+            if name in names:
                 proc.terminate()
                 proc.wait(2)
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired):
