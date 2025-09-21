@@ -41,7 +41,7 @@ from PyQt5.QtGui import (
     QStandardItemModel,
     QStandardItem,
 )
-from PyQt5.QtCore import Qt, QRectF, QLockFile, QSettings
+from PyQt5.QtCore import Qt, QRectF, QLockFile, QSettings, QTimer
 from PyQt5.Qsci import QsciScintilla
 
 from license_manager import prompt_for_license
@@ -786,6 +786,16 @@ class MyWindow(QMainWindow):
         refresh_button.clicked.connect(self.refresh)
         layout.addWidget(refresh_button)
 
+        # Periodically synchronize tab names with the underlying player objects.
+        # Characters can be renamed by scripts (e.g. when creating a new member)
+        # while the client session remains active.  The timer keeps the UI in
+        # sync without requiring a manual refresh, and avoids reopening tabs for
+        # characters that already have scripts/conditions loaded.
+        self.name_sync_timer = QTimer(self)
+        self.name_sync_timer.setInterval(1000)
+        self.name_sync_timer.timeout.connect(self.sync_player_names)
+        self.name_sync_timer.start()
+
         # Create system tray icon and menu
         self.tray_icon = QSystemTrayIcon(QIcon('src/icon.png'), self)
         self.tray_icon.setToolTip("Script Creator")
@@ -1008,13 +1018,35 @@ class MyWindow(QMainWindow):
     def refresh(self):
         all_chars = returnAllPorts()
         all_chars = sorted(all_chars, key=lambda x: x[0])
-        for i in range(len(all_chars)):
-            if all_chars[i][0] not in self.open_tabs_names:
-                self.add_tab(all_chars[i][0])
+        pid_to_index = {}
+        for idx, (player_obj, _) in enumerate(self.players):
+            pid = getattr(player_obj, "PIDnum", None)
+            if pid is not None:
+                pid_to_index[pid] = idx
+
+        for name, _api_port, pid in all_chars:
+            existing_index = pid_to_index.get(pid)
+            if existing_index is not None:
+                player_obj = self.players[existing_index][0]
+                if player_obj.name != name:
+                    player_obj.name = name
+                self._update_displayed_name(existing_index, name)
+                continue
+
+            if name not in self.open_tabs_names:
+                self.add_tab(name)
+                # Ensure future refreshes match by PID for already-loaded scripts
+                if self.players:
+                    self.players[-1][0].PIDnum = pid
+            else:
+                # Name matches but PID changed (e.g. client relaunch). Keep the
+                # existing tab but update the stored PID for consistency.
+                index = self.open_tabs_names.index(name)
+                self.players[index][0].PIDnum = pid
 
         current_names = [p[0] for p in all_chars]
         self.group_leaders = [name for name in self.group_leaders if name in current_names]
-        
+
         tabs_to_remove = []
         for i in range(len(self.open_tabs_names)):
             if self.open_tabs_names[i] not in [player[0] for player in all_chars]:
@@ -1035,6 +1067,50 @@ class MyWindow(QMainWindow):
             self.saveAction.setEnabled(True)
 
         self.update_group_party_info()
+
+    def _update_displayed_name(self, index, new_name):
+        """Update tab labels and bookkeeping when a player's name changes."""
+
+        if index >= len(self.open_tabs_names):
+            # Keep bookkeeping aligned in edge cases where a tab was created but
+            # the list was not extended yet (e.g. during rapid refreshes).
+            self.open_tabs_names.extend([None] * (index - len(self.open_tabs_names) + 1))
+
+        old_name = self.open_tabs_names[index]
+        if old_name == new_name:
+            return False
+
+        self.open_tabs_names[index] = new_name
+
+        if index < self.tab_widget.count():
+            self.tab_widget.setTabText(index, new_name)
+
+        if old_name:
+            self.group_leaders = [new_name if leader == old_name else leader for leader in self.group_leaders]
+
+        return True
+
+    def sync_player_names(self):
+        """Ensure tab titles mirror the live names of connected players."""
+
+        name_changed = False
+        for idx, (player_obj, _) in enumerate(self.players):
+            current_name = getattr(player_obj, "name", None)
+            if not current_name:
+                continue
+
+            if idx >= len(self.open_tabs_names):
+                self.open_tabs_names.append(current_name)
+                if idx < self.tab_widget.count():
+                    self.tab_widget.setTabText(idx, current_name)
+                name_changed = True
+                continue
+
+            if self._update_displayed_name(idx, current_name):
+                name_changed = True
+
+        if name_changed:
+            self.update_group_party_info()
 
     def update_group_party_info(self):
         """Synchronize party names and IDs for players with group scripts."""
