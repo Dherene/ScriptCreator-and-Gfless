@@ -1118,21 +1118,46 @@ class MyWindow(QMainWindow):
         if not group_players:
             return
 
-        leader_obj = next((p for p in group_players if p.name in self.group_leaders), None)
-        if not leader_obj:
-            return
+        leaders = [name for name in self.group_leaders if isinstance(name, str)]
+        leader_set = set(leaders)
 
-        member_objs = [p for p in group_players if p is not leader_obj]
-        party_names = [leader_obj.name] + [m.name for m in member_objs]
-        party_ids = [leader_obj.id] + [m.id for m in member_objs]
+        groups: dict[str, list] = {}
+        for player in group_players:
+            leader_name = None
+            if isinstance(player.attr20, str) and player.attr20:
+                leader_name = player.attr20
+            elif player.name in leader_set:
+                leader_name = player.name
+            elif isinstance(player.leadername, str) and player.leadername:
+                leader_name = player.leadername
 
-        for p in [leader_obj] + member_objs:
-            p.partyname = party_names
-            p.partyID = party_ids
+            if not leader_name:
+                continue
 
-        leader_obj.attr51 = [m.name for m in member_objs]
-        for m in member_objs:
-            m.leaderID = leader_obj.id
+            if leader_set and leader_name not in leader_set and player.name not in leader_set:
+                continue
+
+            groups.setdefault(leader_name, []).append(player)
+
+        for leader_name, players in groups.items():
+            leader_obj = next((p for p in players if p.name == leader_name), None)
+            if leader_obj is None:
+                leader_obj = next((p for p in players if p.name in leader_set), None)
+            if leader_obj is None:
+                continue
+
+            member_objs = [p for p in players if p is not leader_obj]
+            party_names = [leader_obj.name] + [m.name for m in member_objs]
+            party_ids = [leader_obj.id] + [m.id for m in member_objs]
+
+            for participant in [leader_obj] + member_objs:
+                participant.partyname = party_names
+                participant.partyID = party_ids
+
+            leader_obj.attr51 = [m.name for m in member_objs]
+            leader_obj.leaderID = leader_obj.id
+            for member in member_objs:
+                member.leaderID = leader_obj.id
 
     def add_tab(self, char_name):
         # Create a new tab and add it to the tab widget
