@@ -1,4 +1,7 @@
 import gfless_api
+import threading
+import time
+
 # Gets current player object
 player = self.players[self.tab_widget.currentIndex()][0]
 
@@ -9,3 +12,133 @@ pidnum = player.PIDnum
 alts = [sublist[0] if sublist[0] is not None else None for sublist in self.players]
 alts.remove(player)
 #charged
+
+_MEMBER_STUCK_TIMEOUT = 180  # seconds without progress before triggering recovery
+_MEMBER_STUCK_CHECK_INTERVAL = 5  # polling interval for the watchdog thread
+_MEMBER_STUCK_RECOVERY_DELAY = 10  # wait time before forcing the recovery condition
+_MEMBER_STUCK_CONDITION_NUMBER = 87  # cond.on value for "70-Logot character"
+_MEMBER_STUCK_RECOVERY_ATTR = 29  # attr1 value expected by the recovery condition
+
+def _snapshot_active_conditions(member):
+    """Return a snapshot of the currently running conditions for ``member``."""
+
+    lock = getattr(member, "_condition_state_lock", None)
+    state = getattr(member, "_condition_state", None)
+    if lock is None or state is None:
+        return frozenset()
+
+    with lock:
+        active = []
+        for cond_type, names in state.items():
+            for name in list(names):
+                active.append((cond_type, name))
+    return frozenset(active)
+
+def _deactivate_active_conditions(member, active_snapshot):
+    """Disable every condition found in ``active_snapshot`` for ``member``."""
+
+    if not active_snapshot:
+        return False
+
+    try:
+        sequence = member._build_condition_sequence()
+    except Exception as exc:  # pragma: no cover - defensive logging
+        print(f"[Monitor] No se pudo obtener condiciones de {member.name}: {exc}")
+        return False
+
+    changed = False
+    for seq_number, (cond_type, _, name) in enumerate(sequence, start=1):
+        if (cond_type, name) in active_snapshot:
+            try:
+                member._set_condition_active_by_number(seq_number, False)
+                changed = True
+            except Exception as exc:  # pragma: no cover - defensive logging
+                print(
+                    f"[Monitor] Error desactivando '{name}' para {member.name}: {exc}"
+                )
+    return changed
+
+def _handle_member_stuck(member, active_snapshot):
+    """Force the recovery flow when a member appears stuck."""
+
+    if not _deactivate_active_conditions(member, active_snapshot):
+        return False
+
+    # Wait up to 10 seconds while still allowing the script to stop cleanly.
+    for _ in range(_MEMBER_STUCK_RECOVERY_DELAY):
+        if getattr(member, "stop_script", False):
+            return False
+        time.sleep(1)
+
+    if getattr(member, "stop_script", False):
+        return False
+
+    print(f"MEMBER {member.name} se ha quedado atascado")
+
+    group = getattr(member, "_group", None)
+    if group is not None:
+        try:
+            if group.get("trade") == "1":
+                group.trade = "0"
+        except Exception as exc:  # pragma: no cover - defensive logging
+            print(f"[Monitor] No se pudo actualizar selfgroup.trade para {member.name}: {exc}")
+
+    member.attr1 = _MEMBER_STUCK_RECOVERY_ATTR
+    try:
+        member._set_condition_active_by_number(_MEMBER_STUCK_CONDITION_NUMBER, True)
+    except Exception as exc:  # pragma: no cover - defensive logging
+        print(
+            f"[Monitor] Error activando condición 70 para {member.name}: {exc}"
+        )
+        return False
+
+    return True
+
+def _start_member_stuck_monitor(self):
+    """Launch a background watchdog that looks for stalled conditions."""
+
+    existing_thread = getattr(self, "_member_stuck_monitor_thread", None)
+    if existing_thread and existing_thread.is_alive():
+        return
+
+    stop_event = threading.Event()
+    self._member_stuck_monitor_stop = stop_event
+
+    def _monitor():
+        last_state = None
+        last_change = time.monotonic()
+
+        try:
+            while not stop_event.wait(_MEMBER_STUCK_CHECK_INTERVAL):
+                if getattr(self, "stop_script", False):
+                    break
+
+                snapshot = _snapshot_active_conditions(self)
+                if last_state is None or snapshot != last_state:
+                    last_state = snapshot
+                    last_change = time.monotonic()
+                    continue
+
+                if snapshot and (time.monotonic() - last_change) >= _MEMBER_STUCK_TIMEOUT:
+                    handled = _handle_member_stuck(self, snapshot)
+                    last_state = None if handled else snapshot
+                    last_change = time.monotonic()
+        except Exception as exc:  # pragma: no cover - defensive logging
+            print(f"[Monitor] Error en el watchdog de {self.name}: {exc}")
+        finally:
+            stop_event.set()
+            self._member_stuck_monitor_thread = None
+            self._member_stuck_monitor_stop = None
+
+    thread = threading.Thread(
+        target=_monitor,
+        name=f"{self.name}-member-stuck-monitor",
+        daemon=True,
+    )
+    self._member_stuck_monitor_thread = thread
+    thread.start()
+
+player.start_member_stuck_monitor = _start_member_stuck_monitor.__get__(
+    player, player.__class__
+)
+player.start_member_stuck_monitor()
