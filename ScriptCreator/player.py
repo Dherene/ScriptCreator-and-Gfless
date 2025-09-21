@@ -205,6 +205,9 @@ class Player:
             "periodical": set(),
         }
         self._condition_state_lock = threading.Lock()
+        self._condition_time_lock = threading.Lock()
+        self._last_condition_activity = time.monotonic()
+        self._condition_activity_by_name = {}
 
         # internal state for periodical walking
         # track per-condition cooldowns and thread context
@@ -341,6 +344,28 @@ class Player:
         entries.sort(key=lambda item: self._condition_sort_key(item[2]))
         return entries
 
+    def _record_condition_activity(self, cond_type=None, name=None):
+        now = time.monotonic()
+        with self._condition_time_lock:
+            self._last_condition_activity = now
+            if cond_type is not None and name is not None:
+                self._condition_activity_by_name[(cond_type, name)] = now
+
+    def time_since_last_condition_change(self, cond_type=None, name=None):
+        with self._condition_time_lock:
+            if cond_type is None and name is None:
+                last = self._last_condition_activity
+            elif cond_type is not None and name is not None:
+                last = self._condition_activity_by_name.get((cond_type, name))
+            else:
+                return None
+        if last is None:
+            return None
+        return time.monotonic() - last
+
+    def reset_condition_activity_timer(self, cond_type=None, name=None):
+        self._record_condition_activity(cond_type, name)
+
     def _set_condition_active_by_number(self, seq_number, active):
         if isinstance(seq_number, bool) or not isinstance(seq_number, int):
             print("Condition numbers must be integers.")
@@ -372,6 +397,7 @@ class Player:
                     cond.task = None
 
         self.start_condition_loop()
+        self._record_condition_activity(cond_type, name)
         state = "enabled" if active else "disabled"
         attr = "on" if active else "off"
         print(f"Condition '{name}' {state} via cond.{attr} = {seq_number}")
@@ -1231,6 +1257,7 @@ class Player:
 
     async def _run_packet_condition(self, name, func, packet, store_list, cond_type):
         self._set_condition_running(cond_type, name, True)
+        self._record_condition_activity(cond_type, name)
         try:
             await func(self, packet)
         except Exception as e:
@@ -1249,6 +1276,7 @@ class Player:
 
     async def _run_periodic_condition(self, name, func):
         self._set_condition_running("periodical", name, True)
+        self._record_condition_activity("periodical", name)
         self._periodic_ctx.current = name
         try:
             await func(self)
