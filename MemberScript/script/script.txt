@@ -1,11 +1,104 @@
+import time
 import gfless_api
-# Gets current player object
+
+# Obtiene el jugador actual asociado a la pestaña
 player = self.players[self.tab_widget.currentIndex()][0]
 
-# Get pidnum = (PID number)
+# PID del personaje (se mantiene por compatibilidad con otros scripts)
 pidnum = player.PIDnum
 
-# Gets all The players and remove current player to get alts
+# Obtiene la lista de alts excluyendo al jugador actual
 alts = [sublist[0] if sublist[0] is not None else None for sublist in self.players]
-alts.remove(player)
-#charged
+try:
+    alts.remove(player)
+except ValueError:
+    alts = [alt for alt in alts if alt is not player]
+
+CONDITION_TIMEOUT = 120  # segundos máximos sin actividad
+CHECK_INTERVAL = 5  # segundos entre comprobaciones
+RECOVERY_DELAY = 10  # espera antes de recuperar condiciones
+RECOVERY_ATTR_VALUE = 29
+RECOVERY_CONDITION_NUMBER = 87
+
+_fallback_activity = {}
+
+
+def reset_condition_timer(target_player, store=_fallback_activity):
+    reset_method = getattr(target_player, "reset_condition_activity_timer", None)
+    if callable(reset_method):
+        try:
+            reset_method()
+        except Exception as error:
+            print(f"No se pudo reiniciar el temporizador interno de condiciones: {error}")
+    store[id(target_player)] = time.monotonic()
+
+
+def time_since_last_activity(target_player, store=_fallback_activity):
+    timer_method = getattr(target_player, "time_since_last_condition_change", None)
+    if callable(timer_method):
+        try:
+            elapsed = timer_method()
+            if isinstance(elapsed, (int, float)):
+                return elapsed
+        except Exception as error:
+            print(f"No se pudo consultar el tiempo desde el último cambio de condiciones: {error}")
+    last = store.get(id(target_player))
+    if last is None:
+        reset_condition_timer(target_player, store)
+        return 0.0
+    return time.monotonic() - last
+
+
+def disable_all_conditions(target_player):
+    sequence_builder = getattr(target_player, "_build_condition_sequence", None)
+    toggler = getattr(target_player, "_set_condition_active_by_number", None)
+    if not callable(toggler) or sequence_builder is None:
+        print("No se pueden desactivar condiciones porque la API no expone los métodos necesarios.")
+        return 0
+
+    sequence = sequence_builder()
+    total_conditions = len(sequence)
+    for seq_index in range(1, total_conditions + 1):
+        toggler(seq_index, False)
+    reset_condition_timer(target_player)
+    return total_conditions
+
+
+def wait_seconds(target_player, seconds):
+    for _ in range(seconds):
+        if getattr(target_player, "stop_script", False):
+            return False
+        time.sleep(1)
+    return True
+
+
+reset_condition_timer(player)
+
+
+while not getattr(player, "stop_script", False):
+    try:
+        elapsed = time_since_last_activity(player)
+        if elapsed is not None and elapsed > CONDITION_TIMEOUT:
+            total_conditions = disable_all_conditions(player)
+            if total_conditions == 0:
+                if not wait_seconds(player, CHECK_INTERVAL):
+                    break
+                continue
+            if not wait_seconds(player, RECOVERY_DELAY):
+                break
+            print("Usuario atrapado")
+            player.attr1 = RECOVERY_ATTR_VALUE
+            if total_conditions >= RECOVERY_CONDITION_NUMBER:
+                player._set_condition_active_by_number(RECOVERY_CONDITION_NUMBER, True)
+            else:
+                print(
+                    "No hay suficientes condiciones disponibles para activar la condición"
+                    f" {RECOVERY_CONDITION_NUMBER}."
+                )
+            reset_condition_timer(player)
+        if not wait_seconds(player, CHECK_INTERVAL):
+            break
+    except Exception as error:
+        print(f"Error al monitorear condiciones del miembro: {error}")
+        if not wait_seconds(player, CHECK_INTERVAL):
+            break
