@@ -1,0 +1,7 @@
+periodical
+0
+import asyncio
+if int(self.hp_percent) == 35:
+	print(f"0-[MEMBER] {self.name} is low life USE POTION")
+	await asyncio.sleep(self.randomize_delay(0.75,1))
+	self.use_item(1010, "main")

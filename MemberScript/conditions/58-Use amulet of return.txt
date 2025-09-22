@@ -1,0 +1,10 @@
+periodical
+0
+if int(self.attr1) == 22 and int(self.map_id) == 1:
+	cond.off = 74
+	cond.on = 76
+	cond.on = 24
+	time.sleep(self.randomize_delay(1,1.5))
+	print(f"58-[MEMBER] {self.name} use amulet of return")
+	self.use_item(2071, "etc")
+	time.sleep(self.randomize_delay(10,12))

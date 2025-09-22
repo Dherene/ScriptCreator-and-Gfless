@@ -1,0 +1,28 @@
+recv_packet
+0
+if int(self.map_id) == 22:
+
+    # Si nos ataca un enemigo
+    if packet.startswith("su 3"):
+        partes = packet.split()
+        if len(partes) >= 4:
+            mob_id = partes[2]
+            self.attr60 = mob_id  # Guardamos ID del último atacante
+            print(f"24-[MEMBER] {self.name} Enemigo atacó: ID = {mob_id}")
+
+            time.sleep(self.randomize_delay(0.3, 0.5))
+            self.api.send_packet(f"u_s 0 3 {mob_id}")
+            print(f"[MEMBER] {self.name} Atacando a {mob_id}")
+
+    # Si seguimos atacando y el mob sigue vivo (basado en vida)
+    if packet.startswith("su 1") and hasattr(self, "attr60") and self.attr60 != "":
+        partes = packet.split()
+        if len(partes) >= 14 and partes[4] == self.attr60:
+            vida = int(partes[12])  # porcentaje de vida
+            if vida > 0:
+                print(f"24-[MEMBER] {self.name} Enemigo {self.attr60} tiene {vida}% de vida. Reatacando...")
+                time.sleep(self.randomize_delay(0.6, 0.9))
+                self.api.send_packet(f"u_s 0 3 {self.attr60}")
+            else:
+                print(f"24-[MEMBER] {self.name} Enemigo {self.attr60} eliminado")
+                self.attr60 = ""  # Reseteamos para estar listos al próximo atacante

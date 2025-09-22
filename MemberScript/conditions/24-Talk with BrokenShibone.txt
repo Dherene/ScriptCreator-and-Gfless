@@ -1,0 +1,17 @@
+periodical
+0
+if int(self.map_id) == 22 and int(self.pos_x) == 85 and int(self.pos_y) == 45 and int(self.attr1) == 11:
+	cond.off = 37
+
+	ID = self.BrokenShinebone["ID"]
+	print(f"23-[MEMBER] {self.name} Talk with Broken Shinebone")
+	time.sleep(self.randomize_delay(0.75,1.5))
+	self.api.send_packet(f"ncif 2 {ID}")
+	time.sleep(self.randomize_delay(0.75,1.5))
+	self.api.send_packet(f"npc_req 2 {ID}")
+	time.sleep(self.randomize_delay(2,3))
+	self.api.send_packet("script 0 12 100")
+	cond.on = 39
+	cond.on = 40
+	cond.on = 41
+	self.attr1 = 12

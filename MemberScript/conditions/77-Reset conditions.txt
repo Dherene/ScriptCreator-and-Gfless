@@ -1,0 +1,7 @@
+periodical
+1
+if int(time.cond) > 120:
+	print(f"[MEMBER] {self.name} esta atrapado, reiniciando condiciones.")
+	cond.on = 87
+	time.sleep(self.randomize_delay(0.75,1.5))
+	self.attr1 = 29
