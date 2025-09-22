@@ -22,6 +22,8 @@ import os
 import re
 import gfless_api
 
+from player import PeriodicCondition
+
 class ConditionReview(QDialog):
     def __init__(self, player, script, condition_type, cond_modifier, cond_creator, replace_index = None, cond_name = None):
         super().__init__()
