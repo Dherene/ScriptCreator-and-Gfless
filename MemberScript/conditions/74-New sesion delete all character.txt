@@ -1,8 +1,0 @@
-periodical
-1
-if int(self.attr1) == 0:
-        time.sleep(self.randomize_delay(1,2))
-        print(f"[MEMBER] {self.name} will create a new character to start bot")
-        cond.on = 87
-        cond.on = 13
-        self.attr1 = 29
