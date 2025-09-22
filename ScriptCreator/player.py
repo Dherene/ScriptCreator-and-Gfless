@@ -129,6 +129,80 @@ class ConditionControl:
         self._toggle("off", value)
 
 
+class ConditionTimer:
+    """Numeric helper exposing the time elapsed since the last condition change."""
+
+    __slots__ = ("_player",)
+
+    def __init__(self, player):
+        self._player = player
+
+    def _value(self, cond_type=None, name=None):
+        elapsed = self._player.time_since_last_condition_change(cond_type, name)
+        if isinstance(elapsed, (int, float)):
+            return float(elapsed)
+        return 0.0
+
+    def __call__(self, cond_type=None, name=None):
+        """Return elapsed seconds, optionally for a specific condition."""
+
+        return self._value(cond_type, name)
+
+    def reset(self, cond_type=None, name=None):
+        """Reset the activity timer globally or for a specific condition."""
+
+        self._player.reset_condition_activity_timer(cond_type, name)
+
+    def __float__(self):
+        return float(self._value())
+
+    def __int__(self):
+        return int(self._value())
+
+    def __bool__(self):
+        return bool(self._value())
+
+    def __repr__(self):
+        return f"{self._value():.6f}"
+
+    __str__ = __repr__
+
+
+class TimeNamespace:
+    """Wrapper around :mod:`time` adding condition-aware helpers."""
+
+    __slots__ = ("_module", "_cond")
+
+    def __init__(self, player, module=time):
+        object.__setattr__(self, "_module", module)
+        object.__setattr__(self, "_cond", ConditionTimer(player))
+
+    def __getattr__(self, name):
+        return getattr(self._module, name)
+
+    def __setattr__(self, name, value):
+        if name == "cond":
+            raise AttributeError("time.cond is read-only")
+        setattr(self._module, name, value)
+
+    def __delattr__(self, name):
+        if name == "cond":
+            raise AttributeError("time.cond cannot be deleted")
+        delattr(self._module, name)
+
+    @property
+    def cond(self):
+        return self._cond
+
+    def reset_cond(self, cond_type=None, name=None):
+        """Convenience wrapper that proxies to :meth:`ConditionTimer.reset`."""
+
+        self._cond.reset(cond_type, name)
+
+    def __dir__(self):
+        return sorted(set(dir(self._module)) | {"cond", "reset_cond"})
+
+
 # encapsulation for periodical conditions so each player can manage its own
 # execution task and compiled function without interfering with others
 @dataclass
@@ -192,6 +266,7 @@ class Player:
         self.periodical_conditions: list[PeriodicCondition] = []
         self._cond_counter = 0
         self._cond_control = ConditionControl(self)
+        self._time_namespace = TimeNamespace(self)
 
         # caches for compiled condition functions
         # maps condition name to a tuple of (source_code, compiled_func)
@@ -1233,7 +1308,7 @@ class Player:
         ast.fix_missing_locations(module)
         globs = {
             "asyncio": asyncio,
-            "time": time,
+            "time": self._time_namespace,
             "selfgroup": self._group,
             "cond": self._cond_control,
         }

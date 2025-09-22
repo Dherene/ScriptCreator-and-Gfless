@@ -350,7 +350,23 @@ class ConditionCreator(QDialog):
         combo_condition = QComboBox()
         combo_condition.setStyleSheet("QComboBox { combobox-popup: 0; }")
         
-        elements_list = ["recv_packet", "send_packet", "split_recv_packet", "split_send_packet", "pos_x", "pos_y", "id", "name", "map_id", "level", "champion_level", "hp_percent", "mp_percent", "is_resting"]
+        elements_list = [
+            "recv_packet",
+            "send_packet",
+            "split_recv_packet",
+            "split_send_packet",
+            "pos_x",
+            "pos_y",
+            "id",
+            "name",
+            "map_id",
+            "level",
+            "champion_level",
+            "hp_percent",
+            "mp_percent",
+            "is_resting",
+            "time.cond",
+        ]
         for i in range(1, 101):
             elements_list.append(f"attr{i}")
         combo_condition.addItems(elements_list)
@@ -845,6 +861,15 @@ class ConditionCreator(QDialog):
                         script += f'self.split_packet(packet, "{separator}"){split_index} == "{user_input_value}"'
                     elif user_input_type == "raw":
                         script += f'self.split_packet(packet, "{separator}"){split_index} == {user_input_value}'
+            elif argument == "time.cond":
+                classic_operators = ["==", "!=", ">", "<", ">=", "<="]
+                if operator in classic_operators:
+                    left_expr = "int(time.cond)" if user_input_type == "int" else "float(time.cond)"
+                    if user_input_type == "string":
+                        comparison_value = f'"{user_input_value}"'
+                    else:
+                        comparison_value = user_input_value
+                    script += f'{left_expr} {operator} {comparison_value}'
             else:
                 classic_operators = ["==", "!=", ">", "<", ">=", "<="]
                 if operator in classic_operators:
@@ -969,11 +994,23 @@ class ConditionCreator(QDialog):
         cur_sender = self.sender()
         selected_item = cur_sender.currentText()
         index = cur_sender.property("index")
-        self.condition_widgets[index][3].clear()
+        operator_combo = self.condition_widgets[index][3]
+        value_type_combo = self.condition_widgets[index][6]
+
+        operator_combo.clear()
+        value_type_combo.clear()
         if selected_item == "recv_packet" or selected_item == "send_packet":
-            self.condition_widgets[index][3].addItems(["startswith", "contains", "endswith", "equals"])
+            operator_combo.addItems(["startswith", "contains", "endswith", "equals"])
+            value_type_combo.addItems(["string", "int", "raw"])
+            value_type_combo.setCurrentIndex(0)
+        elif selected_item == "time.cond":
+            operator_combo.addItems(["==", "!=", ">", "<", ">=", "<="])
+            value_type_combo.addItems(["int", "raw"])
+            value_type_combo.setCurrentIndex(0)
         else:
-            self.condition_widgets[index][3].addItems(["==", "!=", ">", "<", ">=", "<=", "startswith", "contains", "endswith"])
+            operator_combo.addItems(["==", "!=", ">", "<", ">=", "<=", "startswith", "contains", "endswith"])
+            value_type_combo.addItems(["string", "int", "raw"])
+            value_type_combo.setCurrentIndex(0)
 
         if selected_item == "split_recv_packet" or selected_item == "split_send_packet":
             self.condition_widgets[index][5].setVisible(True)
