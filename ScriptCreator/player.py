@@ -282,6 +282,7 @@ class Player:
         self._condition_state_lock = threading.Lock()
         self._condition_time_lock = threading.Lock()
         self._last_condition_activity = time.monotonic()
+        self._last_condition_state_change = self._last_condition_activity
         self._condition_activity_by_name = {}
 
         # internal state for periodical walking
@@ -426,10 +427,16 @@ class Player:
             if cond_type is not None and name is not None:
                 self._condition_activity_by_name[(cond_type, name)] = now
 
+    def _record_condition_state_change(self):
+        now = time.monotonic()
+        with self._condition_time_lock:
+            self._last_condition_state_change = now
+            self._last_condition_activity = now
+
     def time_since_last_condition_change(self, cond_type=None, name=None):
         with self._condition_time_lock:
             if cond_type is None and name is None:
-                last = self._last_condition_activity
+                last = self._last_condition_state_change
             elif cond_type is not None and name is not None:
                 last = self._condition_activity_by_name.get((cond_type, name))
             else:
@@ -440,6 +447,8 @@ class Player:
 
     def reset_condition_activity_timer(self, cond_type=None, name=None):
         self._record_condition_activity(cond_type, name)
+        if cond_type is None and name is None:
+            self._record_condition_state_change()
 
     def _set_condition_active_by_number(self, seq_number, active):
         if isinstance(seq_number, bool) or not isinstance(seq_number, int):
@@ -459,19 +468,28 @@ class Player:
             return
 
         cond_type, idx, name = entries[seq_number - 1]
+        changed = False
         if cond_type == "recv_packet":
+            previous = self.recv_packet_conditions[idx][2]
             self.recv_packet_conditions[idx][2] = active
+            changed = previous != active
         elif cond_type == "send_packet":
+            previous = self.send_packet_conditions[idx][2]
             self.send_packet_conditions[idx][2] = active
+            changed = previous != active
         else:
             with self._periodic_cond_lock:
                 cond = self.periodical_conditions[idx]
-                cond.active = active
+                previous = cond.active
                 if not active and cond.task and not cond.task.done():
                     cond.task.cancel()
                     cond.task = None
+                cond.active = active
+                changed = previous != active
 
         self.start_condition_loop()
+        if changed:
+            self._record_condition_state_change()
         self._record_condition_activity(cond_type, name)
         state = "enabled" if active else "disabled"
         attr = "on" if active else "off"
