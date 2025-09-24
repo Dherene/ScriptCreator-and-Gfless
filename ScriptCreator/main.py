@@ -866,6 +866,9 @@ class GroupScriptDialog(QDialog):
         self.loaded_group_info = {
             "leader_name": leader_name,
             "member_names": member_names,
+            "group_id": self.group_id,
+            "leader_path": self.leader_path,
+            "member_path": self.member_path,
         }
 
         QMessageBox.information(self, "Group Script Setup", "Setup successfully loaded.")
@@ -873,6 +876,36 @@ class GroupScriptDialog(QDialog):
 
     def get_loaded_group(self):
         return self.loaded_group_info
+
+
+class AddGroupMembersDialog(QDialog):
+    """Dialog to select additional members for an existing group."""
+
+    def __init__(self, player_names):
+        super().__init__()
+        self.setWindowTitle("Add Players to Group")
+        self.setWindowIcon(QIcon('src/icon.png'))
+
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel("Players to add"))
+
+        self.members_combo = CheckableComboBox()
+        self.members_combo.addItems(player_names)
+        layout.addWidget(self.members_combo)
+
+        button_layout = QHBoxLayout()
+        add_button = QPushButton("Add")
+        cancel_button = QPushButton("Cancel")
+        add_button.clicked.connect(self.accept)
+        cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(add_button)
+        button_layout.addWidget(cancel_button)
+
+        layout.addLayout(button_layout)
+        self.setLayout(layout)
+
+    def selected_members(self):
+        return self.members_combo.checkedItems()
 
     def _on_manual_login_toggled(self, checked: bool) -> None:
         self.manual_login_widget.setVisible(checked)
@@ -1255,6 +1288,9 @@ class MyWindow(QMainWindow):
         loadGroupAction = QAction('Load Setup', self)
         loadGroupAction.triggered.connect(self.load_group_script_setup)
         groupMenu.addAction(loadGroupAction)
+        addGroupMembersAction = QAction('Add players to current group', self)
+        addGroupMembersAction.triggered.connect(self.add_players_to_current_group)
+        groupMenu.addAction(addGroupMembersAction)
         maxMembersAction = QAction('Max Members', self)
         maxMembersAction.triggered.connect(self.set_group_script_max_members)
         groupMenu.addAction(maxMembersAction)
@@ -1461,6 +1497,247 @@ class MyWindow(QMainWindow):
         self.settings.setValue("groupMemberSetupPath", member_path)
         QMessageBox.information(self, "Group Script Setup", "Setup paths saved.")
 
+    def _load_group_script_for_player(
+        self,
+        player_obj,
+        index,
+        setup_path,
+        role,
+        leader_obj=None,
+        group_id=None,
+    ):
+        script_dir = os.path.join(setup_path, "script")
+        cond_dir = os.path.join(setup_path, "conditions")
+        if not os.path.isdir(script_dir) or not os.path.isdir(cond_dir):
+            raise RuntimeError(f"Invalid setup folder: {setup_path}")
+
+        script_files = sorted(
+            [f for f in os.listdir(script_dir) if f.endswith('.txt')],
+            key=GroupScriptDialog._natural_key,
+        )
+        if not script_files:
+            raise RuntimeError(f"No scripts found in {script_dir}")
+
+        if role == "leader":
+            chosen = next(
+                (s for s in script_files if "setup1" in s.lower() or "leader" in s.lower()),
+                script_files[0],
+            )
+        else:
+            chosen = next(
+                (s for s in script_files if "follow" in s.lower() or "member" in s.lower()),
+                script_files[0],
+            )
+
+        with open(os.path.join(script_dir, chosen), "r", encoding="utf-8", errors="ignore") as file:
+            script_text = file.read()
+
+        self.text_editors[index].setText(script_text)
+
+        pid = getattr(player_obj, "PIDnum", None)
+        player_obj.reset_attrs()
+        if pid is not None:
+            player_obj.PIDnum = pid
+
+        player_obj.recv_packet_conditions = []
+        player_obj.send_packet_conditions = []
+        player_obj.periodical_conditions = []
+        if hasattr(player_obj, "_compiled_recv_conditions"):
+            player_obj._compiled_recv_conditions.clear()
+        if hasattr(player_obj, "_compiled_send_conditions"):
+            player_obj._compiled_send_conditions.clear()
+        if hasattr(player_obj, "_condition_state"):
+            player_obj._condition_state = {
+                "recv_packet": set(),
+                "send_packet": set(),
+                "periodical": set(),
+            }
+        if hasattr(player_obj, "_condition_activity_by_name"):
+            player_obj._condition_activity_by_name.clear()
+
+        cond_files = sorted(
+            [f for f in os.listdir(cond_dir) if f.endswith('.txt')],
+            key=GroupScriptDialog._natural_key,
+        )
+        for cf in cond_files:
+            cond_path = os.path.join(cond_dir, cf)
+            with open(cond_path, "r", encoding="utf-8", errors="ignore") as cfile:
+                c_type = cfile.readline().strip()
+                running = cfile.readline().strip()
+                cond_script = cfile.read().strip()
+            running_bool = running == "1"
+            if c_type == "recv_packet":
+                player_obj.recv_packet_conditions.append([os.path.splitext(cf)[0], cond_script, running_bool])
+            elif c_type == "send_packet":
+                player_obj.send_packet_conditions.append([os.path.splitext(cf)[0], cond_script, running_bool])
+            else:
+                player_obj.periodical_conditions.append(
+                    PeriodicCondition(os.path.splitext(cf)[0], cond_script, running_bool, 1)
+                )
+
+        if role == "leader":
+            player_obj.attr19 = 0
+            player_obj.attr20 = player_obj.name
+            player_obj.leadername = player_obj.name
+            player_obj.leaderID = player_obj.id
+        else:
+            if group_id is not None:
+                player_obj.attr19 = group_id
+            if leader_obj is not None:
+                player_obj.attr20 = leader_obj.name
+                player_obj.leadername = leader_obj.name
+                player_obj.leaderID = leader_obj.id
+
+        player_obj.script_loaded = True
+        player_obj.attr13 = 0
+        player_obj.stop_script = False
+
+    def add_players_to_current_group(self):
+        index = self.tab_widget.currentIndex()
+        if index < 0 or index >= len(self.players):
+            QMessageBox.information(
+                self,
+                "Group Script Setup",
+                "Select the leader or a member tab of the group you want to extend.",
+            )
+            return
+
+        current_player = self.players[index][0]
+        console = getattr(current_player, "group_console", None)
+        if console is None:
+            QMessageBox.warning(
+                self,
+                "Group Script Setup",
+                "The selected character is not assigned to a group yet.",
+            )
+            return
+
+        group_data = self.console_groups.get(console)
+        if not group_data:
+            QMessageBox.warning(
+                self,
+                "Group Script Setup",
+                "No active group information found for the selected character.",
+            )
+            return
+
+        leader_obj = group_data.get("leader")
+        if leader_obj is None:
+            QMessageBox.warning(
+                self,
+                "Group Script Setup",
+                "Unable to determine the group leader.",
+            )
+            return
+
+        existing_members = set(group_data.get("members", set()))
+        available_players = [
+            p
+            for p, _ in self.players
+            if p not in existing_members and getattr(p, "group_console", None) in (None, console)
+        ]
+        if not available_players:
+            QMessageBox.information(
+                self,
+                "Group Script Setup",
+                "There are no additional connected characters that can be added to this group.",
+            )
+            return
+
+        dlg = AddGroupMembersDialog([p.name for p in available_players])
+        if not dlg.exec_():
+            return
+
+        selected_names = dlg.selected_members()
+        if not selected_names:
+            return
+
+        member_path = group_data.get("member_path") or self.group_member_setup_path
+        if not member_path:
+            QMessageBox.information(
+                self,
+                "Group Script Setup",
+                "Member setup path is not configured. Please select the setup folders.",
+            )
+            self.set_group_script_paths()
+            member_path = group_data.get("member_path") or self.group_member_setup_path
+            if not member_path:
+                return
+
+        group_id = group_data.get("group_id")
+        if group_id is None:
+            for player_obj in existing_members:
+                if player_obj is leader_obj:
+                    continue
+                potential = getattr(player_obj, "attr19", None)
+                if isinstance(potential, int) and potential:
+                    group_id = potential
+                    break
+            if group_id is None:
+                group_id = self.group_script_group_counter
+
+        successful_members = []
+        errors = []
+        for member_obj in available_players:
+            if member_obj.name not in selected_names:
+                continue
+            try:
+                member_index = next(i for i, (p, _) in enumerate(self.players) if p is member_obj)
+            except StopIteration:
+                errors.append(f"{member_obj.name}: tab not found")
+                continue
+            try:
+                self._load_group_script_for_player(
+                    member_obj,
+                    member_index,
+                    member_path,
+                    role="member",
+                    leader_obj=leader_obj,
+                    group_id=group_id,
+                )
+            except Exception as exc:
+                errors.append(f"{member_obj.name}: {exc}")
+                continue
+
+            self.players[member_index][1] = None
+            threading.Thread(target=member_obj.start_condition_loop, daemon=True).start()
+            successful_members.append(member_obj)
+
+        if errors:
+            QMessageBox.warning(
+                self,
+                "Group Script Setup",
+                "\n".join(errors),
+            )
+
+        if not successful_members:
+            return
+
+        existing_names = list(group_data.get("member_names", []))
+        for member_obj in successful_members:
+            if member_obj.name not in existing_names:
+                existing_names.append(member_obj.name)
+
+        info = {
+            "leader_name": leader_obj.name,
+            "member_names": existing_names,
+            "group_id": group_id,
+            "member_path": member_path,
+        }
+        leader_path = group_data.get("leader_path") or self.group_leader_setup_path
+        if leader_path:
+            info["leader_path"] = leader_path
+
+        self._assign_group_console(info)
+        self.update_group_party_info()
+        self.start_group_scripts()
+
+        QMessageBox.information(
+            self,
+            "Group Script Setup",
+            "Selected members have been added to the current group.",
+        )
+
     def _assign_group_console(self, group_info):
         leader_name = group_info.get("leader_name")
         member_names = group_info.get("member_names", [])
@@ -1496,7 +1773,14 @@ class MyWindow(QMainWindow):
         for player_obj in new_members:
             player_obj.group_console = console
 
-        self.console_groups[console] = {"leader": leader_obj, "members": new_members}
+        group_record = dict(existing) if isinstance(existing, dict) else {}
+        group_record.update({"leader": leader_obj, "members": new_members})
+        member_names = [p.name for p in member_objs]
+        group_record["member_names"] = member_names
+        for key in ("group_id", "leader_path", "member_path"):
+            if isinstance(group_info, dict) and key in group_info and group_info[key] is not None:
+                group_record[key] = group_info[key]
+        self.console_groups[console] = group_record
         self.leader_to_console[leader_obj] = console
 
         console.set_leader_name(leader_obj.name)
