@@ -268,6 +268,7 @@ class Player:
         self._cond_counter = 0
         self._cond_control = ConditionControl(self)
         self._time_namespace = TimeNamespace(self)
+        self.condition_logging_enabled = True
 
         # caches for compiled condition functions
         # maps condition name to a tuple of (source_code, compiled_func)
@@ -510,15 +511,18 @@ class Player:
                 self._record_condition_state_change()
                 for cond_type, name in disabled_entries:
                     self._record_condition_activity(cond_type, name)
-                    print(f"Condition '{name}' disabled via cond.off = 0")
-                if skipped_current:
+                    if self.condition_logging_enabled:
+                        print(f"Condition '{name}' disabled via cond.off = 0")
+                if skipped_current and self.condition_logging_enabled:
                     print(
                         "Current condition kept active while disabling others via cond.off = 0"
                     )
             elif skipped_current:
-                print("Only the calling condition was active; nothing else to disable.")
+                if self.condition_logging_enabled:
+                    print("Only the calling condition was active; nothing else to disable.")
             else:
-                print("No active conditions to disable.")
+                if self.condition_logging_enabled:
+                    print("No active conditions to disable.")
             return
 
         if not entries:
@@ -556,7 +560,8 @@ class Player:
         self._record_condition_activity(cond_type, name)
         state = "enabled" if active else "disabled"
         attr = "on" if active else "off"
-        print(f"Condition '{name}' {state} via cond.{attr} = {seq_number}")
+        if self.condition_logging_enabled:
+            print(f"Condition '{name}' {state} via cond.{attr} = {seq_number}")
 
     # ------------------------------------------------------------------ #
     # Group-shared variable helpers

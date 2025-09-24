@@ -651,6 +651,11 @@ class GroupScriptDialog(QDialog):
 
         self.manual_sequential_checkbox = QCheckBox("Use sequential conditions")
         manual_layout.addWidget(self.manual_sequential_checkbox, 4, 0, 1, 2)
+
+        self.manual_condition_logging_checkbox = QCheckBox(
+            "View text of enabled and disabled conditions"
+        )
+        manual_layout.addWidget(self.manual_condition_logging_checkbox, 5, 0, 1, 2)
         manual_layout.setColumnStretch(1, 1)
 
         layout.addWidget(self.manual_login_widget, 4, 0, 1, 2)
@@ -691,7 +696,15 @@ class GroupScriptDialog(QDialog):
         manual_login_enabled = self.manual_login_checkbox.isChecked()
         manual_args = self._get_manual_login_arguments() if manual_login_enabled else None
         manual_use_sequential = self.manual_sequential_checkbox.isChecked()
+        manual_show_condition_logs = self.manual_condition_logging_checkbox.isChecked()
         self._save_manual_login_settings()
+
+        parent = self.parent()
+        if parent and hasattr(parent, "set_condition_logging_enabled"):
+            try:
+                parent.set_condition_logging_enabled(manual_show_condition_logs)
+            except Exception:
+                pass
 
         if len(leader_names) != 1:
             QMessageBox.warning(self, "Invalid Selection", "Please select exactly one leader.")
@@ -726,7 +739,6 @@ class GroupScriptDialog(QDialog):
 
         if manual_login_enabled:
             self.settings.setValue("useSequentialConditions", int(manual_use_sequential))
-            parent = self.parent()
             if parent and hasattr(parent, "set_sequential_conditions_enabled"):
                 try:
                     parent.set_sequential_conditions_enabled(manual_use_sequential)
@@ -802,8 +814,8 @@ class GroupScriptDialog(QDialog):
                 player_obj.attr19 = self.group_id
                 player_obj.attr20 = leader_name
                 player_obj.leadername = leader_name
-                player_obj.script_loaded = True
                 member_objs.append(player_obj)
+            player_obj.script_loaded = True
             player_obj.attr13 = 0
 
         if leader_obj:
@@ -868,6 +880,14 @@ class GroupScriptDialog(QDialog):
         )
         self.manual_sequential_checkbox.setChecked(sequential_enabled)
 
+        logging_default = self._value_to_bool(
+            self.settings.value("conditionLoggingEnabled"), True
+        )
+        logging_enabled = self._value_to_bool(
+            self.settings.value("groupManualConditionLogging"), logging_default
+        )
+        self.manual_condition_logging_checkbox.setChecked(logging_enabled)
+
         manual_enabled = self._value_to_bool(
             self.settings.value("groupManualLoginEnabled"), False
         )
@@ -883,6 +903,14 @@ class GroupScriptDialog(QDialog):
         )
         self.settings.setValue(
             "groupManualLoginSequential", int(self.manual_sequential_checkbox.isChecked())
+        )
+        self.settings.setValue(
+            "groupManualConditionLogging",
+            int(self.manual_condition_logging_checkbox.isChecked()),
+        )
+        self.settings.setValue(
+            "conditionLoggingEnabled",
+            int(self.manual_condition_logging_checkbox.isChecked()),
         )
 
     def _read_index(self, key, default, count):
@@ -1064,6 +1092,10 @@ class MyWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.settings = QSettings('PBapi', 'Script Creator')
+        condition_logging_value = self.settings.value("conditionLoggingEnabled")
+        self._condition_logging_enabled = GroupScriptDialog._value_to_bool(
+            condition_logging_value, True
+        )
         windowScreenGeometry = self.settings.value("windowScreenGeometry")
         self.colorTheme = self.settings.value("colorTheme")
         # Default to showing the console when no previous preference exists
@@ -1353,6 +1385,13 @@ class MyWindow(QMainWindow):
             # start all scripts for this group asynchronously
             self.start_group_scripts()
 
+    def set_condition_logging_enabled(self, enabled: bool) -> None:
+        enabled_bool = bool(enabled)
+        self._condition_logging_enabled = enabled_bool
+        self.settings.setValue("conditionLoggingEnabled", int(enabled_bool))
+        for player_obj, _ in self.players:
+            player_obj.condition_logging_enabled = enabled_bool
+
     def set_group_script_max_members(self):
         value, ok = QInputDialog.getInt(
             self,
@@ -1532,6 +1571,7 @@ class MyWindow(QMainWindow):
         self.open_tabs_names += [char_name]
 
         player = Player(char_name, on_disconnect=self.player_disconnected)
+        player.condition_logging_enabled = self._condition_logging_enabled
         self.players.append([player, None])
 
         # Create a layout for the tab
