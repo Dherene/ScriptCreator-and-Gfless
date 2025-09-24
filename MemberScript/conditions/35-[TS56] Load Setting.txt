@@ -1,9 +1,0 @@
-periodical
-0
-if int(self.map_id) >= 4800 and int(self.attr6) == 1 and int(self.attr3) == 0:
-	cond.off = 52
-	cond.on = 50
-	self.api.load_settings(r"C:\Users\valde\Desktop\QUEST CREATOR\HollyDMG-TS56-Part2.ini")
-	self.attr3 = 1
-
-	print(f"34-[MEMBER][TS56] {self.name} load setting")
