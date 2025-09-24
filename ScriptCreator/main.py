@@ -34,6 +34,7 @@ from PyQt5.QtWidgets import (
     QComboBox,
     QLineEdit,
     QInputDialog,
+    QCheckBox,
 )
 from PyQt5.QtGui import (
     QColor,
@@ -52,6 +53,7 @@ from getports import returnAllPorts
 from funcs import randomize_time
 from conditioncreator import ConditionModifier
 from editor import Editor
+import gfless_api
 
 class CheckableComboBox(QComboBox):
     """ComboBox that allows selecting multiple items using check boxes."""
@@ -578,6 +580,7 @@ class GroupScriptDialog(QDialog):
 
         self.setWindowTitle("Group Script Setup")
         self.setWindowIcon(QIcon('src/icon.png'))
+        self.settings = QSettings('PBapi', 'Script Creator')
 
         leader_names = self.leaders
         member_names = [
@@ -611,12 +614,57 @@ class GroupScriptDialog(QDialog):
         info_label = QLabel(info_text)
         layout.addWidget(info_label, 2, 0, 1, 2)
 
+        self.manual_login_checkbox = QCheckBox("Select manual login?")
+        layout.addWidget(self.manual_login_checkbox, 3, 0, 1, 2)
+
+        self.manual_login_widget = QWidget()
+        manual_layout = QGridLayout(self.manual_login_widget)
+        manual_layout.setContentsMargins(0, 0, 0, 0)
+
+        manual_layout.addWidget(QLabel("Language"), 0, 0)
+        self.manual_lang_combo = QComboBox()
+        self.manual_lang_combo.addItems([
+            "International/English",
+            "German",
+            "French",
+            "Italian",
+            "Polish",
+            "Spanish",
+        ])
+        manual_layout.addWidget(self.manual_lang_combo, 0, 1)
+
+        manual_layout.addWidget(QLabel("Server"), 1, 0)
+        self.manual_server_combo = QComboBox()
+        self.manual_server_combo.addItems([str(i) for i in range(1, 5)])
+        manual_layout.addWidget(self.manual_server_combo, 1, 1)
+
+        manual_layout.addWidget(QLabel("Channel"), 2, 0)
+        self.manual_channel_combo = QComboBox()
+        self.manual_channel_combo.addItems([str(i) for i in range(1, 8)])
+        manual_layout.addWidget(self.manual_channel_combo, 2, 1)
+
+        manual_layout.addWidget(QLabel("Character"), 3, 0)
+        self.manual_character_combo = QComboBox()
+        self.manual_character_combo.addItem("Stay at character selection")
+        self.manual_character_combo.addItems([str(i) for i in range(1, 5)])
+        manual_layout.addWidget(self.manual_character_combo, 3, 1)
+
+        self.manual_sequential_checkbox = QCheckBox("Use sequential conditions")
+        manual_layout.addWidget(self.manual_sequential_checkbox, 4, 0, 1, 2)
+        manual_layout.setColumnStretch(1, 1)
+
+        layout.addWidget(self.manual_login_widget, 4, 0, 1, 2)
+
         load_button = QPushButton("Load")
         load_button.clicked.connect(self.load_setup)
         all_button = QPushButton("All")
         all_button.clicked.connect(self.select_all_members)
-        layout.addWidget(load_button, 3, 0)
-        layout.addWidget(all_button, 3, 1)
+        layout.addWidget(load_button, 5, 0)
+        layout.addWidget(all_button, 5, 1)
+
+        self.manual_login_checkbox.toggled.connect(self._on_manual_login_toggled)
+        self._load_manual_login_settings()
+        self._on_manual_login_toggled(self.manual_login_checkbox.isChecked())
 
         self.setLayout(layout)
 
@@ -639,6 +687,11 @@ class GroupScriptDialog(QDialog):
     def load_setup(self):
         leader_names = self.leader_combo.checkedItems()
         member_names = self.members_combo.checkedItems()
+
+        manual_login_enabled = self.manual_login_checkbox.isChecked()
+        manual_args = self._get_manual_login_arguments() if manual_login_enabled else None
+        manual_use_sequential = self.manual_sequential_checkbox.isChecked()
+        self._save_manual_login_settings()
 
         if len(leader_names) != 1:
             QMessageBox.warning(self, "Invalid Selection", "Please select exactly one leader.")
@@ -671,10 +724,19 @@ class GroupScriptDialog(QDialog):
         member_objs = []
         group_names = [leader_name] + member_names
 
+        if manual_login_enabled:
+            self.settings.setValue("useSequentialConditions", int(manual_use_sequential))
+            parent = self.parent()
+            if parent and hasattr(parent, "set_sequential_conditions_enabled"):
+                try:
+                    parent.set_sequential_conditions_enabled(manual_use_sequential)
+                except Exception:
+                    pass
+
         for idx, (player_obj, _) in enumerate(self.players):
             if player_obj.name not in roles:
                 continue
-        
+  
 
         for idx, (player_obj, _) in enumerate(self.players):
             if player_obj.name not in roles:
@@ -702,6 +764,8 @@ class GroupScriptDialog(QDialog):
 
             with open(os.path.join(script_dir, chosen), "r") as file:
                 script_text = file.read()
+            if manual_login_enabled and manual_args is not None:
+                script_text = self._apply_manual_login_overrides(script_text, manual_args)
 
             cond_files = sorted([f for f in os.listdir(cond_dir) if f.endswith('.txt')])
             cond_data = []
@@ -710,6 +774,8 @@ class GroupScriptDialog(QDialog):
                     c_type = cfile.readline().strip()
                     running = cfile.readline().strip()
                     script = cfile.read().strip()
+                if manual_login_enabled and manual_args is not None:
+                    script = self._apply_manual_login_overrides(script, manual_args)
                 cond_data.append((os.path.splitext(cf)[0], c_type, script, running))
 
             self.text_editors[idx].setText(script_text)
@@ -759,6 +825,240 @@ class GroupScriptDialog(QDialog):
 
         QMessageBox.information(self, "Group Script Setup", "Setup successfully loaded.")
         self.accept()
+
+    def _on_manual_login_toggled(self, checked: bool) -> None:
+        self.manual_login_widget.setVisible(checked)
+
+    def _get_manual_login_arguments(self):
+        lang = self.manual_lang_combo.currentIndex()
+        server = self.manual_server_combo.currentIndex()
+        channel = self.manual_channel_combo.currentIndex()
+        character = self.manual_character_combo.currentIndex() - 1
+        return lang, server, channel, character
+
+    def _load_manual_login_settings(self) -> None:
+        try:
+            default_lang, default_server, default_channel, default_character = gfless_api.load_config()
+        except Exception:
+            default_lang, default_server, default_channel, default_character = 0, 0, 0, -1
+
+        self.manual_lang_combo.setCurrentIndex(
+            self._read_index("groupManualLoginLang", default_lang, self.manual_lang_combo.count())
+        )
+        self.manual_server_combo.setCurrentIndex(
+            self._read_index("groupManualLoginServer", default_server, self.manual_server_combo.count())
+        )
+        self.manual_channel_combo.setCurrentIndex(
+            self._read_index("groupManualLoginChannel", default_channel, self.manual_channel_combo.count())
+        )
+        default_character_index = max(0, min(default_character + 1, self.manual_character_combo.count() - 1))
+        self.manual_character_combo.setCurrentIndex(
+            self._read_index(
+                "groupManualLoginCharacterIndex",
+                default_character_index,
+                self.manual_character_combo.count(),
+            )
+        )
+
+        sequential_default = self._value_to_bool(
+            self.settings.value("useSequentialConditions"), True
+        )
+        sequential_enabled = self._value_to_bool(
+            self.settings.value("groupManualLoginSequential"), sequential_default
+        )
+        self.manual_sequential_checkbox.setChecked(sequential_enabled)
+
+        manual_enabled = self._value_to_bool(
+            self.settings.value("groupManualLoginEnabled"), False
+        )
+        self.manual_login_checkbox.setChecked(manual_enabled)
+
+    def _save_manual_login_settings(self) -> None:
+        self.settings.setValue("groupManualLoginEnabled", int(self.manual_login_checkbox.isChecked()))
+        self.settings.setValue("groupManualLoginLang", self.manual_lang_combo.currentIndex())
+        self.settings.setValue("groupManualLoginServer", self.manual_server_combo.currentIndex())
+        self.settings.setValue("groupManualLoginChannel", self.manual_channel_combo.currentIndex())
+        self.settings.setValue(
+            "groupManualLoginCharacterIndex", self.manual_character_combo.currentIndex()
+        )
+        self.settings.setValue(
+            "groupManualLoginSequential", int(self.manual_sequential_checkbox.isChecked())
+        )
+
+    def _read_index(self, key, default, count):
+        value = self.settings.value(key, default)
+        try:
+            idx = int(value)
+        except (TypeError, ValueError):
+            try:
+                idx = int(default)
+            except (TypeError, ValueError):
+                idx = 0
+        if count <= 0:
+            return 0
+        if idx < 0:
+            return 0
+        if idx >= count:
+            return count - 1
+        return idx
+
+    @staticmethod
+    def _value_to_bool(value, default=False):
+        if isinstance(value, bool):
+            return value
+        if value in (None, ""):
+            return default
+        if isinstance(value, str):
+            value = value.strip().lower()
+            if value in {"1", "true", "yes", "on"}:
+                return True
+            if value in {"0", "false", "no", "off"}:
+                return False
+            return default
+        try:
+            return bool(int(value))
+        except (TypeError, ValueError):
+            return bool(value)
+
+    def _apply_manual_login_overrides(self, text: str, manual_args) -> str:
+        if not text or "gfless_api" not in text:
+            return text
+
+        lang, server, channel, character = manual_args
+        replacements = [
+            f"int({lang})",
+            f"int({server})",
+            f"int({channel})",
+            f"int({character})",
+        ]
+        updated = self._replace_call_args(text, "save_config", replacements)
+        updated = self._replace_call_args(updated, "login", replacements)
+        return updated
+
+    def _replace_call_args(self, text: str, func_name: str, new_values) -> str:
+        target = f"gfless_api.{func_name}"
+        idx = 0
+        result = []
+        while idx < len(text):
+            start = text.find(target, idx)
+            if start == -1:
+                result.append(text[idx:])
+                break
+            result.append(text[idx:start])
+            paren_index = text.find("(", start + len(target))
+            if paren_index == -1:
+                result.append(text[start:])
+                break
+            args_str, end_idx = self._extract_call_arguments(text, paren_index)
+            if args_str is None:
+                result.append(text[start:])
+                break
+            result.append(text[start:paren_index])
+            result.append("(")
+            result.append(self._replace_arguments_in_string(args_str, new_values))
+            result.append(")")
+            idx = end_idx + 1
+        return "".join(result)
+
+    def _extract_call_arguments(self, text: str, open_paren_index: int):
+        depth = 1
+        idx = open_paren_index + 1
+        in_string = False
+        string_char = ""
+        escape = False
+        while idx < len(text):
+            char = text[idx]
+            if in_string:
+                if escape:
+                    escape = False
+                elif char == "\\":
+                    escape = True
+                elif char == string_char:
+                    in_string = False
+            else:
+                if char in {'"', "'"}:
+                    in_string = True
+                    string_char = char
+                elif char in "([{":
+                    depth += 1
+                elif char in ")]}":
+                    depth -= 1
+                    if depth == 0:
+                        return text[open_paren_index + 1 : idx], idx
+            idx += 1
+        return None, None
+
+    def _split_arguments_with_spans(self, args_str: str):
+        segments = []
+        depth = 0
+        in_string = False
+        string_char = ""
+        escape = False
+        last_index = 0
+        for idx, char in enumerate(args_str):
+            if in_string:
+                if escape:
+                    escape = False
+                elif char == "\\":
+                    escape = True
+                elif char == string_char:
+                    in_string = False
+                continue
+            if char in {'"', "'"}:
+                in_string = True
+                string_char = char
+            elif char in "([{":
+                depth += 1
+            elif char in ")]}" and depth > 0:
+                depth -= 1
+            elif char == "," and depth == 0:
+                segments.append((last_index, idx))
+                last_index = idx + 1
+        segments.append((last_index, len(args_str)))
+        return [
+            (args_str[start:end], start, end)
+            for start, end in segments
+            if start <= end
+        ]
+
+    def _replace_arguments_in_string(self, args_str: str, new_values) -> str:
+        segments = self._split_arguments_with_spans(args_str)
+        if not segments:
+            return args_str
+        result = []
+        current_index = 0
+        for idx, (segment_text, start, end) in enumerate(segments):
+            if start > current_index:
+                result.append(args_str[current_index:start])
+            if idx < len(new_values):
+                replacement = self._compose_segment(segment_text, new_values[idx])
+            else:
+                replacement = segment_text
+            result.append(replacement)
+            current_index = end
+        if current_index < len(args_str):
+            result.append(args_str[current_index:])
+        return "".join(result)
+
+    def _compose_segment(self, original_segment: str, new_value: str) -> str:
+        if not original_segment:
+            return new_value
+        leading_len = len(original_segment) - len(original_segment.lstrip())
+        trailing_len = len(original_segment) - len(original_segment.rstrip())
+        if trailing_len:
+            core = original_segment[leading_len:-trailing_len]
+        else:
+            core = original_segment[leading_len:]
+        if not core:
+            core_replacement = new_value
+        elif "=" in core and not core.strip().startswith("**"):
+            name, _, _ = core.partition("=")
+            core_replacement = f"{name.strip()}={new_value}"
+        else:
+            core_replacement = new_value
+        prefix = original_segment[:leading_len]
+        suffix = original_segment[-trailing_len:] if trailing_len else ""
+        return f"{prefix}{core_replacement}{suffix}"
 
 class MyWindow(QMainWindow):
     def __init__(self):
