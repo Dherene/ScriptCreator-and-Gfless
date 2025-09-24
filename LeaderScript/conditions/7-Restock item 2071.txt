@@ -1,0 +1,52 @@
+recv_packet
+1
+
+parts = self.split_packet(packet, " ")
+if len(parts) >= 3 and parts[0] == "ivn" and parts[1] == "2":
+    slot_parts = parts[2].split(".")
+    if len(slot_parts) >= 3:
+        try:
+            item_vnum = int(slot_parts[1])
+            item_amount = int(slot_parts[2])
+        except ValueError:
+            item_vnum = None
+            item_amount = None
+        if item_vnum == 2071:
+            threshold = getattr(selfgroup, "restock_threshold_2071", 20)
+            try:
+                threshold = int(threshold)
+            except (TypeError, ValueError):
+                threshold = 20
+            if item_amount is not None and item_amount < threshold:
+                if getattr(selfgroup, "restocking_2071", False):
+                    return
+                selfgroup.restocking_2071 = True
+                try:
+                    wait_logged = False
+                    while getattr(selfgroup, "trade", "0") != "0":
+                        if not wait_logged:
+                            print(f"[LEADER] {self.name} waiting for trades to finish before restocking item 2071")
+                            wait_logged = True
+                        time.sleep(self.randomize_delay(0.3, 0.6))
+                    selfgroup.trade = "1"
+                    try:
+                        print(f"[LEADER] {self.name} needs to restock item 2071 (have {item_amount}, need {threshold})")
+                        time.sleep(self.randomize_delay(1, 2))
+                        self.walk_to_point([39, 107], 1)
+                        time.sleep(self.randomize_delay(1, 2))
+                        self.api.send_packet("npc_req 2 4992")
+                        time.sleep(self.randomize_delay(1, 2))
+                        self.api.send_packet("buy 2 4992 6 80")
+                        time.sleep(self.randomize_delay(1, 2))
+                        self.api.send_packet("buy 2 4992 7 80")
+                        time.sleep(self.randomize_delay(2, 4))
+                        self.api.send_packet("shopclose")
+                        time.sleep(self.randomize_delay(1, 2))
+                        self.walk_to_point([10, 85], 1)
+                        time.sleep(self.randomize_delay(1, 2))
+                    except Exception as restock_error:
+                        print(f"[LEADER] {self.name} failed to restock item 2071: {restock_error}")
+                    finally:
+                        selfgroup.trade = "0"
+                finally:
+                    selfgroup.restocking_2071 = False

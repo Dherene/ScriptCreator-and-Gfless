@@ -6,7 +6,8 @@ if packet.startswith("#req_exc^2^"):
         time.sleep(self.randomize_delay(1,2))
         trade_mode = getattr(self, "trade_mode", "receive")
         if trade_mode == "receive":
-                self.put_items_in_trade([(1, 1010, 15), (1, 1012, 20), (2, 2071, 2), (2, 2070, 2)], gold=0)
+                #self.put_items_in_trade([(1, 1010, 15), (1, 1012, 20), (2, 2071, 2), (2, 2070, 2)], gold=0) esto da pociones y semillas
+                self.put_items_in_trade([(2, 2071, 2), (2, 2070, 2)], gold=0)
                 print(f"[LEADER] {self.name} send items")
                 self.members_received_items.add(self.current_trader)
         time.sleep(self.randomize_delay(1,1.5))
