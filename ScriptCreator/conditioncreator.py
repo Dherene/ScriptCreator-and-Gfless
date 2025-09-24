@@ -315,7 +315,8 @@ class ConditionCreator(QDialog):
 
         self.cond_helper_label = QLabel(
             "Tip: cond.on / cond.off require the target condition's number "
-            "in the sequential conditions list."
+            "in the sequential conditions list. Use cond.off = 0 to disable "
+            "all other active conditions while keeping the calling one running."
         )
         self.cond_helper_label.setWordWrap(True)
         self.main_layout.addWidget(self.cond_helper_label, 5, 0, 1, 6)

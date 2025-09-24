@@ -5,6 +5,7 @@ import threading
 import asyncio
 import ast
 import re
+import contextvars
 from dataclasses import dataclass, field
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Callable
@@ -279,6 +280,9 @@ class Player:
             "send_packet": set(),
             "periodical": set(),
         }
+        self._condition_ctx = contextvars.ContextVar(
+            "condition_context", default=None
+        )
         self._condition_state_lock = threading.Lock()
         self._condition_time_lock = threading.Lock()
         self._last_condition_activity = time.monotonic()
@@ -454,10 +458,69 @@ class Player:
         if isinstance(seq_number, bool) or not isinstance(seq_number, int):
             print("Condition numbers must be integers.")
             return
-        if seq_number <= 0:
+        if seq_number < 0:
             print("Condition numbers start at 1.")
             return
+
         entries = self._build_condition_sequence()
+
+        if seq_number == 0:
+            if active:
+                print("Condition numbers start at 1.")
+                return
+            if not entries:
+                print("No conditions available to toggle.")
+                return
+
+            current_ctx = self._condition_ctx.get()
+            skip_type = skip_name = None
+            if isinstance(current_ctx, tuple) and len(current_ctx) == 2:
+                skip_type, skip_name = current_ctx
+
+            disabled_entries = []
+            skipped_current = False
+            for cond_type, idx, name in entries:
+                if skip_type is not None and cond_type == skip_type and name == skip_name:
+                    skipped_current = True
+                    continue
+                changed = False
+                if cond_type == "recv_packet":
+                    if self.recv_packet_conditions[idx][2]:
+                        self.recv_packet_conditions[idx][2] = False
+                        changed = True
+                elif cond_type == "send_packet":
+                    if self.send_packet_conditions[idx][2]:
+                        self.send_packet_conditions[idx][2] = False
+                        changed = True
+                else:
+                    with self._periodic_cond_lock:
+                        cond = self.periodical_conditions[idx]
+                        if cond.active:
+                            if cond.task and not cond.task.done():
+                                cond.task.cancel()
+                                cond.task = None
+                            cond.active = False
+                            changed = True
+
+                if changed:
+                    disabled_entries.append((cond_type, name))
+
+            self.start_condition_loop()
+            if disabled_entries:
+                self._record_condition_state_change()
+                for cond_type, name in disabled_entries:
+                    self._record_condition_activity(cond_type, name)
+                    print(f"Condition '{name}' disabled via cond.off = 0")
+                if skipped_current:
+                    print(
+                        "Current condition kept active while disabling others via cond.off = 0"
+                    )
+            elif skipped_current:
+                print("Only the calling condition was active; nothing else to disable.")
+            else:
+                print("No active conditions to disable.")
+            return
+
         if not entries:
             print("No conditions available to toggle.")
             return
@@ -1351,6 +1414,7 @@ class Player:
     async def _run_packet_condition(self, name, func, packet, store_list, cond_type):
         self._set_condition_running(cond_type, name, True)
         self._record_condition_activity(cond_type, name)
+        token = self._condition_ctx.set((cond_type, name))
         try:
             await func(self, packet)
         except Exception as e:
@@ -1365,12 +1429,14 @@ class Player:
             except Exception as e2:
                 print(f"Error removing faulty {cond_type} condition: {e2}")
         finally:
+            self._condition_ctx.reset(token)
             self._set_condition_running(cond_type, name, False)
 
     async def _run_periodic_condition(self, name, func):
         self._set_condition_running("periodical", name, True)
         self._record_condition_activity("periodical", name)
         self._periodic_ctx.current = name
+        token = self._condition_ctx.set(("periodical", name))
         try:
             await func(self)
         except Exception as e:
@@ -1390,6 +1456,7 @@ class Player:
                     f"\nError executing periodical condition: {name}\nError: {e}\nCondition was removed."
                 )
         finally:
+            self._condition_ctx.reset(token)
             self._set_condition_running("periodical", name, False)
             self._periodic_ctx.current = None
    
