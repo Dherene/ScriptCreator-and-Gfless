@@ -156,6 +156,16 @@ class CheckableComboBox(QComboBox):
             item.setCheckState(Qt.Checked)
         self.updateText()
 
+    def clear(self):
+        row_count = self.model().rowCount()
+        if row_count:
+            self.model().removeRows(0, row_count)
+        self.updateText()
+
+    def setItems(self, texts):
+        self.clear()
+        self.addItems(texts)
+
     def removeItems(self, texts):
         to_remove = []
         for i in range(self.model().rowCount()):
@@ -595,6 +605,11 @@ class GroupScriptDialog(QDialog):
         group_id,
         leaders,
         max_total_members=9,
+        *,
+        mode="setup",
+        existing_group=None,
+        available_member_names=None,
+        title=None,
     ):
         super().__init__()
 
@@ -606,23 +621,39 @@ class GroupScriptDialog(QDialog):
         # Predefined leaders to exclude from auto-selection and member listing
         self.leaders = leaders
         self.loaded_group_info = None
+        self.mode = mode if mode in {"setup", "extend"} else "setup"
+        self.existing_group = existing_group or {}
+        self.available_member_names = available_member_names
+        if title:
+            self.setWindowTitle(title)
         try:
             total_members = int(max_total_members)
         except (TypeError, ValueError):
             total_members = 9
         self.max_group_members = max(1, total_members)
-        self.member_limit = max(0, self.max_group_members - 1)
+        if self.mode == "extend":
+            existing_count = 0
+            existing_members = self.existing_group.get("member_names")
+            if isinstance(existing_members, (list, tuple, set)):
+                existing_count = len([m for m in existing_members if isinstance(m, str)])
+            self.member_limit = max(0, self.max_group_members - (existing_count + 1))
+        else:
+            self.member_limit = max(0, self.max_group_members - 1)
 
-        self.setWindowTitle("Group Script Setup")
+        if not title:
+            self.setWindowTitle("Group Script Setup")
         self.setWindowIcon(QIcon('src/icon.png'))
         self.settings = QSettings('PBapi', 'Script Creator')
 
         leader_names = self.leaders
-        member_names = [
-            p[0].name
-            for p in players
-            if p[0].name not in leader_names and not p[0].script_loaded
-        ]
+        if isinstance(self.available_member_names, (list, tuple)):
+            member_names = list(self.available_member_names)
+        else:
+            member_names = [
+                p[0].name
+                for p in players
+                if p[0].name not in leader_names and not p[0].script_loaded
+            ]
 
         self.leader_combo = CheckableComboBox(max_checked=1)
         self.leader_combo.addItems(leader_names)
@@ -640,7 +671,8 @@ class GroupScriptDialog(QDialog):
             members_label_text = "Members (max 1)"
         else:
             members_label_text = f"Members (max {self.member_limit})"
-        layout.addWidget(QLabel(members_label_text), 1, 0)
+        self.members_label = QLabel(members_label_text)
+        layout.addWidget(self.members_label, 1, 0)
         layout.addWidget(self.members_combo, 1, 1)
 
         info_text = (
@@ -704,6 +736,11 @@ class GroupScriptDialog(QDialog):
 
         self.manual_login_checkbox.toggled.connect(self._on_manual_login_toggled)
         self._load_manual_login_settings()
+        if self.mode == "extend" and self.leader_combo.model().rowCount() == 1:
+            leader_item = self.leader_combo.model().item(0)
+            if leader_item:
+                leader_item.setCheckState(Qt.Checked)
+                self.leader_combo.updateText()
         self._on_manual_login_toggled(self.manual_login_checkbox.isChecked())
 
         self.setLayout(layout)
@@ -711,7 +748,14 @@ class GroupScriptDialog(QDialog):
     def select_all_members(self):
         selected_leaders = set(self.leader_combo.checkedItems())
         leaders = set(self.leaders) | selected_leaders
-        eligible = [p[0].name for p in self.players if not p[0].script_loaded and p[0].name not in leaders]
+        if self.mode == "extend" and isinstance(self.available_member_names, (list, tuple)):
+            eligible = [name for name in self.available_member_names if name not in leaders]
+        else:
+            eligible = [
+                p[0].name
+                for p in self.players
+                if not p[0].script_loaded and p[0].name not in leaders
+            ]
         # Respect maximum allowed members
         max_allowed = self.members_combo.max_checked
         if max_allowed is not None:
@@ -724,45 +768,71 @@ class GroupScriptDialog(QDialog):
                 item.setCheckState(Qt.Unchecked)
         self.members_combo.updateText()
 
+    def _set_member_limit(self, new_limit: int):
+        limit = max(0, int(new_limit))
+        self.member_limit = limit
+        if hasattr(self, "members_combo") and self.members_combo is not None:
+            self.members_combo.max_checked = limit if limit > 0 else 0
+        if hasattr(self, "members_label") and self.members_label is not None:
+            if limit == 1:
+                text = "Members (max 1)"
+            else:
+                text = f"Members (max {limit})"
+            self.members_label.setText(text)
+
     def load_setup(self):
         leader_names = self.leader_combo.checkedItems()
         member_names = self.members_combo.checkedItems()
 
-        manual_login_enabled = self.manual_login_checkbox.isChecked()
-        manual_args = self._get_manual_login_arguments() if manual_login_enabled else None
-        manual_use_sequential = self.manual_sequential_checkbox.isChecked()
-        manual_show_condition_logs = self.manual_condition_logging_checkbox.isChecked()
-        self._save_manual_login_settings()
-
-        parent = self.parent()
-        if parent and hasattr(parent, "set_condition_logging_enabled"):
-            try:
-                parent.set_condition_logging_enabled(manual_show_condition_logs)
-            except Exception:
-                pass
+        manual_login_enabled, manual_args = self._prepare_manual_settings()
 
         if len(leader_names) != 1:
             QMessageBox.warning(self, "Invalid Selection", "Please select exactly one leader.")
             return
-        if len(member_names) + 1 > self.max_group_members:
-            max_members_allowed = max(0, self.max_group_members - 1)
-            member_label = (
-                "1 member" if max_members_allowed == 1 else f"{max_members_allowed} members"
-            )
-            QMessageBox.warning(
-                self,
-                "Invalid Selection",
-                (
-                    f"Please select up to {member_label} "
-                    f"(total {self.max_group_members} including leader)."
-                ),
-            )
-            return
-        if leader_names[0] in member_names:
+
+        leader_name = leader_names[0]
+
+        if leader_name in member_names:
             QMessageBox.warning(self, "Invalid Selection", "Leader cannot be selected as member.")
             return
 
-        leader_name = leader_names[0]
+        if self.mode == "extend":
+            if self.member_limit == 0 and member_names:
+                QMessageBox.warning(
+                    self,
+                    "Invalid Selection",
+                    "This group is already at the maximum number of members.",
+                )
+                return
+            if self.member_limit is not None and len(member_names) > self.member_limit:
+                QMessageBox.warning(
+                    self,
+                    "Invalid Selection",
+                    f"You can only add up to {self.member_limit} more members to this group.",
+                )
+                return
+            if not member_names:
+                QMessageBox.information(
+                    self,
+                    self.windowTitle(),
+                    "Select at least one member to add to the group.",
+                )
+                return
+        else:
+            if len(member_names) + 1 > self.max_group_members:
+                max_members_allowed = max(0, self.max_group_members - 1)
+                member_label = (
+                    "1 member" if max_members_allowed == 1 else f"{max_members_allowed} members"
+                )
+                QMessageBox.warning(
+                    self,
+                    "Invalid Selection",
+                    (
+                        f"Please select up to {member_label} "
+                        f"(total {self.max_group_members} including leader)."
+                    ),
+                )
+                return
 
         roles = {leader_name: (self.leader_path, "leader")}
         for m in member_names:
@@ -770,28 +840,32 @@ class GroupScriptDialog(QDialog):
 
         leader_obj = None
         member_objs = []
-        group_names = [leader_name] + member_names
 
-        if manual_login_enabled:
-            self.settings.setValue("useSequentialConditions", int(manual_use_sequential))
-            if parent and hasattr(parent, "set_sequential_conditions_enabled"):
-                try:
-                    parent.set_sequential_conditions_enabled(manual_use_sequential)
-                except Exception:
-                    pass
+        existing_member_names = []
+        existing_member_objs = []
+        if self.mode == "extend":
+            existing_member_names = [
+                name
+                for name in self.existing_group.get("member_names", [])
+                if isinstance(name, str) and name != leader_name
+            ]
+            existing_lookup = set(existing_member_names)
+            for player_obj, _ in self.players:
+                if player_obj.name in existing_lookup:
+                    existing_member_objs.append(player_obj)
 
         for idx, (player_obj, _) in enumerate(self.players):
             if player_obj.name not in roles:
                 continue
-  
 
-        for idx, (player_obj, _) in enumerate(self.players):
-            if player_obj.name not in roles:
+            setup_path, role = roles[player_obj.name]
+
+            if role == "leader" and self.mode == "extend":
+                leader_obj = player_obj
                 continue
 
             player_obj.reset_attrs()
 
-            setup_path, role = roles[player_obj.name]
             script_dir = os.path.join(setup_path, "script")
             cond_dir = os.path.join(setup_path, "conditions")
 
@@ -832,6 +906,8 @@ class GroupScriptDialog(QDialog):
                 cond_data.append((os.path.splitext(cf)[0], c_type, script, running))
 
             self.text_editors[idx].setText(script_text)
+            if 0 <= idx < len(self.players):
+                self.players[idx][1] = None
             player_obj.recv_packet_conditions = []
             player_obj.send_packet_conditions = []
             player_obj.periodical_conditions = []
@@ -871,33 +947,87 @@ class GroupScriptDialog(QDialog):
             player_obj.script_loaded = True
             player_obj.attr13 = 0
 
-        if leader_obj:
-            leader_obj.attr51 = member_names
-            leader_id = leader_obj.id
-            member_ids = [m.id for m in member_objs]
-            party_names = [leader_obj.name] + member_names
-            party_ids = [leader_id] + member_ids
-            # Assign party information to all members and the leader
-            for p in [leader_obj] + member_objs:
-                p.partyname = party_names
-                p.partyID = party_ids
-            for m in member_objs:
-                m.leaderID = leader_id
+        if leader_obj is None:
+            QMessageBox.warning(self, "Load Failed", "Unable to locate the selected leader.")
+            return
 
-        # start condition loops for all participants in parallel
-        for p in [leader_obj] + member_objs:
-            threading.Thread(target=p.start_condition_loop, daemon=True).start()
+        if self.mode == "extend":
+            combined_member_names = []
+            for name in existing_member_names + member_names:
+                if name not in combined_member_names:
+                    combined_member_names.append(name)
+            seen_ids = {id(obj) for obj in member_objs}
+            preserved_existing = []
+            for obj in existing_member_objs:
+                if id(obj) not in seen_ids:
+                    preserved_existing.append(obj)
+            member_party_objs = preserved_existing + member_objs
+        else:
+            combined_member_names = list(member_names)
+            member_party_objs = list(member_objs)
+
+        leader_obj.attr51 = combined_member_names
+        leader_id = leader_obj.id
+        member_ids = [m.id for m in member_party_objs]
+        party_names = [leader_obj.name] + [m.name for m in member_party_objs]
+        party_ids = [leader_id] + member_ids
+
+        for participant in [leader_obj] + member_party_objs:
+            participant.partyname = party_names
+            participant.partyID = party_ids
+        leader_obj.leaderID = leader_id
+        for m in member_party_objs:
+            m.leaderID = leader_id
+
+        participants = [leader_obj] + member_objs
+        if self.mode == "extend":
+            participants = list(member_objs)
+
+        for p in participants:
+            if p is not None:
+                threading.Thread(target=p.start_condition_loop, daemon=True).start()
 
         self.loaded_group_info = {
-            "leader_name": leader_name,
-            "member_names": member_names,
+            "leader_name": leader_obj.name,
+            "member_names": combined_member_names,
             "group_id": self.group_id,
             "leader_path": self.leader_path,
             "member_path": self.member_path,
         }
+        if self.mode == "extend":
+            self.loaded_group_info["new_member_names"] = list(member_names)
 
-        QMessageBox.information(self, "Group Script Setup", "Setup successfully loaded.")
+        success_message = "Setup successfully loaded."
+        if self.mode == "extend":
+            success_message = "Selected members have been added to the current group."
+
+        QMessageBox.information(self, self.windowTitle(), success_message)
         self.accept()
+
+    def _prepare_manual_settings(self):
+        manual_login_enabled = self.manual_login_checkbox.isChecked()
+        manual_args = self._get_manual_login_arguments() if manual_login_enabled else None
+        manual_use_sequential = self.manual_sequential_checkbox.isChecked()
+        manual_show_condition_logs = self.manual_condition_logging_checkbox.isChecked()
+
+        self._save_manual_login_settings()
+
+        parent = self.parent()
+        if parent and hasattr(parent, "set_condition_logging_enabled"):
+            try:
+                parent.set_condition_logging_enabled(manual_show_condition_logs)
+            except Exception:
+                pass
+
+        if manual_login_enabled:
+            self.settings.setValue("useSequentialConditions", int(manual_use_sequential))
+            if parent and hasattr(parent, "set_sequential_conditions_enabled"):
+                try:
+                    parent.set_sequential_conditions_enabled(manual_use_sequential)
+                except Exception:
+                    pass
+
+        return manual_login_enabled, manual_args
 
     def _on_manual_login_toggled(self, checked: bool) -> None:
         self.manual_login_widget.setVisible(checked)
@@ -1139,34 +1269,110 @@ class GroupScriptDialog(QDialog):
         return self.loaded_group_info
 
 
-class AddGroupMembersDialog(QDialog):
-    """Dialog to select additional members for an existing group."""
+class AddGroupMembersDialog(GroupScriptDialog):
+    """Extended dialog used to add new members to an existing group."""
 
-    def __init__(self, player_names):
-        super().__init__()
-        self.setWindowTitle("Add Players to Group")
-        self.setWindowIcon(QIcon('src/icon.png'))
+    def __init__(
+        self,
+        players,
+        text_editors,
+        default_leader_path,
+        default_member_path,
+        group_configs,
+        leader_names,
+        max_total_members,
+    ):
+        self.group_configs = group_configs or {}
+        self.default_leader_path = default_leader_path
+        self.default_member_path = default_member_path
+        leaders_list = list(leader_names or [])
+        initial_group_id = 0
+        for config in self.group_configs.values():
+            potential_id = config.get("group_id")
+            if isinstance(potential_id, int):
+                initial_group_id = potential_id
+                break
+        super().__init__(
+            players,
+            text_editors,
+            default_leader_path,
+            default_member_path,
+            initial_group_id,
+            leaders_list,
+            max_total_members,
+            mode="extend",
+            existing_group={},
+            available_member_names=[],
+            title="Add players to current group",
+        )
+        self.leader_combo.model().itemChanged.connect(self._on_leader_selection_changed)
+        self._on_leader_selection_changed(None)
 
-        layout = QVBoxLayout()
-        layout.addWidget(QLabel("Players to add"))
+    def _on_leader_selection_changed(self, _item):
+        selected = self.leader_combo.checkedItems()
+        leader_name = selected[0] if selected else None
+        self._populate_members_for_leader(leader_name)
 
-        self.members_combo = CheckableComboBox()
-        self.members_combo.addItems(player_names)
-        layout.addWidget(self.members_combo)
+    def _populate_members_for_leader(self, leader_name):
+        available_names = []
+        member_limit = self.max_group_members - 1
+        if leader_name and leader_name in self.group_configs:
+            config = self.group_configs[leader_name]
+            available_names = list(config.get("available_member_names", []))
+            existing_names = config.get("existing_member_names", [])
+            existing_count = len(existing_names)
+            member_limit = self.max_group_members - (existing_count + 1)
+            self.available_member_names = available_names
+        else:
+            self.available_member_names = []
+            member_limit = 0
+        self.members_combo.setItems(available_names)
+        self._set_member_limit(member_limit)
 
-        button_layout = QHBoxLayout()
-        add_button = QPushButton("Add")
-        cancel_button = QPushButton("Cancel")
-        add_button.clicked.connect(self.accept)
-        cancel_button.clicked.connect(self.reject)
-        button_layout.addWidget(add_button)
-        button_layout.addWidget(cancel_button)
+    def load_setup(self):
+        leader_names = self.leader_combo.checkedItems()
+        if len(leader_names) != 1:
+            QMessageBox.warning(self, "Invalid Selection", "Please select exactly one leader.")
+            return
 
-        layout.addLayout(button_layout)
-        self.setLayout(layout)
+        leader_name = leader_names[0]
+        config = self.group_configs.get(leader_name)
+        if not config:
+            QMessageBox.information(
+                self,
+                self.windowTitle(),
+                "The selected leader has not created any group yet.",
+            )
+            return
 
-    def selected_members(self):
-        return self.members_combo.checkedItems()
+        self.group_id = config.get("group_id", self.group_id)
+        self.leader_path = config.get("leader_path", self.default_leader_path)
+        self.member_path = config.get("member_path", self.default_member_path)
+        existing_names = list(config.get("existing_member_names", []))
+        self.existing_group = {
+            "leader_name": leader_name,
+            "member_names": existing_names,
+        }
+        available_member_names = list(config.get("available_member_names", []))
+        self.available_member_names = available_member_names
+        member_limit = self.max_group_members - (len(existing_names) + 1)
+        if member_limit <= 0:
+            QMessageBox.information(
+                self,
+                self.windowTitle(),
+                "This group already has the maximum number of members.",
+            )
+            return
+        if not available_member_names:
+            QMessageBox.information(
+                self,
+                self.windowTitle(),
+                "There are no additional connected characters that can be added to this group.",
+            )
+            return
+        self._set_member_limit(member_limit)
+
+        super().load_setup()
 
 class MyWindow(QMainWindow):
     def __init__(self):
@@ -1604,150 +1810,94 @@ class MyWindow(QMainWindow):
         player_obj.stop_script = False
 
     def add_players_to_current_group(self):
-        index = self.tab_widget.currentIndex()
-        if index < 0 or index >= len(self.players):
+        if not self.players:
             QMessageBox.information(
                 self,
                 "Group Script Setup",
-                "Select the leader or a member tab of the group you want to extend.",
+                "No connected characters are available.",
             )
             return
 
-        current_player = self.players[index][0]
-        console = getattr(current_player, "group_console", None)
-        if console is None:
-            QMessageBox.warning(
-                self,
-                "Group Script Setup",
-                "The selected character is not assigned to a group yet.",
-            )
-            return
+        group_configs = {}
+        leader_names = set()
 
-        group_data = self.console_groups.get(console)
-        if not group_data:
-            QMessageBox.warning(
-                self,
-                "Group Script Setup",
-                "No active group information found for the selected character.",
-            )
-            return
+        for name in self.group_leaders:
+            if isinstance(name, str):
+                leader_names.add(name)
 
-        leader_obj = group_data.get("leader")
-        if leader_obj is None:
-            QMessageBox.warning(
-                self,
-                "Group Script Setup",
-                "Unable to determine the group leader.",
-            )
-            return
+        for console, group_data in self.console_groups.items():
+            leader_obj = group_data.get("leader")
+            if leader_obj is None:
+                continue
+            leader_name = getattr(leader_obj, "name", None)
+            if not leader_name:
+                continue
 
-        existing_members = set(group_data.get("members", set()))
-        available_players = [
-            p
-            for p, _ in self.players
-            if p not in existing_members and getattr(p, "group_console", None) in (None, console)
-        ]
-        if not available_players:
-            QMessageBox.information(
-                self,
-                "Group Script Setup",
-                "There are no additional connected characters that can be added to this group.",
-            )
-            return
+            leader_names.add(leader_name)
 
-        dlg = AddGroupMembersDialog([p.name for p in available_players])
+            existing_members = set(group_data.get("members", set()))
+            existing_member_names = [
+                member.name
+                for member in existing_members
+                if hasattr(member, "name") and member is not leader_obj
+            ]
+
+            member_path = group_data.get("member_path") or self.group_member_setup_path
+            if not member_path:
+                member_path = self.group_member_setup_path
+
+            leader_path = group_data.get("leader_path") or self.group_leader_setup_path
+
+            group_id = group_data.get("group_id")
+            if group_id is None:
+                for player_obj in existing_members:
+                    if player_obj is leader_obj:
+                        continue
+                    potential = getattr(player_obj, "attr19", None)
+                    if isinstance(potential, int) and potential:
+                        group_id = potential
+                        break
+                if group_id is None:
+                    group_id = self.group_script_group_counter
+
+            available_players = [
+                p
+                for p, _ in self.players
+                if p not in existing_members
+                and getattr(p, "group_console", None) in (None, console)
+            ]
+
+            group_configs[leader_name] = {
+                "leader_obj": leader_obj,
+                "existing_member_names": existing_member_names,
+                "available_member_names": [p.name for p in available_players],
+                "group_id": group_id,
+                "leader_path": leader_path or self.group_leader_setup_path,
+                "member_path": member_path,
+            }
+
+        sorted_leaders = sorted(leader_names)
+
+        dlg = AddGroupMembersDialog(
+            self.players,
+            self.text_editors,
+            self.group_leader_setup_path,
+            self.group_member_setup_path,
+            group_configs,
+            sorted_leaders,
+            self.group_script_max_members,
+        )
+
         if not dlg.exec_():
             return
 
-        selected_names = dlg.selected_members()
-        if not selected_names:
+        info = dlg.get_loaded_group()
+        if not info:
             return
-
-        member_path = group_data.get("member_path") or self.group_member_setup_path
-        if not member_path:
-            QMessageBox.information(
-                self,
-                "Group Script Setup",
-                "Member setup path is not configured. Please select the setup folders.",
-            )
-            self.set_group_script_paths()
-            member_path = group_data.get("member_path") or self.group_member_setup_path
-            if not member_path:
-                return
-
-        group_id = group_data.get("group_id")
-        if group_id is None:
-            for player_obj in existing_members:
-                if player_obj is leader_obj:
-                    continue
-                potential = getattr(player_obj, "attr19", None)
-                if isinstance(potential, int) and potential:
-                    group_id = potential
-                    break
-            if group_id is None:
-                group_id = self.group_script_group_counter
-
-        successful_members = []
-        errors = []
-        for member_obj in available_players:
-            if member_obj.name not in selected_names:
-                continue
-            try:
-                member_index = next(i for i, (p, _) in enumerate(self.players) if p is member_obj)
-            except StopIteration:
-                errors.append(f"{member_obj.name}: tab not found")
-                continue
-            try:
-                self._load_group_script_for_player(
-                    member_obj,
-                    member_index,
-                    member_path,
-                    role="member",
-                    leader_obj=leader_obj,
-                    group_id=group_id,
-                )
-            except Exception as exc:
-                errors.append(f"{member_obj.name}: {exc}")
-                continue
-
-            self.players[member_index][1] = None
-            threading.Thread(target=member_obj.start_condition_loop, daemon=True).start()
-            successful_members.append(member_obj)
-
-        if errors:
-            QMessageBox.warning(
-                self,
-                "Group Script Setup",
-                "\n".join(errors),
-            )
-
-        if not successful_members:
-            return
-
-        existing_names = list(group_data.get("member_names", []))
-        for member_obj in successful_members:
-            if member_obj.name not in existing_names:
-                existing_names.append(member_obj.name)
-
-        info = {
-            "leader_name": leader_obj.name,
-            "member_names": existing_names,
-            "group_id": group_id,
-            "member_path": member_path,
-        }
-        leader_path = group_data.get("leader_path") or self.group_leader_setup_path
-        if leader_path:
-            info["leader_path"] = leader_path
 
         self._assign_group_console(info)
         self.update_group_party_info()
         self.start_group_scripts()
-
-        QMessageBox.information(
-            self,
-            "Group Script Setup",
-            "Selected members have been added to the current group.",
-        )
 
     def _assign_group_console(self, group_info):
         leader_name = group_info.get("leader_name")
