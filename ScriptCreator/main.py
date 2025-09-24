@@ -1,5 +1,6 @@
 import sys
 import os
+import re
 import ctypes
 import win32gui
 import win32con
@@ -555,6 +556,11 @@ class LeaderSelectionDialog(QDialog):
         return self.combo.checkedItems()
 
 class GroupScriptDialog(QDialog):
+    @staticmethod
+    def _natural_key(text: str):
+        parts = re.split(r"(\d+)", text)
+        return [int(part) if part.isdigit() else part.lower() for part in parts]
+
     def __init__(
         self,
         players,
@@ -768,7 +774,10 @@ class GroupScriptDialog(QDialog):
                 QMessageBox.warning(self, "Load Failed", f"Invalid setup folder: {setup_path}")
                 return
 
-            script_files = sorted([f for f in os.listdir(script_dir) if f.endswith('.txt')])
+            script_files = sorted(
+                [f for f in os.listdir(script_dir) if f.endswith('.txt')],
+                key=self._natural_key,
+            )
             if not script_files:
                 QMessageBox.warning(self, "Load Failed", f"No scripts found in {script_dir}")
                 return
@@ -783,7 +792,10 @@ class GroupScriptDialog(QDialog):
             if manual_login_enabled and manual_args is not None:
                 script_text = self._apply_manual_login_overrides(script_text, manual_args)
 
-            cond_files = sorted([f for f in os.listdir(cond_dir) if f.endswith('.txt')])
+            cond_files = sorted(
+                [f for f in os.listdir(cond_dir) if f.endswith('.txt')],
+                key=self._natural_key,
+            )
             cond_data = []
             for cf in cond_files:
                 with open(os.path.join(cond_dir, cf), "r") as cfile:
@@ -798,6 +810,18 @@ class GroupScriptDialog(QDialog):
             player_obj.recv_packet_conditions = []
             player_obj.send_packet_conditions = []
             player_obj.periodical_conditions = []
+            if hasattr(player_obj, "_compiled_recv_conditions"):
+                player_obj._compiled_recv_conditions.clear()
+            if hasattr(player_obj, "_compiled_send_conditions"):
+                player_obj._compiled_send_conditions.clear()
+            if hasattr(player_obj, "_condition_state"):
+                player_obj._condition_state = {
+                    "recv_packet": set(),
+                    "send_packet": set(),
+                    "periodical": set(),
+                }
+            if hasattr(player_obj, "_condition_activity_by_name"):
+                player_obj._condition_activity_by_name.clear()
 
             for name, ctype, cscript, running in cond_data:
                 running_bool = True if running == "1" else False
