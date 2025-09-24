@@ -1,0 +1,30 @@
+send_packet
+0
+import string
+import random
+import time
+parts = packet.split(" ")
+if len(parts) >= 3 and parts[-2] == "GF" and parts[-1] == "0" and parts[0].startswith(("ES_", "EN_", "PL_")) and int(self.attr1) == 30:
+        self.nameacc = parts[0]
+        print(f"Account name saved: {self.nameacc}")
+        if getattr(self, "_svrlist_login_pending", False):
+                self._svrlist_login_pending = False
+        if hasattr(self, "_svrlist_login_started"):
+                self._svrlist_login_started = None
+        cond.off = 87
+        time.sleep(self.randomize_delay(8,10))
+        self.api.send_packet(f"Char_DEL 0 {self.nameacc}")
+        time.sleep(self.randomize_delay(3,4))
+        self.name = self.rolename()
+        gender = random.randint(0,1)
+        hair_style = random.randint(0,1)
+        hair_type = random.randint(0,9)
+        self.attr1 = 32
+        time.sleep(self.randomize_delay(1,2))
+        self.api.send_packet(f"Char_NEW_JOB {self.name} 0 {gender} {hair_style} {hair_type} 4")
+        print(f"[MEMBER] {self.nameacc} created character {self.name}")
+
+
+
+
+	

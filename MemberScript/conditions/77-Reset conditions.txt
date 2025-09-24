@@ -1,0 +1,14 @@
+periodical
+1
+if int(time.cond) > 360:
+        print(f"[MEMBER] {self.name} esta atrapado, reiniciando condiciones.")
+        if getattr(selfgroup, "trade", "0") == "1" and int(getattr(self, "attr96", 0)) == 1:
+                print(f"[MEMBER] {self.name} libero el comercio bloqueado por este miembro.")
+                selfgroup.trade = "0"
+                selfgroup.trade_candidate = None
+        self.attr96 = 0
+        cond.off = 0
+        time.sleep(self.randomize_delay(2,3))
+        cond.on = 87
+        time.sleep(self.randomize_delay(0.75,1.5))
+        self.attr1 = 29
