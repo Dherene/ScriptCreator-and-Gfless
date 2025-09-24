@@ -33,6 +33,7 @@ from PyQt5.QtWidgets import (
     QLabel,
     QComboBox,
     QLineEdit,
+    QInputDialog,
 )
 from PyQt5.QtGui import (
     QColor,
@@ -549,7 +550,16 @@ class LeaderSelectionDialog(QDialog):
         return self.combo.checkedItems()
 
 class GroupScriptDialog(QDialog):
-    def __init__(self, players, text_editors, leader_path, member_path, group_id, leaders):
+    def __init__(
+        self,
+        players,
+        text_editors,
+        leader_path,
+        member_path,
+        group_id,
+        leaders,
+        max_total_members=9,
+    ):
         super().__init__()
 
         self.players = players
@@ -559,6 +569,12 @@ class GroupScriptDialog(QDialog):
         self.group_id = group_id
         # Predefined leaders to exclude from auto-selection and member listing
         self.leaders = leaders
+        try:
+            total_members = int(max_total_members)
+        except (TypeError, ValueError):
+            total_members = 9
+        self.max_group_members = max(1, total_members)
+        self.member_limit = max(0, self.max_group_members - 1)
 
         self.setWindowTitle("Group Script Setup")
         self.setWindowIcon(QIcon('src/icon.png'))
@@ -574,22 +590,33 @@ class GroupScriptDialog(QDialog):
         self.leader_combo.addItems(leader_names)
         self.leader_combo.setMinimumWidth(200)
 
-        self.members_combo = CheckableComboBox(max_checked=8)
+        members_max_checked = self.member_limit if self.member_limit > 0 else 0
+        self.members_combo = CheckableComboBox(max_checked=members_max_checked)
         self.members_combo.addItems(member_names)
         self.members_combo.setMinimumWidth(200)
 
         layout = QGridLayout()
         layout.addWidget(QLabel("Leader"), 0, 0)
         layout.addWidget(self.leader_combo, 0, 1)
-        layout.addWidget(QLabel("Members"), 1, 0)
+        if self.member_limit == 1:
+            members_label_text = "Members (max 1)"
+        else:
+            members_label_text = f"Members (max {self.member_limit})"
+        layout.addWidget(QLabel(members_label_text), 1, 0)
         layout.addWidget(self.members_combo, 1, 1)
+
+        info_text = (
+            f"Total allowed (including leader): {self.max_group_members}"
+        )
+        info_label = QLabel(info_text)
+        layout.addWidget(info_label, 2, 0, 1, 2)
 
         load_button = QPushButton("Load")
         load_button.clicked.connect(self.load_setup)
         all_button = QPushButton("All")
         all_button.clicked.connect(self.select_all_members)
-        layout.addWidget(load_button, 2, 0)
-        layout.addWidget(all_button, 2, 1)
+        layout.addWidget(load_button, 3, 0)
+        layout.addWidget(all_button, 3, 1)
 
         self.setLayout(layout)
 
@@ -598,7 +625,9 @@ class GroupScriptDialog(QDialog):
         leaders = set(self.leaders) | selected_leaders
         eligible = [p[0].name for p in self.players if not p[0].script_loaded and p[0].name not in leaders]
         # Respect maximum allowed members
-        eligible = eligible[: self.members_combo.max_checked]
+        max_allowed = self.members_combo.max_checked
+        if max_allowed is not None:
+            eligible = eligible[: max_allowed]
         for i in range(self.members_combo.model().rowCount()):
             item = self.members_combo.model().item(i)
             if item.text() in eligible:
@@ -614,8 +643,19 @@ class GroupScriptDialog(QDialog):
         if len(leader_names) != 1:
             QMessageBox.warning(self, "Invalid Selection", "Please select exactly one leader.")
             return
-        if len(member_names) > 8:
-            QMessageBox.warning(self, "Invalid Selection", "Please select up to eight members.")
+        if len(member_names) + 1 > self.max_group_members:
+            max_members_allowed = max(0, self.max_group_members - 1)
+            member_label = (
+                "1 member" if max_members_allowed == 1 else f"{max_members_allowed} members"
+            )
+            QMessageBox.warning(
+                self,
+                "Invalid Selection",
+                (
+                    f"Please select up to {member_label} "
+                    f"(total {self.max_group_members} including leader)."
+                ),
+            )
             return
         if leader_names[0] in member_names:
             QMessageBox.warning(self, "Invalid Selection", "Leader cannot be selected as member.")
@@ -730,6 +770,13 @@ class MyWindow(QMainWindow):
         self.console = int(self.settings.value("console", 1))
         self.group_leader_setup_path = self.settings.value("groupLeaderSetupPath")
         self.group_member_setup_path = self.settings.value("groupMemberSetupPath")
+        max_members_value = self.settings.value("groupScriptMaxMembers", 9)
+        try:
+            self.group_script_max_members = int(max_members_value)
+        except (TypeError, ValueError):
+            self.group_script_max_members = 9
+        if self.group_script_max_members < 1:
+            self.group_script_max_members = 1
         self.group_script_group_counter = 0
         self.group_leaders = []
 
@@ -838,6 +885,9 @@ class MyWindow(QMainWindow):
         loadGroupAction = QAction('Load Setup', self)
         loadGroupAction.triggered.connect(self.load_group_script_setup)
         groupMenu.addAction(loadGroupAction)
+        maxMembersAction = QAction('Max Members', self)
+        maxMembersAction.triggered.connect(self.set_group_script_max_members)
+        groupMenu.addAction(maxMembersAction)
         groupPathsAction = QAction('Set Setup Paths', self)
         groupPathsAction.triggered.connect(self.set_group_script_paths)
         groupMenu.addAction(groupPathsAction)
@@ -996,11 +1046,25 @@ class MyWindow(QMainWindow):
             self.group_member_setup_path,
             self.group_script_group_counter,
             self.group_leaders,
+            self.group_script_max_members,
         )
         if dlg.exec_():
             self.group_script_group_counter += 1
             # start all scripts for this group asynchronously
             self.start_group_scripts()
+
+    def set_group_script_max_members(self):
+        value, ok = QInputDialog.getInt(
+            self,
+            "Max Members",
+            "Select the maximum number of characters to load (including leader):",
+            self.group_script_max_members,
+            1,
+            24,
+        )
+        if ok:
+            self.group_script_max_members = value
+            self.settings.setValue("groupScriptMaxMembers", value)
 
     def set_group_script_paths(self):
         leader_path = QFileDialog.getExistingDirectory(self, "Select Leader Setup Folder")
