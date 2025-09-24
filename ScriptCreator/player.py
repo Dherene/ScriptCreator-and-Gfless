@@ -26,6 +26,9 @@ import pywinctl as pwc
 
 from PyQt5 import QtWidgets
 
+from group_console import use_group_console
+
+
 
 # Syllable pools for roleplay-style name generation
 PREFIXES = [
@@ -316,6 +319,7 @@ class Player:
 
         # indicates when a script has been loaded into this player
         self.script_loaded = False
+        self.group_console = None
 
         # group info
         self.leadername = ""
@@ -1192,52 +1196,54 @@ class Player:
             self.api.query_map_entities()
     
     def exec_recv_packet_condition(self, code, packet, index, cond_name):
-        try:
-            cached = self._compiled_recv_conditions.get(cond_name)
-            if not cached or cached[0] != code:
-                func = self._compile_condition(code, with_packet=True)
-                self._compiled_recv_conditions[cond_name] = (code, func)
-            else:
-                func = cached[1]
-            asyncio.run_coroutine_threadsafe(
-                self._run_packet_condition(
-                    cond_name, func, packet, self.recv_packet_conditions, "recv_packet"
-                ),
-                self.loop,
-            )
-        except Exception as e:
+        with use_group_console(getattr(self, "group_console", None)):
             try:
-                self.recv_packet_conditions.pop(index)
-                self._compiled_recv_conditions.pop(cond_name, None)
-                print(
-                    f"\nError executing recv_packet condition: {cond_name}\nError: {e}\nCondition was removed."
+                cached = self._compiled_recv_conditions.get(cond_name)
+                if not cached or cached[0] != code:
+                    func = self._compile_condition(code, with_packet=True)
+                    self._compiled_recv_conditions[cond_name] = (code, func)
+                else:
+                    func = cached[1]
+                asyncio.run_coroutine_threadsafe(
+                    self._run_packet_condition(
+                        cond_name, func, packet, self.recv_packet_conditions, "recv_packet"
+                    ),
+                    self.loop,
                 )
-            except Exception as e2:
-                print(f"Error removing faulty recv_packet condition: {e2}")
+            except Exception as e:
+                try:
+                    self.recv_packet_conditions.pop(index)
+                    self._compiled_recv_conditions.pop(cond_name, None)
+                    print(
+                        f"\nError executing recv_packet condition: {cond_name}\nError: {e}\nCondition was removed."
+                    )
+                except Exception as e2:
+                    print(f"Error removing faulty recv_packet condition: {e2}")
 
     def exec_send_packet_condition(self, code, packet, index, cond_name):
-        try:
-            cached = self._compiled_send_conditions.get(cond_name)
-            if not cached or cached[0] != code:
-                func = self._compile_condition(code, with_packet=True)
-                self._compiled_send_conditions[cond_name] = (code, func)
-            else:
-                func = cached[1]
-            asyncio.run_coroutine_threadsafe(
-                self._run_packet_condition(
-                    cond_name, func, packet, self.send_packet_conditions, "send_packet"
-                ),
-                self.loop,
-            )
-        except Exception as e:
+        with use_group_console(getattr(self, "group_console", None)):
             try:
-                self.send_packet_conditions.pop(index)
-                self._compiled_send_conditions.pop(cond_name, None)
-                print(
-                    f"\nError executing send_packet condition: {cond_name}\nError: {e}\nCondition was removed."
+                cached = self._compiled_send_conditions.get(cond_name)
+                if not cached or cached[0] != code:
+                    func = self._compile_condition(code, with_packet=True)
+                    self._compiled_send_conditions[cond_name] = (code, func)
+                else:
+                    func = cached[1]
+                asyncio.run_coroutine_threadsafe(
+                    self._run_packet_condition(
+                        cond_name, func, packet, self.send_packet_conditions, "send_packet"
+                    ),
+                    self.loop,
                 )
-            except Exception as e2:
-                print(f"Error removing faulty send_packet condition: {e2}")
+            except Exception as e:
+                try:
+                    self.send_packet_conditions.pop(index)
+                    self._compiled_send_conditions.pop(cond_name, None)
+                    print(
+                        f"\nError executing send_packet condition: {cond_name}\nError: {e}\nCondition was removed."
+                    )
+                except Exception as e2:
+                    print(f"Error removing faulty send_packet condition: {e2}")
 
     async def exec_periodic_conditions(self):
         """Schedule active periodical conditions in independent tasks.
@@ -1246,63 +1252,64 @@ class Player:
         each iteration, allowing characters with many conditions to run more
         smoothly and independently."""
         while True:
-            try:
-                with self._periodic_cond_lock:
-                    conds = list(enumerate(self.periodical_conditions))
-                for idx, cond in conds:
-                    try:
-                        if not cond.active:
-                            if cond.task:
-                                cond.task.cancel()
-                                cond.task = None
+            with use_group_console(getattr(self, "group_console", None)):
+                try:
+                    with self._periodic_cond_lock:
+                        conds = list(enumerate(self.periodical_conditions))
+                    for idx, cond in conds:
+                        try:
+                            if not cond.active:
+                                if cond.task:
+                                    cond.task.cancel()
+                                    cond.task = None
+                                cond.last_error = None
+                                continue
+                            if cond.func is None or cond._code_cache != cond.code:
+                                if cond.task:
+                                    cond.task.cancel()
+                                    cond.task = None
+                                cond.func = None
+                                cond._code_cache = ""
+                                cond.func = self._compile_condition(cond.code)
+                                cond._code_cache = cond.code
+                            if cond.task is None or cond.task.done():
+                                cond.task = asyncio.create_task(self._run_periodic_loop(cond))
                             cond.last_error = None
-                            continue
-                        if cond.func is None or cond._code_cache != cond.code:
+                        except Exception as cond_error:
+                            error_text = f"{cond_error}"
+                            signature = f"{error_text}\n{cond.code}"
                             if cond.task:
                                 cond.task.cancel()
                                 cond.task = None
                             cond.func = None
                             cond._code_cache = ""
-                            cond.func = self._compile_condition(cond.code)
-                            cond._code_cache = cond.code
-                        if cond.task is None or cond.task.done():
-                            cond.task = asyncio.create_task(self._run_periodic_loop(cond))
-                        cond.last_error = None
-                    except Exception as cond_error:
-                        error_text = f"{cond_error}"
-                        signature = f"{error_text}\n{cond.code}"
-                        if cond.task:
-                            cond.task.cancel()
-                            cond.task = None
-                        cond.func = None
-                        cond._code_cache = ""
-                        if cond.last_error != signature:
-                            error_type = type(cond_error).__name__
-                            print(
-                                f"\nError preparing periodical condition '{cond.name}' "
-                                f"(index {idx}): {error_type}: {cond_error}"
-                            )
-                            lineno = getattr(cond_error, "lineno", None)
-                            offset = getattr(cond_error, "offset", None)
-                            if lineno is not None:
-                                location = f"line {lineno}"
-                                if offset is not None:
-                                    location += f", column {offset}"
-                                print(f"    Reported location: {location}.")
-                            code_lines = cond.code.splitlines()
-                            if code_lines:
-                                print("    Condition source:")
-                                highlight = lineno
-                                for line_no, line_text in enumerate(code_lines, start=1):
-                                    marker = "->" if highlight == line_no else "  "
-                                    print(f"    {marker} {line_no:>4}: {line_text}")
-                            else:
-                                print("    Condition source is empty.")
-                        cond.last_error = signature
-                await asyncio.sleep(0.1)
-            except Exception as e:
-                print(f"Error executing periodic conditions loop: {e}")
-                await asyncio.sleep(0.1)
+                            if cond.last_error != signature:
+                                error_type = type(cond_error).__name__
+                                print(
+                                    f"\nError preparing periodical condition '{cond.name}' "
+                                    f"(index {idx}): {error_type}: {cond_error}"
+                                )
+                                lineno = getattr(cond_error, "lineno", None)
+                                offset = getattr(cond_error, "offset", None)
+                                if lineno is not None:
+                                    location = f"line {lineno}"
+                                    if offset is not None:
+                                        location += f", column {offset}"
+                                    print(f"    Reported location: {location}.")
+                                code_lines = cond.code.splitlines()
+                                if code_lines:
+                                    print("    Condition source:")
+                                    highlight = lineno
+                                    for line_no, line_text in enumerate(code_lines, start=1):
+                                        marker = "->" if highlight == line_no else "  "
+                                        print(f"    {marker} {line_no:>4}: {line_text}")
+                                else:
+                                    print("    Condition source is empty.")
+                            cond.last_error = signature
+                    await asyncio.sleep(0.1)
+                except Exception as e:
+                    print(f"Error executing periodic conditions loop: {e}")
+                    await asyncio.sleep(0.1)
 
     async def _run_periodic_loop(self, cond: PeriodicCondition):
         try:
@@ -1417,53 +1424,55 @@ class Player:
         return None
 
     async def _run_packet_condition(self, name, func, packet, store_list, cond_type):
-        self._set_condition_running(cond_type, name, True)
-        self._record_condition_activity(cond_type, name)
-        token = self._condition_ctx.set((cond_type, name))
-        try:
-            await func(self, packet)
-        except Exception as e:
+        with use_group_console(getattr(self, "group_console", None)):
+            self._set_condition_running(cond_type, name, True)
+            self._record_condition_activity(cond_type, name)
+            token = self._condition_ctx.set((cond_type, name))
             try:
-                for idx, cond in enumerate(store_list):
-                    if cond[0] == name:
-                        store_list.pop(idx)
-                        break
-                print(
-                    f"\nError executing {cond_type} condition: {name}\nError: {e}\nCondition was removed."
-                )
-            except Exception as e2:
-                print(f"Error removing faulty {cond_type} condition: {e2}")
-        finally:
-            self._condition_ctx.reset(token)
-            self._set_condition_running(cond_type, name, False)
+                await func(self, packet)
+            except Exception as e:
+                try:
+                    for idx, cond in enumerate(store_list):
+                        if cond[0] == name:
+                            store_list.pop(idx)
+                            break
+                    print(
+                        f"\nError executing {cond_type} condition: {name}\nError: {e}\nCondition was removed."
+                    )
+                except Exception as e2:
+                    print(f"Error removing faulty {cond_type} condition: {e2}")
+            finally:
+                self._condition_ctx.reset(token)
+                self._set_condition_running(cond_type, name, False)
 
     async def _run_periodic_condition(self, name, func):
-        self._set_condition_running("periodical", name, True)
-        self._record_condition_activity("periodical", name)
-        self._periodic_ctx.current = name
-        token = self._condition_ctx.set(("periodical", name))
-        try:
-            await func(self)
-        except Exception as e:
+        with use_group_console(getattr(self, "group_console", None)):
+            self._set_condition_running("periodical", name, True)
+            self._record_condition_activity("periodical", name)
+            self._periodic_ctx.current = name
+            token = self._condition_ctx.set(("periodical", name))
             try:
-                with self._periodic_cond_lock:
-                    for idx, cond in enumerate(self.periodical_conditions):
-                        if cond.name == name:
-                            if cond.task:
-                                cond.task.cancel()
-                            self.periodical_conditions.pop(idx)
-                            break
-                print(
-                    f"\nError executing periodical condition: {name}\nError: {e}\nCondition was removed."
-                )
-            except Exception:
-                print(
-                    f"\nError executing periodical condition: {name}\nError: {e}\nCondition was removed."
-                )
-        finally:
-            self._condition_ctx.reset(token)
-            self._set_condition_running("periodical", name, False)
-            self._periodic_ctx.current = None
+                await func(self)
+            except Exception as e:
+                try:
+                    with self._periodic_cond_lock:
+                        for idx, cond in enumerate(self.periodical_conditions):
+                            if cond.name == name:
+                                if cond.task:
+                                    cond.task.cancel()
+                                self.periodical_conditions.pop(idx)
+                                break
+                    print(
+                        f"\nError executing periodical condition: {name}\nError: {e}\nCondition was removed."
+                    )
+                except Exception:
+                    print(
+                        f"\nError executing periodical condition: {name}\nError: {e}\nCondition was removed."
+                    )
+            finally:
+                self._condition_ctx.reset(token)
+                self._set_condition_running("periodical", name, False)
+                self._periodic_ctx.current = None
    
     # there was some issue with calling packet.split directly in some rare cases, hence this function
     def split_packet(self, packet, delimeter = " "):

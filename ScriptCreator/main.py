@@ -54,6 +54,9 @@ from funcs import randomize_time
 from conditioncreator import ConditionModifier
 from editor import Editor
 import gfless_api
+from group_console import GroupConsoleWindow, install_console_routing, use_group_console
+
+install_console_routing()
 
 class CheckableComboBox(QComboBox):
     """ComboBox that allows selecting multiple items using check boxes."""
@@ -571,6 +574,7 @@ class GroupScriptDialog(QDialog):
         self.group_id = group_id
         # Predefined leaders to exclude from auto-selection and member listing
         self.leaders = leaders
+        self.loaded_group_info = None
         try:
             total_members = int(max_total_members)
         except (TypeError, ValueError):
@@ -835,8 +839,16 @@ class GroupScriptDialog(QDialog):
         for p in [leader_obj] + member_objs:
             threading.Thread(target=p.start_condition_loop, daemon=True).start()
 
+        self.loaded_group_info = {
+            "leader_name": leader_name,
+            "member_names": member_names,
+        }
+
         QMessageBox.information(self, "Group Script Setup", "Setup successfully loaded.")
         self.accept()
+
+    def get_loaded_group(self):
+        return self.loaded_group_info
 
     def _on_manual_login_toggled(self, checked: bool) -> None:
         self.manual_login_widget.setVisible(checked)
@@ -1135,6 +1147,8 @@ class MyWindow(QMainWindow):
         self.players = []
         self.start_stop_buttons = []
         self.text_editors = []
+        self.console_groups = {}
+        self.leader_to_console = {}
 
         self.setWindowTitle("Script Creator by Stradiveri")
         self.setWindowIcon(QIcon('src/icon.png'))
@@ -1330,6 +1344,8 @@ class MyWindow(QMainWindow):
         except StopIteration:
             return
 
+        self._detach_player_console(player)
+
         player.recv_packet_conditions = []
         player.send_packet_conditions = []
         player.periodical_conditions = []
@@ -1381,6 +1397,9 @@ class MyWindow(QMainWindow):
             self.group_script_max_members,
         )
         if dlg.exec_():
+            info = dlg.get_loaded_group()
+            if info:
+                self._assign_group_console(info)
             self.group_script_group_counter += 1
             # start all scripts for this group asynchronously
             self.start_group_scripts()
@@ -1417,6 +1436,143 @@ class MyWindow(QMainWindow):
         self.settings.setValue("groupLeaderSetupPath", leader_path)
         self.settings.setValue("groupMemberSetupPath", member_path)
         QMessageBox.information(self, "Group Script Setup", "Setup paths saved.")
+
+    def _assign_group_console(self, group_info):
+        leader_name = group_info.get("leader_name")
+        member_names = group_info.get("member_names", [])
+        if not leader_name:
+            return
+
+        leader_obj = None
+        member_objs = []
+        for player_obj, _ in self.players:
+            if player_obj.name == leader_name:
+                leader_obj = player_obj
+            if player_obj.name in member_names:
+                member_objs.append(player_obj)
+
+        if leader_obj is None:
+            return
+
+        console = self.leader_to_console.get(leader_obj)
+        if console is None or console not in self.console_groups:
+            console = GroupConsoleWindow(leader_obj.name, parent=self)
+            console.closed.connect(lambda c=console: self._on_group_console_closed(c))
+
+        new_members = set(member_objs)
+        new_members.add(leader_obj)
+
+        existing = self.console_groups.get(console)
+        old_members = set()
+        if existing:
+            old_members = set(existing.get("members", set()))
+        for player_obj in old_members - new_members:
+            player_obj.group_console = None
+
+        for player_obj in new_members:
+            player_obj.group_console = console
+
+        self.console_groups[console] = {"leader": leader_obj, "members": new_members}
+        self.leader_to_console[leader_obj] = console
+
+        console.set_leader_name(leader_obj.name)
+        console.clear()
+        console.show()
+        console.raise_()
+        console.activateWindow()
+
+    def _on_group_console_closed(self, console):
+        group_info = self.console_groups.pop(console, None)
+        if not group_info:
+            return
+
+        members = list(group_info.get("members", set()))
+        leader_obj = group_info.get("leader")
+        if leader_obj and self.leader_to_console.get(leader_obj) is console:
+            self.leader_to_console.pop(leader_obj, None)
+
+        for player_obj in members:
+            if getattr(player_obj, "group_console", None) is console:
+                player_obj.group_console = None
+
+        self._reset_group_players(members)
+
+    def _reset_group_players(self, players):
+        if not players:
+            return
+
+        changed = False
+        for player_obj in players:
+            if player_obj is None:
+                continue
+            try:
+                index = next(i for i, (p, _) in enumerate(self.players) if p == player_obj)
+            except StopIteration:
+                continue
+
+            thread = self.players[index][1]
+            if thread:
+                try:
+                    player_obj.stop_script = True
+                    thread.kill()
+                except Exception:
+                    pass
+                self.players[index][1] = None
+
+            try:
+                self.text_editors[index].setText("")
+            except Exception:
+                pass
+
+            try:
+                self.start_stop_buttons[index][0].show()
+                self.start_stop_buttons[index][1].hide()
+            except Exception:
+                pass
+
+            try:
+                self.tab_widget.tabBar().setTabTextColor(index, QColor("#e88113"))
+            except Exception:
+                pass
+
+            player_obj.recv_packet_conditions = []
+            player_obj.send_packet_conditions = []
+            player_obj.periodical_conditions = []
+            if hasattr(player_obj, "_compiled_recv_conditions"):
+                player_obj._compiled_recv_conditions.clear()
+            if hasattr(player_obj, "_compiled_send_conditions"):
+                player_obj._compiled_send_conditions.clear()
+            player_obj.script_loaded = False
+            player_obj.stop_script = True
+            try:
+                player_obj.reset_attrs()
+            except Exception:
+                pass
+            player_obj.partyname = []
+            player_obj.partyID = []
+            changed = True
+
+        if changed:
+            self.update_group_party_info()
+
+    def _detach_player_console(self, player_obj):
+        for console, info in list(self.console_groups.items()):
+            members = set(info.get("members", set()))
+            if player_obj not in members:
+                continue
+
+            members.discard(player_obj)
+            info["members"] = members
+            self.console_groups[console] = info
+            if info.get("leader") is player_obj:
+                player_obj.group_console = None
+                console.close()
+            else:
+                if getattr(player_obj, "group_console", None) is console:
+                    player_obj.group_console = None
+                if not members or info.get("leader") not in members:
+                    console.close()
+            break
 
     def refresh(self):
         all_chars = returnAllPorts()
@@ -1487,6 +1643,14 @@ class MyWindow(QMainWindow):
 
         if index < self.tab_widget.count():
             self.tab_widget.setTabText(index, new_name)
+
+        if index < len(self.players):
+            player_obj = self.players[index][0]
+            console = getattr(player_obj, "group_console", None)
+            if console:
+                group_info = self.console_groups.get(console)
+                if group_info and group_info.get("leader") is player_obj:
+                    console.set_leader_name(new_name)
 
         if old_name:
             self.group_leaders = [new_name if leader == old_name else leader for leader in self.group_leaders]
@@ -1684,15 +1848,16 @@ class MyWindow(QMainWindow):
         if index is None:
             index = self.tab_widget.currentIndex()
         player = self.players[index][0]
-        try:
-            # Execute the Python script in the context of this player
-            self.tab_widget.tabBar().setTabTextColor(index, QColor("green"))
-            exec(script, globals(), {"self": self, "player": player, "index": index})
-            self.tab_widget.tabBar().setTabTextColor(index, QColor("#e88113"))
-        except Exception as e:
-            # Handle any exceptions that occur during execution
-            print(f"Error executing script: {e}")
-            self.tab_widget.tabBar().setTabTextColor(index, QColor("red"))
+        with use_group_console(getattr(player, "group_console", None)):
+            try:
+                # Execute the Python script in the context of this player
+                self.tab_widget.tabBar().setTabTextColor(index, QColor("green"))
+                exec(script, globals(), {"self": self, "player": player, "index": index})
+                self.tab_widget.tabBar().setTabTextColor(index, QColor("#e88113"))
+            except Exception as e:
+                # Handle any exceptions that occur during execution
+                print(f"Error executing script: {e}")
+                self.tab_widget.tabBar().setTabTextColor(index, QColor("red"))
 
             """ not working properly atm, most likely due to running this in thread
             text = f"{e}"
