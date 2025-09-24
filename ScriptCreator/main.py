@@ -59,6 +59,31 @@ from group_console import GroupConsoleWindow, install_console_routing, use_group
 
 install_console_routing()
 
+
+def value_to_bool(value, default: bool = False) -> bool:
+    """Convert persisted setting values to booleans.
+
+    ``QSettings`` stores values as strings by default, and older versions of the
+    application saved a mixture of numeric and textual representations.  The
+    helper normalises these values while gracefully handling unexpected input
+    types.
+    """
+    if isinstance(value, bool):
+        return value
+    if value in (None, ""):
+        return default
+    if isinstance(value, str):
+        value = value.strip().lower()
+        if value in {"1", "true", "yes", "on"}:
+            return True
+        if value in {"0", "false", "no", "off"}:
+            return False
+        return default
+    try:
+        return bool(int(value))
+    except (TypeError, ValueError):
+        return bool(value)
+
 class CheckableComboBox(QComboBox):
     """ComboBox that allows selecting multiple items using check boxes."""
 
@@ -874,39 +899,6 @@ class GroupScriptDialog(QDialog):
         QMessageBox.information(self, "Group Script Setup", "Setup successfully loaded.")
         self.accept()
 
-    def get_loaded_group(self):
-        return self.loaded_group_info
-
-
-class AddGroupMembersDialog(QDialog):
-    """Dialog to select additional members for an existing group."""
-
-    def __init__(self, player_names):
-        super().__init__()
-        self.setWindowTitle("Add Players to Group")
-        self.setWindowIcon(QIcon('src/icon.png'))
-
-        layout = QVBoxLayout()
-        layout.addWidget(QLabel("Players to add"))
-
-        self.members_combo = CheckableComboBox()
-        self.members_combo.addItems(player_names)
-        layout.addWidget(self.members_combo)
-
-        button_layout = QHBoxLayout()
-        add_button = QPushButton("Add")
-        cancel_button = QPushButton("Cancel")
-        add_button.clicked.connect(self.accept)
-        cancel_button.clicked.connect(self.reject)
-        button_layout.addWidget(add_button)
-        button_layout.addWidget(cancel_button)
-
-        layout.addLayout(button_layout)
-        self.setLayout(layout)
-
-    def selected_members(self):
-        return self.members_combo.checkedItems()
-
     def _on_manual_login_toggled(self, checked: bool) -> None:
         self.manual_login_widget.setVisible(checked)
 
@@ -1001,21 +993,7 @@ class AddGroupMembersDialog(QDialog):
 
     @staticmethod
     def _value_to_bool(value, default=False):
-        if isinstance(value, bool):
-            return value
-        if value in (None, ""):
-            return default
-        if isinstance(value, str):
-            value = value.strip().lower()
-            if value in {"1", "true", "yes", "on"}:
-                return True
-            if value in {"0", "false", "no", "off"}:
-                return False
-            return default
-        try:
-            return bool(int(value))
-        except (TypeError, ValueError):
-            return bool(value)
+        return value_to_bool(value, default)
 
     def _apply_manual_login_overrides(self, text: str, manual_args) -> str:
         if not text or "gfless_api" not in text:
@@ -1157,12 +1135,45 @@ class AddGroupMembersDialog(QDialog):
         suffix = original_segment[-trailing_len:] if trailing_len else ""
         return f"{prefix}{core_replacement}{suffix}"
 
+    def get_loaded_group(self):
+        return self.loaded_group_info
+
+
+class AddGroupMembersDialog(QDialog):
+    """Dialog to select additional members for an existing group."""
+
+    def __init__(self, player_names):
+        super().__init__()
+        self.setWindowTitle("Add Players to Group")
+        self.setWindowIcon(QIcon('src/icon.png'))
+
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel("Players to add"))
+
+        self.members_combo = CheckableComboBox()
+        self.members_combo.addItems(player_names)
+        layout.addWidget(self.members_combo)
+
+        button_layout = QHBoxLayout()
+        add_button = QPushButton("Add")
+        cancel_button = QPushButton("Cancel")
+        add_button.clicked.connect(self.accept)
+        cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(add_button)
+        button_layout.addWidget(cancel_button)
+
+        layout.addLayout(button_layout)
+        self.setLayout(layout)
+
+    def selected_members(self):
+        return self.members_combo.checkedItems()
+
 class MyWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.settings = QSettings('PBapi', 'Script Creator')
         condition_logging_value = self.settings.value("conditionLoggingEnabled")
-        self._condition_logging_enabled = GroupScriptDialog._value_to_bool(
+        self._condition_logging_enabled = value_to_bool(
             condition_logging_value, True
         )
         windowScreenGeometry = self.settings.value("windowScreenGeometry")
