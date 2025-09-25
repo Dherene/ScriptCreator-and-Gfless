@@ -2043,56 +2043,166 @@ class MyWindow(QMainWindow):
                     console.close()
             break
 
+    def _format_display_name(self, raw_name, pid):
+        """Return a stable tab label for a character window."""
+
+        if raw_name is not None:
+            clean_name = str(raw_name).strip()
+            if clean_name and any(ch.isalpha() for ch in clean_name):
+                return clean_name
+        return f"PID: {pid}"
+
     def refresh(self):
-        all_chars = returnAllPorts()
-        all_chars = sorted(all_chars, key=lambda x: x[0])
+        raw_chars = returnAllPorts(include_new_api=True)
+        char_infos = []
+        for entry in raw_chars:
+            try:
+                name, api_port, pid, *maybe_new_port = entry
+            except (TypeError, ValueError):
+                continue
+            display_name = self._format_display_name(name, pid)
+            new_api_port = maybe_new_port[0] if maybe_new_port else None
+            char_infos.append({
+                "raw_name": name,
+                "api_port": api_port,
+                "pid": pid,
+                "new_port": new_api_port,
+                "display_name": display_name,
+            })
+
+        char_infos.sort(key=lambda info: info["display_name"].casefold())
+
         pid_to_index = {}
+        legacy_port_to_index = {}
+        new_port_to_index = {}
+        name_to_index = {}
+        display_to_index = {}
         for idx, (player_obj, _) in enumerate(self.players):
             pid = getattr(player_obj, "PIDnum", None)
             if pid is not None:
-                pid_to_index[pid] = idx
+                try:
+                    pid_to_index[int(pid)] = idx
+                except (TypeError, ValueError):
+                    pid_to_index[pid] = idx
 
-        for name, _api_port, pid in all_chars:
+            legacy_port = getattr(player_obj, "api_port", None)
+            if not legacy_port:
+                legacy_port = getattr(player_obj, "port", None)
+            if legacy_port:
+                legacy_port_to_index[str(legacy_port)] = idx
+
+            new_port = getattr(player_obj, "new_api_port", None)
+            if new_port:
+                new_port_to_index[str(new_port)] = idx
+
+            current_name = getattr(player_obj, "name", None)
+            if current_name:
+                name_to_index.setdefault(current_name, idx)
+
+            if idx < len(self.open_tabs_names):
+                display_to_index.setdefault(self.open_tabs_names[idx], idx)
+            else:
+                display = getattr(player_obj, "display_name", None)
+                if display:
+                    display_to_index.setdefault(display, idx)
+
+            setattr(player_obj, "is_connected", False)
+
+        current_raw_names = [info["raw_name"] for info in char_infos if info["raw_name"]]
+
+        for info in char_infos:
+            raw_name = info["raw_name"]
+            pid = info["pid"]
+            display_name = info["display_name"]
+            legacy_port = info.get("api_port")
+            new_port = info.get("new_port")
+
             existing_index = pid_to_index.get(pid)
+            if existing_index is None and legacy_port:
+                existing_index = legacy_port_to_index.get(str(legacy_port))
+            if existing_index is None and new_port:
+                existing_index = new_port_to_index.get(str(new_port))
+            if existing_index is None and raw_name:
+                existing_index = name_to_index.get(raw_name)
+            if existing_index is None:
+                existing_index = display_to_index.get(display_name)
+
             if existing_index is not None:
                 player_obj = self.players[existing_index][0]
-                if player_obj.name != name:
-                    player_obj.name = name
-                self._update_displayed_name(existing_index, name)
+                if raw_name:
+                    player_obj.name = raw_name
+                player_obj.display_name = display_name
+                if getattr(player_obj, "PIDnum", None) != pid:
+                    player_obj.PIDnum = pid
+                if legacy_port:
+                    player_obj.api_port = str(legacy_port)
+                    try:
+                        player_obj.port = int(legacy_port)
+                    except (TypeError, ValueError):
+                        pass
+                if new_port:
+                    player_obj.new_api_port = str(new_port)
+                else:
+                    player_obj.new_api_port = None
+                player_obj.is_connected = True
+                self._update_displayed_name(existing_index, display_name)
                 continue
 
-            if name not in self.open_tabs_names:
-                self.add_tab(name)
+            if display_name not in self.open_tabs_names:
+                self.add_tab(display_name)
                 # Ensure future refreshes match by PID for already-loaded scripts
                 if self.players:
-                    self.players[-1][0].PIDnum = pid
+                    player_obj = self.players[-1][0]
+                    player_obj.PIDnum = pid
+                    if raw_name:
+                        player_obj.name = raw_name
+                    player_obj.display_name = display_name
+                    player_obj.is_connected = True
+                    if legacy_port:
+                        player_obj.api_port = str(legacy_port)
+                        try:
+                            player_obj.port = int(legacy_port)
+                        except (TypeError, ValueError):
+                            pass
+                    if new_port:
+                        player_obj.new_api_port = str(new_port)
+                    else:
+                        player_obj.new_api_port = None
             else:
                 # Name matches but PID changed (e.g. client relaunch). Keep the
                 # existing tab but update the stored PID for consistency.
-                index = self.open_tabs_names.index(name)
-                self.players[index][0].PIDnum = pid
+                index = self.open_tabs_names.index(display_name)
+                player_obj = self.players[index][0]
+                player_obj.PIDnum = pid
+                if raw_name:
+                    player_obj.name = raw_name
+                player_obj.display_name = display_name
+                if legacy_port:
+                    player_obj.api_port = str(legacy_port)
+                    try:
+                        player_obj.port = int(legacy_port)
+                    except (TypeError, ValueError):
+                        pass
+                if new_port:
+                    player_obj.new_api_port = str(new_port)
+                else:
+                    player_obj.new_api_port = None
+                player_obj.is_connected = True
 
-        current_names = [p[0] for p in all_chars]
-        self.group_leaders = [name for name in self.group_leaders if name in current_names]
+        known_names = set(current_raw_names)
+        for player_obj, _editor in self.players:
+            name = getattr(player_obj, "name", None)
+            if name:
+                known_names.add(name)
+        self.group_leaders = [name for name in self.group_leaders if name in known_names]
 
-        tabs_to_remove = []
-        for i in range(len(self.open_tabs_names)):
-            if self.open_tabs_names[i] not in [player[0] for player in all_chars]:
-                tabs_to_remove.append(i)
+        any_connected = any(getattr(p[0], "is_connected", False) for p in self.players)
+        has_players = bool(self.players)
 
-        for i in tabs_to_remove[::-1]:
-            self.open_tabs_names.pop(i)
-            self.tab_widget.removeTab(i)
-            self.players.pop(i)
-        
-        if len(all_chars) == 0:
-            self.no_client_found_label.setVisible(True)
-            self.tab_widget.setVisible(False)
-            self.loadAction.setEnabled(False)
-            self.saveAction.setEnabled(False)
-        else:
-            self.loadAction.setEnabled(True)
-            self.saveAction.setEnabled(True)
+        self.no_client_found_label.setVisible(not any_connected)
+        self.tab_widget.setVisible(has_players)
+        self.loadAction.setEnabled(has_players)
+        self.saveAction.setEnabled(has_players)
 
         self.update_group_party_info()
 
@@ -2131,7 +2241,9 @@ class MyWindow(QMainWindow):
 
         name_changed = False
         for idx, (player_obj, _) in enumerate(self.players):
-            current_name = getattr(player_obj, "name", None)
+            current_name = getattr(player_obj, "display_name", None)
+            if not current_name:
+                current_name = getattr(player_obj, "name", None)
             if not current_name:
                 continue
 
@@ -2143,6 +2255,7 @@ class MyWindow(QMainWindow):
                 continue
 
             if self._update_displayed_name(idx, current_name):
+                player_obj.display_name = current_name
                 name_changed = True
 
         if name_changed:
@@ -2204,6 +2317,7 @@ class MyWindow(QMainWindow):
         self.open_tabs_names += [char_name]
 
         player = Player(char_name, on_disconnect=self.player_disconnected)
+        player.display_name = char_name
         player.condition_logging_enabled = self._condition_logging_enabled
         self.players.append([player, None])
 
