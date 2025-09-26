@@ -6,7 +6,7 @@ _PORT_TITLE_MARKER = "] - Phoenix Bot:"
 
 
 def _extract_window_details(title):
-    """Return the character name and available API ports for a window title."""
+    """Return the character name, ports and login state for a window title."""
 
     if _PORT_TITLE_MARKER not in title:
         return None
@@ -14,6 +14,11 @@ def _extract_window_details(title):
     prefix, _, port_section = title.partition(_PORT_TITLE_MARKER)
     if not port_section:
         return None
+
+    is_login_screen = False
+    prefix_lower = prefix.lower()
+    if "lv.0" in prefix_lower or "lv 0" in prefix_lower:
+        is_login_screen = True
 
     # ``prefix`` looks like ``"[Lv 99(+90) Character Name"``.
     # ``maxsplit=2`` keeps the remainder (the actual name) intact even if it
@@ -26,7 +31,7 @@ def _extract_window_details(title):
 
     name = name.lstrip("[").strip()
     if not name:
-        return None
+        name = None
 
     ports = re.findall(r"\d+", port_section)
     if not ports:
@@ -34,15 +39,17 @@ def _extract_window_details(title):
 
     old_api_port = ports[0]
     new_api_port = ports[1] if len(ports) > 1 else None
-    return name, old_api_port, new_api_port
+    return name, old_api_port, new_api_port, is_login_screen
 
 def getNames():
     titles = pwc.getAllTitles()
     return titles
 
 ### Returns all of the current ports with names of the characters associated with it.
-# Each item contains [character_name, old_api_port, pid] by default; when
-# ``include_new_api`` is True the new API port is appended as a fourth element.
+# Each item contains [character_name, old_api_port, pid] by default.  When
+# ``include_new_api`` is True, the new API port and a boolean indicating
+# whether the client is at the login screen are appended, producing entries of
+# the form ``[name, old_port, pid, new_port, is_login_screen]``.
 def returnAllPorts(include_new_api=False):
     """Return Phoenix Bot characters with their legacy API ports.
 
@@ -51,9 +58,9 @@ def returnAllPorts(include_new_api=False):
         [[character_name, old_api_port, pid], ...]
 
     Pass ``include_new_api=True`` to append the optional new API port to each
-    entry. When requested, the list shape becomes ``[name, old_port, pid,
-    new_port]`` so legacy callers remain unaffected while newer tools can opt in
-    to the extra data.
+    entry. When requested, the list shape becomes ``[name, old_port, pid,␊
+    new_port, is_login_screen]`` so legacy callers remain unaffected while newer
+    tools can opt in to the extra data.
     """
 
     ports = []
@@ -62,7 +69,7 @@ def returnAllPorts(include_new_api=False):
         if not details:
             continue
 
-        name, old_api_port, new_api_port = details
+        name, old_api_port, new_api_port, is_login_screen = details
         if not old_api_port:
             continue
 
@@ -70,6 +77,7 @@ def returnAllPorts(include_new_api=False):
         entry = [name, old_api_port, pid]
         if include_new_api:
             entry.append(new_api_port)
+            entry.append(is_login_screen)
         ports.append(entry)
 
     return ports

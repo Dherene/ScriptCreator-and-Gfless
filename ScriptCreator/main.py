@@ -1423,6 +1423,7 @@ class MyWindow(QMainWindow):
         self.text_editors = []
         self.console_groups = {}
         self.leader_to_console = {}
+        self._refreshing = False
 
         self.setWindowTitle("Script Creator by Stradiveri")
         self.setWindowIcon(QIcon('src/icon.png'))
@@ -1616,6 +1617,7 @@ class MyWindow(QMainWindow):
 
     def player_disconnected(self, player):
         """Remove player tab and clear scripts when connection is lost."""
+        should_refresh = not getattr(self, "_refreshing", False)
         try:
             index = next(i for i, p in enumerate(self.players) if p[0] == player)
         except StopIteration:
@@ -1627,6 +1629,9 @@ class MyWindow(QMainWindow):
         player.send_packet_conditions = []
         player.periodical_conditions = []
         player.script_loaded = False
+        player.is_connected = False
+        player.is_in_login_state = False
+        player.stop_script = True
 
         try:
             if self.players[index][1]:
@@ -1641,7 +1646,8 @@ class MyWindow(QMainWindow):
         self.start_stop_buttons.pop(index)
 
         # Ensure remaining players have up-to-date party information
-        self.refresh()
+        if should_refresh:
+            self.refresh()
 
     def mark_group_leaders(self):
         names = [p[0].name for p in self.players]
@@ -1989,7 +1995,11 @@ class MyWindow(QMainWindow):
                 self.players[index][1] = None
 
             try:
-                self.text_editors[index].setText("")
+                editor_widget = self.text_editors[index]
+                if hasattr(editor_widget, "reset_to_default_script"):
+                    editor_widget.reset_to_default_script()
+                else:
+                    editor_widget.setText("")
             except Exception:
                 pass
 
@@ -2000,7 +2010,7 @@ class MyWindow(QMainWindow):
                 pass
 
             try:
-                self.tab_widget.tabBar().setTabTextColor(index, QColor("#e88113"))
+                self.tab_widget.tabBar().setTabTextColor(index, QColor("white"))
             except Exception:
                 pass
 
@@ -2053,6 +2063,16 @@ class MyWindow(QMainWindow):
         return f"PID: {pid}"
 
     def refresh(self):
+        if getattr(self, "_refreshing", False):
+            return
+
+        self._refreshing = True
+        try:
+            self._refresh_impl()
+        finally:
+            self._refreshing = False
+
+    def _refresh_impl(self):
         raw_chars = returnAllPorts(include_new_api=True)
         char_infos = []
         for entry in raw_chars:
@@ -2061,13 +2081,19 @@ class MyWindow(QMainWindow):
             except (TypeError, ValueError):
                 continue
             display_name = self._format_display_name(name, pid)
-            new_api_port = maybe_new_port[0] if maybe_new_port else None
+            new_api_port = None
+            is_login_state = False
+            if maybe_new_port:
+                new_api_port = maybe_new_port[0]
+                if len(maybe_new_port) > 1:
+                    is_login_state = bool(maybe_new_port[1])
             char_infos.append({
                 "raw_name": name,
                 "api_port": api_port,
                 "pid": pid,
                 "new_port": new_api_port,
                 "display_name": display_name,
+                "is_login_state": is_login_state,
             })
 
         char_infos.sort(key=lambda info: info["display_name"].casefold())
@@ -2107,6 +2133,7 @@ class MyWindow(QMainWindow):
                     display_to_index.setdefault(display, idx)
 
             setattr(player_obj, "is_connected", False)
+            setattr(player_obj, "is_in_login_state", False)
 
         current_raw_names = [info["raw_name"] for info in char_infos if info["raw_name"]]
 
@@ -2129,9 +2156,26 @@ class MyWindow(QMainWindow):
 
             if existing_index is not None:
                 player_obj = self.players[existing_index][0]
-                if raw_name:
+                is_login_state = bool(info.get("is_login_state"))
+                display_name_override = display_name
+                if raw_name and not is_login_state:
                     player_obj.name = raw_name
-                player_obj.display_name = display_name
+                    player_obj.last_known_name = raw_name
+                    display_name_override = raw_name
+                elif is_login_state:
+                    last_known = getattr(player_obj, "last_known_name", None)
+                    if last_known:
+                        player_obj.name = last_known
+                        display_name_override = last_known
+                    else:
+                        prior_display = getattr(player_obj, "display_name", None)
+                        if prior_display:
+                            display_name_override = prior_display
+                elif raw_name:
+                    player_obj.name = raw_name
+                    display_name_override = raw_name
+                player_obj.display_name = display_name_override
+                player_obj.is_in_login_state = is_login_state
                 if getattr(player_obj, "PIDnum", None) != pid:
                     player_obj.PIDnum = pid
                 if legacy_port:
@@ -2145,7 +2189,7 @@ class MyWindow(QMainWindow):
                 else:
                     player_obj.new_api_port = None
                 player_obj.is_connected = True
-                self._update_displayed_name(existing_index, display_name)
+                self._update_displayed_name(existing_index, display_name_override)
                 continue
 
             if display_name not in self.open_tabs_names:
@@ -2154,9 +2198,26 @@ class MyWindow(QMainWindow):
                 if self.players:
                     player_obj = self.players[-1][0]
                     player_obj.PIDnum = pid
-                    if raw_name:
+                    is_login_state = bool(info.get("is_login_state"))
+                    display_name_override = display_name
+                    if raw_name and not is_login_state:
                         player_obj.name = raw_name
-                    player_obj.display_name = display_name
+                        player_obj.last_known_name = raw_name
+                        display_name_override = raw_name
+                    elif is_login_state:
+                        last_known = getattr(player_obj, "last_known_name", None)
+                        if last_known:
+                            player_obj.name = last_known
+                            display_name_override = last_known
+                        else:
+                            prior_display = getattr(player_obj, "display_name", None)
+                            if prior_display:
+                                display_name_override = prior_display
+                    elif raw_name:
+                        player_obj.name = raw_name
+                        display_name_override = raw_name
+                    player_obj.display_name = display_name_override
+                    player_obj.is_in_login_state = is_login_state
                     player_obj.is_connected = True
                     if legacy_port:
                         player_obj.api_port = str(legacy_port)
@@ -2168,15 +2229,34 @@ class MyWindow(QMainWindow):
                         player_obj.new_api_port = str(new_port)
                     else:
                         player_obj.new_api_port = None
+                    if display_name_override != display_name:
+                        self._update_displayed_name(len(self.players) - 1, display_name_override)
             else:
                 # Name matches but PID changed (e.g. client relaunch). Keep the
                 # existing tab but update the stored PID for consistency.
                 index = self.open_tabs_names.index(display_name)
                 player_obj = self.players[index][0]
                 player_obj.PIDnum = pid
-                if raw_name:
+                is_login_state = bool(info.get("is_login_state"))
+                display_name_override = display_name
+                if raw_name and not is_login_state:
                     player_obj.name = raw_name
-                player_obj.display_name = display_name
+                    player_obj.last_known_name = raw_name
+                    display_name_override = raw_name
+                elif is_login_state:
+                    last_known = getattr(player_obj, "last_known_name", None)
+                    if last_known:
+                        player_obj.name = last_known
+                        display_name_override = last_known
+                    else:
+                        prior_display = getattr(player_obj, "display_name", None)
+                        if prior_display:
+                            display_name_override = prior_display
+                elif raw_name:
+                    player_obj.name = raw_name
+                    display_name_override = raw_name
+                player_obj.display_name = display_name_override
+                player_obj.is_in_login_state = is_login_state
                 if legacy_port:
                     player_obj.api_port = str(legacy_port)
                     try:
@@ -2188,6 +2268,16 @@ class MyWindow(QMainWindow):
                 else:
                     player_obj.new_api_port = None
                 player_obj.is_connected = True
+                if display_name_override != display_name:
+                    self._update_displayed_name(index, display_name_override)
+
+        disconnected_players = [
+            player_obj
+            for player_obj, _editor in list(self.players)
+            if not getattr(player_obj, "is_connected", False)
+        ]
+        for player_obj in disconnected_players:
+            self.player_disconnected(player_obj)
 
         known_names = set(current_raw_names)
         for player_obj, _editor in self.players:
@@ -2318,6 +2408,8 @@ class MyWindow(QMainWindow):
 
         player = Player(char_name, on_disconnect=self.player_disconnected)
         player.display_name = char_name
+        player.last_known_name = char_name
+        player.is_in_login_state = False
         player.condition_logging_enabled = self._condition_logging_enabled
         self.players.append([player, None])
 

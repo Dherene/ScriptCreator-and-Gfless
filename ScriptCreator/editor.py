@@ -16,7 +16,20 @@ if TYPE_CHECKING:
     from main import MyWindow
 
 class Editor(QsciScintilla):
-    
+
+    DEFAULT_TEMPLATE = """import gfless_api
+# Gets current player object
+player = self.players[self.tab_widget.currentIndex()][0]
+
+# Get pidnum = (PID number)
+pidnum = player.PIDnum
+
+# Gets all The players and remove current player to get alts
+alts = [sublist[0] if sublist[0] is not None else None for sublist in self.players]
+alts.remove(player)
+
+"""
+
     def __init__(self, main_window, parent=None):
         super(Editor, self).__init__(parent)
 
@@ -166,18 +179,7 @@ class Editor(QsciScintilla):
         self.setLexer(self.pylexer)
 
         #every script should start with this code
-        self.setText("""import gfless_api
-# Gets current player object
-player = self.players[self.tab_widget.currentIndex()][0]
-
-# Get pidnum = (PID number)
-pidnum = player.PIDnum
-
-# Gets all The players and remove current player to get alts
-alts = [sublist[0] if sublist[0] is not None else None for sublist in self.players]
-alts.remove(player)
-
-""")
+        self.reset_to_default_script()
 
         # line numbers
         self.setMarginType(0, QsciScintilla.NumberMargin)
@@ -186,6 +188,11 @@ alts.remove(player)
         self.setMarginsBackgroundColor(QColor("#201c1c"))
         self.setMarginsFont(self.window_font)
     
+    def reset_to_default_script(self):
+        """Restore the default script template in the editor."""
+
+        self.setText(self.DEFAULT_TEMPLATE)
+
     def parseDocument(self, text):
         # clear the arrays
         # user defined variables and methods
