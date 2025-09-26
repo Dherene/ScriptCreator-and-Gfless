@@ -1,0 +1,19 @@
+recv_packet
+0
+if packet.startswith("dlgi2 #pjoin^6^"):
+        cond.off = 23
+        cond.off = 21
+        cond.off = 13
+        cond.on = 25
+        self.attr90 = 3                               #available condition 10
+        self.attr1 = 1                               #mark trade sequence complete
+        self.attr99 = 1                              #flag initial trade done
+        time.sleep(self.randomize_delay(0.5,1))
+        print(f"8-[MEMBER] {self.name} Accept return spot")
+        self.api.send_packet(f"#pjoin^6^{self.leaderID}")
+        time.sleep(self.randomize_delay(1,1.5))
+        self.api.send_packet("pleave")
+        time.sleep(self.randomize_delay(1,1.5))
+        selfgroup.trade = "0"
+        selfgroup.trade_candidate = None
+        self.attr96 = 0  # liberar el bloqueo de comercio de este miembro

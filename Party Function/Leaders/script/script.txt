@@ -1,0 +1,13 @@
+import gfless_api
+# Gets current player object
+player = self.players[self.tab_widget.currentIndex()][0]
+
+# Get pidnum = (PID number)
+pidnum = player.PIDnum
+
+# Gets all The players and remove current player to get alts
+alts = [sublist[0] if sublist[0] is not None else None for sublist in self.players]
+alts.remove(player)
+
+self.current_trader = None
+self.trade_mode = "receive"
