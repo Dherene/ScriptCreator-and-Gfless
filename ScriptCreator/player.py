@@ -104,6 +104,25 @@ class GroupNamespace:
         return self._player.get_group_var(name, default)
 
 
+class SubgroupNamespace:
+    """Expose subgroup-scoped variables using attribute access."""
+
+    def __init__(self, player):
+        super().__setattr__("_player", player)
+
+    def __getattr__(self, name):
+        return self._player.get_subgroup_var(name)
+
+    def __setattr__(self, name, value):
+        self._player.set_subgroup_var(name, value)
+
+    def __delattr__(self, name):
+        self._player.del_subgroup_var(name)
+
+    def get(self, name, default=0):
+        return self._player.get_subgroup_var(name, default)
+
+
 class ConditionControl:
     """Expose ``cond.on`` and ``cond.off`` helpers to toggle conditions."""
 
@@ -226,6 +245,8 @@ class Player:
     # shared storage for variables scoped per group (leader PID)
     _group_vars = {}
     _group_var_lock = threading.Lock()
+    _subgroup_vars = {}
+    _subgroup_var_lock = threading.Lock()
 
     class _GroupConsoleBuffer:
         __slots__ = ("chunks",)
@@ -346,6 +367,7 @@ class Player:
         self.leaderID = 0
         self.partyname = []
         self.partyID = []
+        self.subgroup_index = None
 
         # unique identifier for isolated group namespace before leaderID is known
         self._unique_group_id = id(self)
@@ -353,6 +375,7 @@ class Player:
 
         # proxy for group-shared variables
         self._group = GroupNamespace(self)
+        self._subgroup = SubgroupNamespace(self)
 
         # callback when connection is lost
         self.on_disconnect = on_disconnect
@@ -728,6 +751,96 @@ class Player:
             group.pop(name, None)
             if not group:
                 Player._group_vars.pop(gid, None)
+
+    def _resolve_subgroup_ids(self, group_id=None, subgroup_index=None):
+        group_identifier = group_id
+        if group_identifier is None:
+            group_identifier = getattr(self, "attr19", 0)
+        try:
+            group_identifier = int(group_identifier)
+        except (TypeError, ValueError):
+            group_identifier = 0
+        if group_identifier <= 0:
+            raise RuntimeError(
+                "Subgroup variable error: the player is not assigned to a group."
+            )
+
+        subgroup_identifier = subgroup_index
+        if subgroup_identifier is None:
+            subgroup_identifier = getattr(self, "subgroup_index", None)
+        try:
+            subgroup_identifier = int(subgroup_identifier)
+        except (TypeError, ValueError):
+            subgroup_identifier = 0
+        if subgroup_identifier <= 0:
+            raise RuntimeError(
+                "Subgroup variable error: the player does not belong to a subgroup."
+            )
+
+        return group_identifier, subgroup_identifier
+
+    def get_subgroup_var(
+        self,
+        name,
+        default=0,
+        group_id=None,
+        subgroup_index=None,
+    ):
+        """Return the value of ``name`` shared by this subgroup."""
+
+        gid, sid = self._resolve_subgroup_ids(group_id, subgroup_index)
+        with Player._subgroup_var_lock:
+            subgroup_data = Player._subgroup_vars.setdefault(gid, {})
+            values = subgroup_data.setdefault(sid, {})
+            value = values.get(name, default)
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+
+    def set_subgroup_var(
+        self,
+        name,
+        value,
+        group_id=None,
+        subgroup_index=None,
+    ):
+        """Assign an integer ``value`` to ``name`` for this subgroup."""
+
+        gid, sid = self._resolve_subgroup_ids(group_id, subgroup_index)
+        try:
+            numeric_value = int(value)
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"Subgroup variables accept only integers (received {value!r})."
+            )
+
+        with Player._subgroup_var_lock:
+            subgroup_data = Player._subgroup_vars.setdefault(gid, {})
+            subgroup_values = subgroup_data.setdefault(sid, {})
+            subgroup_values[name] = numeric_value
+
+    def del_subgroup_var(
+        self,
+        name,
+        group_id=None,
+        subgroup_index=None,
+    ):
+        """Remove ``name`` from the current subgroup if it exists."""
+
+        gid, sid = self._resolve_subgroup_ids(group_id, subgroup_index)
+        with Player._subgroup_var_lock:
+            subgroup_data = Player._subgroup_vars.get(gid)
+            if not subgroup_data:
+                return
+            values = subgroup_data.get(sid)
+            if not values:
+                return
+            values.pop(name, None)
+            if not values:
+                subgroup_data.pop(sid, None)
+            if not subgroup_data:
+                Player._subgroup_vars.pop(gid, None)
 
     def rolename(self) -> str:
         """Return a fantasy-style name up to 12 characters."""
@@ -1513,6 +1626,7 @@ class Player:
             "asyncio": asyncio,
             "time": self._time_namespace,
             "selfgroup": self._group,
+            "selfsubg": self._subgroup,
             "cond": self._cond_control,
             "print": self._console_print,
         }
@@ -1591,10 +1705,19 @@ class Player:
 
     def reset_attrs(self):
         """Reset attr1 through attr99 to 0 and clear leader info."""
+        current_group = getattr(self, "attr19", 0)
+        try:
+            current_group = int(current_group)
+        except (TypeError, ValueError):
+            current_group = 0
+        if current_group > 0:
+            with Player._subgroup_var_lock:
+                Player._subgroup_vars.pop(current_group, None)
         for i in range(1, 100):
             setattr(self, f'attr{i}', 0)
         self.leadername = ""
         self.leaderID = 0
+        self.subgroup_index = None
 
     def reset_group_runtime(self):
         """Stop scripts, cancel condition tasks and clear shared state."""
@@ -1693,7 +1816,16 @@ class Player:
         if gid is not None:
             with Player._group_var_lock:
                 Player._group_vars.pop(gid, None)
+        current_group = getattr(self, "attr19", 0)
+        try:
+            current_group = int(current_group)
+        except (TypeError, ValueError):
+            current_group = 0
+        if current_group > 0:
+            with Player._subgroup_var_lock:
+                Player._subgroup_vars.pop(current_group, None)
         self._current_gid = self._unique_group_id
+        self.subgroup_index = None
 
     def invite_members(self):
         """Invite all stored group members with a 3-second delay between invites."""

@@ -334,6 +334,32 @@ class ConditionCreator(QDialog):
         self.add_new_condition()
         self.add_new_action()
 
+    @staticmethod
+    def _is_valid_subgroup_name(name: str) -> bool:
+        return bool(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name))
+
+    @staticmethod
+    def _show_warning(title: str, text: str) -> None:
+        message_box = QMessageBox()
+        message_box.setIcon(QMessageBox.Warning)
+        message_box.setText(text)
+        message_box.setStandardButtons(QMessageBox.Ok)
+        message_box.setDefaultButton(QMessageBox.Ok)
+        message_box.setWindowTitle(title)
+        message_box.exec_()
+
+    @staticmethod
+    def _add_label_field(layout: QGridLayout, row: int, start_col: int, label_widget, field_widget, field_expands: bool = True) -> None:
+        layout.addWidget(label_widget, row, start_col)
+        layout.addWidget(field_widget, row, start_col + 1)
+        layout.setColumnStretch(start_col, 0)
+        layout.setColumnStretch(start_col + 1, 1 if field_expands else 0)
+
+    @staticmethod
+    def _add_single(layout: QGridLayout, row: int, column: int, widget, expands: bool = False) -> None:
+        layout.addWidget(widget, row, column)
+        layout.setColumnStretch(column, 1 if expands else 0)
+
     def add_new_condition(self):
         try:
             self.condition_group_box.deleteLater()
@@ -369,6 +395,7 @@ class ConditionCreator(QDialog):
             "mp_percent",
             "is_resting",
             "time.cond",
+            "subgroup_variable",
         ]
         for i in range(1, 101):
             elements_list.append(f"attr{i}")
@@ -394,16 +421,48 @@ class ConditionCreator(QDialog):
         index_combo.setVisible(False)
 
         text_edit_expression = QLineEdit()
+        text_edit_expression.setPlaceholderText("value")
+        text_edit_expression.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        subgroup_name_edit = QLineEdit()
+        subgroup_name_edit.setPlaceholderText("variable name")
+        subgroup_name_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        subgroup_name_edit.setVisible(False)
 
-        self.condition_widgets.append([if_combobox, combo_condition, index_combo, combo_operator, text_edit_expression, delimeter_combo, var_type])
+        self.condition_widgets.append([
+            if_combobox,
+            combo_condition,
+            index_combo,
+            combo_operator,
+            text_edit_expression,
+            delimeter_combo,
+            var_type,
+            subgroup_name_edit,
+        ])
         self.condition_group_box = condition_group_box
 
         condition_layout = QGridLayout()
+        condition_layout.setContentsMargins(8, 8, 8, 8)
+        condition_layout.setHorizontalSpacing(8)
 
         for i in range(len(self.condition_widgets)):
-            for j in range(len(self.condition_widgets[i])):
-                condition_layout.addWidget(self.condition_widgets[i][j], i, j)
-                condition_layout.setColumnStretch(j, 1)
+            row_widgets = self.condition_widgets[i]
+            condition_layout.addWidget(row_widgets[0], i, 0)
+            condition_layout.addWidget(row_widgets[1], i, 1)
+            condition_layout.addWidget(row_widgets[2], i, 2)
+            condition_layout.addWidget(row_widgets[3], i, 3)
+            condition_layout.addWidget(row_widgets[4], i, 4)
+            condition_layout.addWidget(row_widgets[6], i, 5)
+            condition_layout.addWidget(row_widgets[5], i, 6)
+            condition_layout.addWidget(row_widgets[7], i, 7)
+
+        condition_layout.setColumnStretch(0, 0)
+        condition_layout.setColumnStretch(1, 0)
+        condition_layout.setColumnStretch(2, 0)
+        condition_layout.setColumnStretch(3, 0)
+        condition_layout.setColumnStretch(4, 1)
+        condition_layout.setColumnStretch(5, 0)
+        condition_layout.setColumnStretch(6, 0)
+        condition_layout.setColumnStretch(7, 1)
 
         # Create condition group box and set layout
         condition_group_box.setLayout(condition_layout)
@@ -424,16 +483,18 @@ class ConditionCreator(QDialog):
         new_action_combobox = QComboBox()
         new_min_wait_label = QLabel("min:")
         new_min_wait = QLineEdit("0.75")
+        new_min_wait.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         new_max_wait_label = QLabel("max:")
         new_max_wait = QLineEdit("1.5")
+        new_max_wait.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         elements_list = [
             "wait", "walk_to_point", "send_packet", "recv_packet",
             "cond.on", "cond.off",
             "start_bot", "stop_bot", "continue_bot", "load_settings",
             "attack", "player_skill", "player_walk", "pets_walk",
-            "start_minigame_bot", "stop_minigame_bot", "use_item", "put_item_in_trade", 
+            "start_minigame_bot", "stop_minigame_bot", "use_item", "put_item_in_trade",
             "auto_login", "relogin", "python_code", "delete_condition", "close_game",
-            "invite_members"
+            "invite_members", "subgroup_variable"
         ]
         for i in range(1, 101):
             elements_list.append(f"attr{i}")
@@ -445,13 +506,12 @@ class ConditionCreator(QDialog):
         group_box = QGroupBox(f"action {row_position}")
         group_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         group_box_layout = QGridLayout()
-        group_box_layout.addWidget(new_action_combobox, 0, 0)
-        group_box_layout.addWidget(new_min_wait_label, 0, 1)
-        group_box_layout.addWidget(new_min_wait, 0, 2)
-        group_box_layout.addWidget(new_max_wait_label, 0, 3)
-        group_box_layout.addWidget(new_max_wait, 0, 4)
-        for col in range(5):
-            group_box_layout.setColumnStretch(col, 1)
+        group_box_layout.setContentsMargins(8, 8, 8, 8)
+        group_box_layout.setHorizontalSpacing(8)
+        self._add_single(group_box_layout, 0, 0, new_action_combobox)
+        self._add_label_field(group_box_layout, 0, 1, new_min_wait_label, new_min_wait)
+        self._add_label_field(group_box_layout, 0, 3, new_max_wait_label, new_max_wait)
+        group_box_layout.setColumnStretch(5, 1)
         group_box.setLayout(group_box_layout)
 
         # Add the group box to the main layout
@@ -492,14 +552,15 @@ class ConditionCreator(QDialog):
 
         if condition == "wait":
             new_min_wait = QLineEdit("0.75")
+            new_min_wait.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             new_min_wait_label = QLabel("min:")
             new_max_wait = QLineEdit("1.5")
+            new_max_wait.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             new_max_wait_label = QLabel("max:")
 
-            group_box_layout.addWidget(new_min_wait_label, 0, 2)
-            group_box_layout.addWidget(new_min_wait, 0, 3)
-            group_box_layout.addWidget(new_max_wait_label, 0, 4)
-            group_box_layout.addWidget(new_max_wait, 0, 5)
+            self._add_label_field(group_box_layout, 0, 1, new_min_wait_label, new_min_wait)
+            self._add_label_field(group_box_layout, 0, 3, new_max_wait_label, new_max_wait)
+            group_box_layout.setColumnStretch(5, 1)
 
             self.action_widgets[index].append(new_min_wait_label)
             self.action_widgets[index].append(new_min_wait)
@@ -508,12 +569,13 @@ class ConditionCreator(QDialog):
         elif condition == "send_packet" or condition == "recv_packet":
             new_packet_label = QLabel("Packet:")
             new_packet = QLineEdit()
+            new_packet.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             new_type_decision = QComboBox()
             new_type_decision.addItems(["string","int", "raw"])
 
-            group_box_layout.addWidget(new_packet_label, 0, 2)
-            group_box_layout.addWidget(new_packet, 0, 3)
-            group_box_layout.addWidget(new_type_decision, 0, 4)
+            self._add_label_field(group_box_layout, 0, 1, new_packet_label, new_packet)
+            self._add_single(group_box_layout, 0, 3, new_type_decision)
+            group_box_layout.setColumnStretch(4, 1)
 
             self.action_widgets[index].append(new_packet_label)
             self.action_widgets[index].append(new_packet)
@@ -527,22 +589,23 @@ class ConditionCreator(QDialog):
             index_input.setToolTip(
                 "Specify the condition number from the sequential list."
             )
+            index_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
-            group_box_layout.addWidget(index_label, 0, 2)
-            group_box_layout.addWidget(index_input, 0, 3)
+            self._add_label_field(group_box_layout, 0, 1, index_label, index_input)
+            group_box_layout.setColumnStretch(3, 1)
 
             self.action_widgets[index].append(index_label)
             self.action_widgets[index].append(index_input)
 
         elif condition == "walk_to_point" or condition == "player_walk" or condition == "pets_walk":
             new_x = QLineEdit()
+            new_x.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             new_x_label = QLabel("x:")
             new_y = QLineEdit()
+            new_y.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             new_y_label = QLabel("y:")
-            group_box_layout.addWidget(new_x_label, 0, 2)
-            group_box_layout.addWidget(new_x, 0, 3)
-            group_box_layout.addWidget(new_y_label, 0, 4)
-            group_box_layout.addWidget(new_y, 0, 5)
+            self._add_label_field(group_box_layout, 0, 1, new_x_label, new_x)
+            self._add_label_field(group_box_layout, 0, 3, new_y_label, new_y)
 
             self.action_widgets[index].append(new_x_label)
             self.action_widgets[index].append(new_x)
@@ -551,12 +614,12 @@ class ConditionCreator(QDialog):
 
             if condition == "walk_to_point":
                 new_radius = QLineEdit("0")
+                new_radius.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
                 new_radius_label = QLabel("radius:")
                 new_radius.setToolTip("Numero de celdas alrededor del punto")
                 new_radius.setPlaceholderText("celdas")
 
-                group_box_layout.addWidget(new_radius_label, 0, 6)
-                group_box_layout.addWidget(new_radius, 0, 7)
+                self._add_label_field(group_box_layout, 0, 5, new_radius_label, new_radius)
 
                 self.action_widgets[index].append(new_radius_label)
                 self.action_widgets[index].append(new_radius)
@@ -564,8 +627,10 @@ class ConditionCreator(QDialog):
                 skip_timeout_checkbox = QCheckBox("custom")
                 skip_label = QLabel("skip:")
                 skip_input = QLineEdit("4")
+                skip_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
                 timeout_label = QLabel("timeout:")
                 timeout_input = QLineEdit("3")
+                timeout_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
                 skip_label.setEnabled(False)
                 skip_input.setEnabled(False)
@@ -581,11 +646,10 @@ class ConditionCreator(QDialog):
 
                 skip_timeout_checkbox.stateChanged.connect(toggle_skip_timeout)
 
-                group_box_layout.addWidget(skip_timeout_checkbox, 0, 8)
-                group_box_layout.addWidget(skip_label, 0, 9)
-                group_box_layout.addWidget(skip_input, 0, 10)
-                group_box_layout.addWidget(timeout_label, 0, 11)
-                group_box_layout.addWidget(timeout_input, 0, 12)
+                self._add_single(group_box_layout, 0, 7, skip_timeout_checkbox)
+                self._add_label_field(group_box_layout, 0, 8, skip_label, skip_input)
+                self._add_label_field(group_box_layout, 0, 10, timeout_label, timeout_input)
+                group_box_layout.setColumnStretch(12, 1)
 
                 self.action_widgets[index].append(skip_timeout_checkbox)
                 self.action_widgets[index].append(skip_label)
@@ -595,22 +659,24 @@ class ConditionCreator(QDialog):
         elif condition == "load_settings":
             new_settings_path_label = QLabel("Settings path:")
             new_settings_path = QLineEdit()
+            new_settings_path.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
-            group_box_layout.addWidget(new_settings_path_label, 0, 2)
-            group_box_layout.addWidget(new_settings_path, 0, 3)
+            self._add_label_field(group_box_layout, 0, 1, new_settings_path_label, new_settings_path)
+            group_box_layout.setColumnStretch(3, 1)
 
             self.action_widgets[index].append(new_settings_path_label)
             self.action_widgets[index].append(new_settings_path)
         elif condition == "use_item":
             new_item_vnum_label = QLabel("VNUM: ")
             new_item_vnum = QLineEdit()
+            new_item_vnum.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
             new_inventory_type = QComboBox()
             new_inventory_type.addItems(["equip","main", "etc"])
 
-            group_box_layout.addWidget(new_item_vnum_label, 0, 2)
-            group_box_layout.addWidget(new_item_vnum, 0, 3)
-            group_box_layout.addWidget(new_inventory_type, 0, 4)
+            self._add_label_field(group_box_layout, 0, 1, new_item_vnum_label, new_item_vnum)
+            self._add_single(group_box_layout, 0, 3, new_inventory_type)
+            group_box_layout.setColumnStretch(4, 1)
 
             self.action_widgets[index].append(new_item_vnum_label)
             self.action_widgets[index].append(new_item_vnum)
@@ -621,14 +687,15 @@ class ConditionCreator(QDialog):
                 inv_combo.addItems(["equip", "main", "etc"])
                 v_label = QLabel(f"VNUM {n+1}:")
                 v_edit = QLineEdit()
+                v_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
                 q_label = QLabel("qty:")
                 q_edit = QLineEdit()
+                q_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
-                group_box_layout.addWidget(inv_combo, n, 2)
-                group_box_layout.addWidget(v_label, n, 3)
-                group_box_layout.addWidget(v_edit, n, 4)
-                group_box_layout.addWidget(q_label, n, 5)
-                group_box_layout.addWidget(q_edit, n, 6)
+                self._add_single(group_box_layout, n, 1, inv_combo)
+                self._add_label_field(group_box_layout, n, 2, v_label, v_edit)
+                self._add_label_field(group_box_layout, n, 4, q_label, q_edit)
+                group_box_layout.setColumnStretch(6, 1)
 
                 self.action_widgets[index].extend([inv_combo, v_label, v_edit, q_label, q_edit])
         elif condition == "auto_login":
@@ -657,16 +724,10 @@ class ConditionCreator(QDialog):
             char_combo.addItem("Stay at character selection")
             char_combo.addItems([str(i) for i in range(1, 5)])
 
-            widgets = [
-                (lang_label, 0, 2), (lang_combo, 0, 3),
-                (server_label, 1, 2), (server_combo, 1, 3),
-                (channel_label, 2, 2), (channel_combo, 2, 3),
-                (char_label, 3, 2), (char_combo, 3, 3),
-            ]
-
-            for w, r, c in widgets:
-                group_box_layout.addWidget(w, r, c)
-
+            self._add_label_field(group_box_layout, 0, 1, lang_label, lang_combo, field_expands=False)
+            self._add_label_field(group_box_layout, 1, 1, server_label, server_combo, field_expands=False)
+            self._add_label_field(group_box_layout, 2, 1, channel_label, channel_combo, field_expands=False)
+            self._add_label_field(group_box_layout, 3, 1, char_label, char_combo, field_expands=False)
             group_box_layout.setColumnStretch(3, 1)
 
             self.action_widgets[index].extend([
@@ -678,28 +739,63 @@ class ConditionCreator(QDialog):
         elif condition == "relogin":
             pid_label = QLabel("pid:")
             pid_edit = QLineEdit("pidnum")
-            group_box_layout.addWidget(pid_label, 0, 2)
-            group_box_layout.addWidget(pid_edit, 0, 3)
+            pid_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            self._add_label_field(group_box_layout, 0, 1, pid_label, pid_edit)
+            group_box_layout.setColumnStretch(3, 1)
             self.action_widgets[index].append(pid_label)
             self.action_widgets[index].append(pid_edit)
         elif condition == "python_code":
             new_equals_label = QLabel("=")
             new_python_code = QLineEdit()
+            new_python_code.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
-            group_box_layout.addWidget(new_equals_label, 0, 2)
-            group_box_layout.addWidget(new_python_code, 0, 3)
+            self._add_label_field(group_box_layout, 0, 1, new_equals_label, new_python_code)
+            group_box_layout.setColumnStretch(3, 1)
 
             self.action_widgets[index].append(new_equals_label)
             self.action_widgets[index].append(new_python_code)
+        elif condition == "subgroup_variable":
+            name_label = QLabel("Name:")
+            name_edit = QLineEdit()
+            name_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            operation_label = QLabel("Action:")
+            operation_combo = QComboBox()
+            operation_combo.addItems(["Set Value", "Increase (+1)", "Decrease (-1)"])
+            value_label = QLabel("Value:")
+            value_edit = QLineEdit("0")
+            value_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+            def toggle_value_field():
+                needs_value = operation_combo.currentText() == "Set Value"
+                value_label.setVisible(needs_value)
+                value_edit.setVisible(needs_value)
+
+            operation_combo.currentIndexChanged.connect(toggle_value_field)
+            toggle_value_field()
+
+            self._add_label_field(group_box_layout, 0, 1, name_label, name_edit)
+            self._add_label_field(group_box_layout, 0, 3, operation_label, operation_combo, field_expands=False)
+            self._add_label_field(group_box_layout, 0, 5, value_label, value_edit)
+            group_box_layout.setColumnStretch(7, 1)
+
+            self.action_widgets[index].extend([
+                name_label,
+                name_edit,
+                operation_label,
+                operation_combo,
+                value_label,
+                value_edit,
+            ])
         elif condition.startswith("attr"):
             new_equals_label = QLabel("=")
             new_equals = QLineEdit()
+            new_equals.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             new_str_or_raw = QComboBox()
             new_str_or_raw.addItems(["string","int", "raw"])
 
-            group_box_layout.addWidget(new_equals_label, 0, 2)
-            group_box_layout.addWidget(new_equals, 0, 3)
-            group_box_layout.addWidget(new_str_or_raw, 0, 4)
+            self._add_label_field(group_box_layout, 0, 1, new_equals_label, new_equals)
+            self._add_single(group_box_layout, 0, 3, new_str_or_raw)
+            group_box_layout.setColumnStretch(4, 1)
 
             self.action_widgets[index].append(new_equals_label)
             self.action_widgets[index].append(new_equals)
@@ -707,9 +803,10 @@ class ConditionCreator(QDialog):
         elif condition == "attack":
             new_monster_id_label = QLabel("monster_id: ")
             new_monster_id = QLineEdit()
+            new_monster_id.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
-            group_box_layout.addWidget(new_monster_id_label, 0, 2)
-            group_box_layout.addWidget(new_monster_id, 0, 3)
+            self._add_label_field(group_box_layout, 0, 1, new_monster_id_label, new_monster_id)
+            group_box_layout.setColumnStretch(3, 1)
 
             self.action_widgets[index].append(new_monster_id_label)
             self.action_widgets[index].append(new_monster_id)
@@ -718,11 +815,12 @@ class ConditionCreator(QDialog):
             new_monster_id = QLineEdit()
             new_skill_id_label = QLabel("skill_id: ")
             new_skill_id = QLineEdit()
+            new_monster_id.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            new_skill_id.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
-            group_box_layout.addWidget(new_monster_id_label, 0, 2)
-            group_box_layout.addWidget(new_monster_id, 0, 3)
-            group_box_layout.addWidget(new_skill_id_label, 0, 4)
-            group_box_layout.addWidget(new_skill_id, 0, 5)
+            self._add_label_field(group_box_layout, 0, 1, new_monster_id_label, new_monster_id)
+            self._add_label_field(group_box_layout, 0, 3, new_skill_id_label, new_skill_id)
+            group_box_layout.setColumnStretch(5, 1)
 
             self.action_widgets[index].append(new_monster_id_label)
             self.action_widgets[index].append(new_monster_id)
@@ -786,16 +884,81 @@ class ConditionCreator(QDialog):
         for action in actions_array:
             if action[0] in {"cond.on", "cond.off"}:
                 if len(action) < 2 or not action[1]:
-                    message_box = QMessageBox()
-                    message_box.setIcon(QMessageBox.Warning)
-                    message_box.setText(
-                        "Please provide the sequential list number for cond.on / cond.off.\n"
+                    self._show_warning(
+                        "Missing condition number",
+                        "Please provide the sequential list number for cond.on / cond.off.\n",
                     )
-                    message_box.setStandardButtons(QMessageBox.Ok)
-                    message_box.setDefaultButton(QMessageBox.Ok)
-                    message_box.setWindowTitle("Missing condition number")
-                    message_box.exec_()
                     return
+
+        for condition in conditions_array:
+            if len(condition) >= 2 and condition[1] == "subgroup_variable":
+                var_name = condition[7].strip() if len(condition) > 7 else ""
+                if not var_name:
+                    self._show_warning(
+                        "Missing subgroup variable",
+                        "Please enter the subgroup variable name.",
+                    )
+                    return
+                if not self._is_valid_subgroup_name(var_name):
+                    self._show_warning(
+                        "Invalid subgroup variable",
+                        "Subgroup variable names must start with a letter or underscore and contain only alphanumeric characters or underscores.",
+                    )
+                    return
+                value_text = condition[4].strip() if len(condition) > 4 else ""
+                if not value_text:
+                    self._show_warning(
+                        "Missing subgroup value",
+                        "Please provide an integer value for the subgroup comparison.",
+                    )
+                    return
+                try:
+                    int(value_text)
+                except ValueError:
+                    self._show_warning(
+                        "Invalid subgroup value",
+                        "Subgroup comparisons only accept integers.",
+                    )
+                    return
+
+        for action in actions_array:
+            if action[0] == "subgroup_variable":
+                name_text = action[1].strip() if len(action) > 1 else ""
+                if not name_text:
+                    self._show_warning(
+                        "Missing subgroup variable",
+                        "Please enter the subgroup variable name for the action.",
+                    )
+                    return
+                if not self._is_valid_subgroup_name(name_text):
+                    self._show_warning(
+                        "Invalid subgroup variable",
+                        "Subgroup variable names must start with a letter or underscore and contain only alphanumeric characters or underscores.",
+                    )
+                    return
+                operation = action[2] if len(action) > 2 else ""
+                if operation not in {"Set Value", "Increase (+1)", "Decrease (-1)"}:
+                    self._show_warning(
+                        "Invalid subgroup action",
+                        "Please choose a valid subgroup action.",
+                    )
+                    return
+                if operation == "Set Value":
+                    value_text = action[3].strip() if len(action) > 3 else ""
+                    if not value_text:
+                        self._show_warning(
+                            "Missing subgroup value",
+                            "Please provide an integer value to assign to the subgroup variable.",
+                        )
+                        return
+                    try:
+                        int(value_text)
+                    except ValueError:
+                        self._show_warning(
+                            "Invalid subgroup value",
+                            "Subgroup variables only accept integer values.",
+                        )
+                        return
 
         script = self.construct_script(conditions_array, actions_array)
         condition_review = ConditionReview(self.player, script, condition_type, self.cond_modifier, self)
@@ -873,6 +1036,13 @@ class ConditionCreator(QDialog):
                     else:
                         comparison_value = user_input_value
                     script += f'{left_expr} {operator} {comparison_value}'
+            elif argument == "subgroup_variable":
+                var_name = conditions_array[i][7].strip() if len(conditions_array[i]) > 7 else ""
+                try:
+                    comparison_value = int(user_input_value)
+                except (TypeError, ValueError):
+                    comparison_value = 0
+                script += f'int(selfsubg.{var_name}) {operator} {comparison_value}'
             else:
                 classic_operators = ["==", "!=", ">", "<", ">=", "<="]
                 if operator in classic_operators:
@@ -969,6 +1139,19 @@ class ConditionCreator(QDialog):
                 script += 'self.close_game()'
             elif actions_array[i][0] == "invite_members":
                 script += 'self.invite_members()'
+            elif actions_array[i][0] == "subgroup_variable":
+                var_name = actions_array[i][1].strip() if len(actions_array[i]) > 1 else ""
+                operation = actions_array[i][2] if len(actions_array[i]) > 2 else ""
+                if operation == "Set Value":
+                    try:
+                        numeric_value = int(actions_array[i][3]) if len(actions_array[i]) > 3 else 0
+                    except (TypeError, ValueError):
+                        numeric_value = 0
+                    script += f'selfsubg.{var_name} = {numeric_value}'
+                elif operation == "Increase (+1)":
+                    script += f'selfsubg.{var_name} = int(selfsubg.{var_name}) + 1'
+                else:
+                    script += f'selfsubg.{var_name} = int(selfsubg.{var_name}) - 1'
             else:
                 if actions_array[i][2] == "string":
                     script += f'self.{actions_array[i][0]} = "{actions_array[i][1]}"'
@@ -1000,8 +1183,12 @@ class ConditionCreator(QDialog):
         operator_combo = self.condition_widgets[index][3]
         value_type_combo = self.condition_widgets[index][6]
 
+        subgroup_name_edit = self.condition_widgets[index][7]
+        subgroup_name_edit.setVisible(False)
+
         operator_combo.clear()
         value_type_combo.clear()
+        value_type_combo.setEnabled(True)
         if selected_item == "recv_packet" or selected_item == "send_packet":
             operator_combo.addItems(["startswith", "contains", "endswith", "equals"])
             value_type_combo.addItems(["string", "int", "raw"])
@@ -1010,6 +1197,12 @@ class ConditionCreator(QDialog):
             operator_combo.addItems(["==", "!=", ">", "<", ">=", "<="])
             value_type_combo.addItems(["int", "raw"])
             value_type_combo.setCurrentIndex(0)
+        elif selected_item == "subgroup_variable":
+            operator_combo.addItems(["==", "!=", ">", "<", ">=", "<="])
+            value_type_combo.addItem("int")
+            value_type_combo.setCurrentIndex(0)
+            value_type_combo.setEnabled(False)
+            subgroup_name_edit.setVisible(True)
         else:
             operator_combo.addItems(["==", "!=", ">", "<", ">=", "<=", "startswith", "contains", "endswith"])
             value_type_combo.addItems(["string", "int", "raw"])
