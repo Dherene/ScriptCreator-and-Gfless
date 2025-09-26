@@ -2193,7 +2193,7 @@ class MyWindow(QMainWindow):
                 continue
 
             if display_name not in self.open_tabs_names:
-                self.add_tab(display_name)
+                self.add_tab(info)
                 # Ensure future refreshes match by PID for already-loaded scripts
                 if self.players:
                     player_obj = self.players[-1][0]
@@ -2398,19 +2398,53 @@ class MyWindow(QMainWindow):
             for member in member_objs:
                 member.leaderID = leader_obj.id
 
-    def add_tab(self, char_name):
+    def add_tab(self, char_info):
         # Create a new tab and add it to the tab widget
         self.no_client_found_label.setVisible(False)
         self.tab_widget.setVisible(True)
         tab = QWidget()
-        self.tab_widget.addTab(tab, char_name)
-        self.open_tabs_names += [char_name]
+        display_name = char_info.get("display_name") or "Unknown"
+        raw_name = char_info.get("raw_name")
+        pid = char_info.get("pid")
+        legacy_port = char_info.get("api_port")
+        new_port = char_info.get("new_port")
+        is_login_state = bool(char_info.get("is_login_state"))
 
-        player = Player(char_name, on_disconnect=self.player_disconnected)
-        player.display_name = char_name
-        player.last_known_name = char_name
-        player.is_in_login_state = False
+        try:
+            legacy_port_int = int(legacy_port) if legacy_port is not None else None
+        except (TypeError, ValueError):
+            legacy_port_int = None
+
+        try:
+            new_port_int = int(new_port) if new_port is not None else None
+        except (TypeError, ValueError):
+            new_port_int = None
+
+        self.tab_widget.addTab(tab, display_name)
+        self.open_tabs_names += [display_name]
+
+        player_name = raw_name if raw_name else display_name
+        player = Player(
+            player_name,
+            on_disconnect=self.player_disconnected,
+            api_port=legacy_port_int,
+            pid=pid,
+            new_api_port=new_port_int,
+        )
+        player.display_name = display_name
+        player.last_known_name = raw_name or display_name
+        player.is_in_login_state = is_login_state
         player.condition_logging_enabled = self._condition_logging_enabled
+        if legacy_port_int is not None:
+            player.api_port = str(legacy_port_int)
+            player.port = legacy_port_int
+        if new_port_int is not None:
+            player.new_api_port = str(new_port_int)
+        else:
+            player.new_api_port = None
+        if pid is not None:
+            player.PIDnum = pid
+        player.is_connected = True
         self.players.append([player, None])
 
         # Create a layout for the tab

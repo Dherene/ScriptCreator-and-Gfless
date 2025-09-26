@@ -227,7 +227,7 @@ class Player:
     _group_vars = {}
     _group_var_lock = threading.Lock()
 
-    def __init__(self, name=None, on_disconnect=None):
+    def __init__(self, name=None, on_disconnect=None, api_port=None, pid=None, new_api_port=None):
         # player info
         self.name = name
         self.id = 0
@@ -344,21 +344,50 @@ class Player:
         for i in range(51, 101):
             setattr(self, f'attr{i}', [])
 
-        if name is not None:
-            # initialize api
-            self.port = returnCorrectPort(self.name)
-            self.PIDnum = returnCorrectPID(self.name)
-            self.api = phoenix.Api(self.port)
-            self.stop_script = False
-            pl_thread = threading.Thread(target=self.packetlogger)
-            pl_thread.setDaemon(True)
-            pl_thread.start()
+        # connection metadata
+        self.api = None
+        self.api_port = str(api_port) if api_port is not None else None
+        self.new_api_port = str(new_api_port) if new_api_port is not None else None
+        self.port = None
+        if api_port is not None:
+            try:
+                self.port = int(api_port)
+            except (TypeError, ValueError):
+                self.port = None
+        self.PIDnum = pid
+        self.stop_script = False
 
-            t = threading.Thread(target=self.queries, args=[0.25, ])
-            t.start()
+        resolved_port = self.port
+        if resolved_port is None and name is not None:
+            resolved_port = returnCorrectPort(self.name)
+            if resolved_port is not None:
+                self.api_port = str(resolved_port)
 
-            # ensure condition loops are ready
-            self.start_condition_loop()
+        if self.PIDnum is None and name is not None:
+            pid_value = returnCorrectPID(self.name)
+            if pid_value is not None:
+                self.PIDnum = pid_value
+
+        if resolved_port is not None:
+            self.port = resolved_port
+            try:
+                self.api = phoenix.Api(self.port)
+            except (TypeError, OSError):
+                self.api = None
+                self.stop_script = True
+            else:
+                pl_thread = threading.Thread(target=self.packetlogger)
+                pl_thread.setDaemon(True)
+                pl_thread.start()
+
+                t = threading.Thread(target=self.queries, args=[0.25, ])
+                t.start()
+
+                # ensure condition loops are ready
+                self.start_condition_loop()
+        else:
+            # without a resolved port we cannot communicate with the API
+            self.stop_script = True
 
     def log(self, *args, **kwargs):
         """Write log messages using the player's current console."""
