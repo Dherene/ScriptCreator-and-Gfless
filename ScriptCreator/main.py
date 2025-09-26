@@ -6,6 +6,7 @@ import win32gui
 import win32con
 import threading
 import warnings
+from typing import Dict, NamedTuple, Optional, Set
 # Some PyQt5/QScintilla builds emit a deprecation warning regarding
 # ``sipPyTypeDict``. The underlying code is part of the compiled
 # extension and cannot be changed here, so hide this warning.
@@ -83,6 +84,14 @@ def value_to_bool(value, default: bool = False) -> bool:
         return bool(int(value))
     except (TypeError, ValueError):
         return bool(value)
+
+
+class PlayerTabContext(NamedTuple):
+    player: Player
+    index: int
+    container: QTabWidget
+    widget: QWidget
+    group_id: Optional[int]
 
 class CheckableComboBox(QComboBox):
     """ComboBox that allows selecting multiple items using check boxes."""
@@ -499,7 +508,7 @@ class loadFull(QDialog):
                     self.players[i][0].periodical_conditions = []
                     self.text_editors[i].setText("""import gfless_api
 # Gets current player object
-player = self.players[self.tab_widget.currentIndex()][0]
+player = self.players[index][0]
 
 
 # Gets all The players and remove current player to get alts
@@ -1424,6 +1433,14 @@ class MyWindow(QMainWindow):
         self.console_groups = {}
         self.leader_to_console = {}
         self._refreshing = False
+        self.player_widgets: Dict[Player, QWidget] = {}
+        self.widget_to_player: Dict[QWidget, Player] = {}
+        self.player_tab_containers: Dict[Player, QTabWidget] = {}
+        self.player_to_group: Dict[Player, Optional[int]] = {}
+        self.group_tab_infos: Dict[int, Dict[str, object]] = {}
+        self._group_widget_to_id: Dict[QWidget, int] = {}
+        self._inner_tab_to_group: Dict[QTabWidget, int] = {}
+        self._current_player_index: int = -1
 
         self.setWindowTitle("Script Creator by Stradiveri")
         self.setWindowIcon(QIcon('src/icon.png'))
@@ -1437,6 +1454,7 @@ class MyWindow(QMainWindow):
 
         # Create the tab widget
         self.tab_widget = QTabWidget(self)
+        self.tab_widget.currentChanged.connect(self._on_main_tab_changed)
         layout.addWidget(self.tab_widget)
 
         self.no_client_found_label = QLabel("No Phoenix Bot Clients Found")
@@ -1539,6 +1557,289 @@ class MyWindow(QMainWindow):
         self.refresh()
         self.tray_icon.show()
 
+    def _on_main_tab_changed(self, _index):
+        self._update_current_player_index()
+
+    def _on_group_member_changed(self, _group_id, _index):
+        self._update_current_player_index()
+
+    def _update_current_player_index(self):
+        context = self._get_current_player_context()
+        self._current_player_index = context.index if context else -1
+
+    def current_player_index(self):
+        return self._current_player_index
+
+    def _find_player_index(self, player_obj):
+        for idx, (player, _thread) in enumerate(self.players):
+            if player is player_obj:
+                return idx
+        return None
+
+    def _get_current_player_context(self) -> Optional[PlayerTabContext]:
+        current_index = self.tab_widget.currentIndex()
+        if current_index < 0:
+            return None
+        current_widget = self.tab_widget.widget(current_index)
+        group_id = self._group_widget_to_id.get(current_widget)
+        if group_id is not None:
+            group_info = self.group_tab_infos.get(group_id)
+            if not group_info:
+                return None
+            inner_tabs = group_info.get("tabs")
+            if not isinstance(inner_tabs, QTabWidget):
+                return None
+            member_widget = inner_tabs.currentWidget()
+            if member_widget is None:
+                return None
+            player_obj = self.widget_to_player.get(member_widget)
+            if player_obj is None:
+                return None
+            index = self._find_player_index(player_obj)
+            if index is None:
+                return None
+            return PlayerTabContext(player_obj, index, inner_tabs, member_widget, group_id)
+        player_obj = self.widget_to_player.get(current_widget)
+        if player_obj is None:
+            return None
+        index = self._find_player_index(player_obj)
+        if index is None:
+            return None
+        return PlayerTabContext(player_obj, index, self.tab_widget, current_widget, None)
+
+    def _register_player_widget(self, player_obj, widget):
+        self.player_widgets[player_obj] = widget
+        self.widget_to_player[widget] = player_obj
+        self.player_tab_containers[player_obj] = self.tab_widget
+        self.player_to_group[player_obj] = None
+
+    def _set_tab_text_for_player(self, player_obj, text):
+        container = self.player_tab_containers.get(player_obj)
+        widget = self.player_widgets.get(player_obj)
+        if not container or not widget:
+            return
+        index = container.indexOf(widget)
+        if index != -1:
+            container.setTabText(index, text)
+
+    def _set_tab_color_for_player(self, player_obj, color):
+        container = self.player_tab_containers.get(player_obj)
+        widget = self.player_widgets.get(player_obj)
+        if not container or not widget:
+            return
+        index = container.indexOf(widget)
+        if index == -1:
+            return
+        if not isinstance(color, QColor):
+            color = QColor(color)
+        container.tabBar().setTabTextColor(index, color)
+
+    def _set_tab_color_by_index(self, index, color):
+        if 0 <= index < len(self.players):
+            self._set_tab_color_for_player(self.players[index][0], color)
+
+    def _coerce_pid_to_int(self, pid_value):
+        if isinstance(pid_value, int):
+            return pid_value
+        if isinstance(pid_value, str):
+            pid_value = pid_value.strip()
+            if not pid_value:
+                return None
+            try:
+                return int(pid_value, 10)
+            except ValueError:
+                digits = re.findall(r"\d+", pid_value)
+                if digits:
+                    try:
+                        return int(digits[0], 10)
+                    except ValueError:
+                        return None
+        return None
+
+    def _player_group_sort_key(self, player_obj):
+        if player_obj is None:
+            return (2,)
+        pid_value = self._coerce_pid_to_int(getattr(player_obj, "PIDnum", None))
+        if pid_value is not None:
+            return (0, pid_value, getattr(player_obj, "name", ""))
+        name = (
+            getattr(player_obj, "name", None)
+            or getattr(player_obj, "display_name", None)
+            or ""
+        )
+        return (1, tuple(GroupScriptDialog._natural_key(str(name))), str(name).lower())
+
+    def _sort_group_tabs(self, group_id):
+        group_info = self.group_tab_infos.get(group_id)
+        if not group_info:
+            return
+        target_tabs = group_info.get("tabs")
+        if not isinstance(target_tabs, QTabWidget):
+            return
+        entries = []
+        for idx in range(target_tabs.count()):
+            widget = target_tabs.widget(idx)
+            player_obj = self.widget_to_player.get(widget)
+            key = self._player_group_sort_key(player_obj)
+            entries.append((key, widget))
+        entries.sort(key=lambda item: item[0])
+        tab_bar = target_tabs.tabBar()
+        for desired_index, (_key, widget) in enumerate(entries):
+            current_index = target_tabs.indexOf(widget)
+            if current_index == -1 or current_index == desired_index:
+                continue
+            tab_bar.moveTab(current_index, desired_index)
+
+    def _resort_player_group(self, player_obj):
+        if player_obj is None:
+            return
+        group_id = self.player_to_group.get(player_obj)
+        if group_id is None:
+            return
+        self._sort_group_tabs(group_id)
+
+    def _set_player_pid(self, player_obj, pid_value):
+        if player_obj is None:
+            return
+        current_pid = getattr(player_obj, "PIDnum", None)
+        if current_pid == pid_value:
+            return
+        player_obj.PIDnum = pid_value
+        self._resort_player_group(player_obj)
+
+    def _ensure_group_container(self, group_id):
+        try:
+            group_key = int(group_id)
+        except (TypeError, ValueError):
+            group_key = group_id
+        if group_key in self.group_tab_infos:
+            return self.group_tab_infos[group_key]
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        inner_tabs = QTabWidget(container)
+        layout.addWidget(inner_tabs)
+        inner_tabs.currentChanged.connect(lambda idx, gid=group_key: self._on_group_member_changed(gid, idx))
+        group_info = {"widget": container, "tabs": inner_tabs, "members": set()}
+        self.group_tab_infos[group_key] = group_info
+        self._group_widget_to_id[container] = group_key
+        self._inner_tab_to_group[inner_tabs] = group_key
+        self.tab_widget.addTab(container, f"Group: {group_key}")
+        return group_info
+
+    def _organize_group_tabs(self, group_id, leader_obj, member_objs):
+        if leader_obj is None:
+            return
+        group_info = self._ensure_group_container(group_id)
+        participants = [leader_obj]
+        participants.extend([m for m in member_objs if m is not None])
+        for player_obj in participants:
+            display_name = getattr(player_obj, "display_name", None) or getattr(player_obj, "name", "Unknown")
+            self._move_player_to_group(player_obj, group_id)
+            self._set_tab_text_for_player(player_obj, display_name)
+        self._sort_group_tabs(group_id)
+        group_widget = group_info.get("widget")
+        if isinstance(group_widget, QWidget):
+            self.tab_widget.setCurrentWidget(group_widget)
+        leader_widget = self.player_widgets.get(leader_obj)
+        inner_tabs = group_info.get("tabs")
+        if isinstance(inner_tabs, QTabWidget) and leader_widget is not None:
+            leader_index = inner_tabs.indexOf(leader_widget)
+            if leader_index != -1:
+                inner_tabs.setCurrentIndex(leader_index)
+        self._update_current_player_index()
+
+    def _move_player_to_group(self, player_obj, group_id):
+        widget = self.player_widgets.get(player_obj)
+        if widget is None:
+            return
+        group_info = self._ensure_group_container(group_id)
+        target_tabs = group_info.get("tabs")
+        if not isinstance(target_tabs, QTabWidget):
+            return
+        current_container = self.player_tab_containers.get(player_obj)
+        if current_container is target_tabs:
+            group_info["members"].add(player_obj)
+            self.player_to_group[player_obj] = group_id
+            return
+        if isinstance(current_container, QTabWidget):
+            current_index = current_container.indexOf(widget)
+            if current_index != -1:
+                current_container.removeTab(current_index)
+            if current_container is not self.tab_widget:
+                old_group_id = self._inner_tab_to_group.get(current_container)
+                if old_group_id is not None:
+                    old_info = self.group_tab_infos.get(old_group_id)
+                    if old_info:
+                        old_info["members"].discard(player_obj)
+                        if not old_info["members"]:
+                            self._remove_group_container(old_group_id)
+        display_name = getattr(player_obj, "display_name", None) or getattr(player_obj, "name", "Unknown")
+        target_tabs.addTab(widget, display_name)
+        group_info["members"].add(player_obj)
+        self.player_tab_containers[player_obj] = target_tabs
+        self.player_to_group[player_obj] = group_id
+        self._sort_group_tabs(group_id)
+
+    def _move_player_to_main_tab(self, player_obj):
+        widget = self.player_widgets.get(player_obj)
+        if widget is None:
+            return
+        container = self.player_tab_containers.get(player_obj)
+        if container is self.tab_widget:
+            display_name = getattr(player_obj, "display_name", None) or getattr(player_obj, "name", "Unknown")
+            self._set_tab_text_for_player(player_obj, display_name)
+            return
+        if isinstance(container, QTabWidget):
+            tab_index = container.indexOf(widget)
+            if tab_index != -1:
+                container.removeTab(tab_index)
+            group_id = self._inner_tab_to_group.get(container)
+            if group_id is not None:
+                group_info = self.group_tab_infos.get(group_id)
+                if group_info:
+                    group_info["members"].discard(player_obj)
+                    if not group_info["members"]:
+                        self._remove_group_container(group_id)
+        display_name = getattr(player_obj, "display_name", None) or getattr(player_obj, "name", "Unknown")
+        self.tab_widget.addTab(widget, display_name)
+        self.player_tab_containers[player_obj] = self.tab_widget
+        self.player_to_group[player_obj] = None
+
+    def _remove_group_container(self, group_id):
+        group_info = self.group_tab_infos.pop(group_id, None)
+        if not group_info:
+            return
+        container_widget = group_info.get("widget")
+        inner_tabs = group_info.get("tabs")
+        if isinstance(inner_tabs, QTabWidget):
+            self._inner_tab_to_group.pop(inner_tabs, None)
+        if isinstance(container_widget, QWidget):
+            self._group_widget_to_id.pop(container_widget, None)
+            tab_index = self.tab_widget.indexOf(container_widget)
+            if tab_index != -1:
+                self.tab_widget.removeTab(tab_index)
+        self._update_current_player_index()
+
+    def _remove_player_widget(self, player_obj):
+        widget = self.player_widgets.pop(player_obj, None)
+        container = self.player_tab_containers.pop(player_obj, None)
+        self.player_to_group.pop(player_obj, None)
+        if widget is not None:
+            self.widget_to_player.pop(widget, None)
+        if isinstance(container, QTabWidget) and widget is not None:
+            tab_index = container.indexOf(widget)
+            if tab_index != -1:
+                container.removeTab(tab_index)
+            if container is not self.tab_widget:
+                group_id = self._inner_tab_to_group.get(container)
+                if group_id is not None:
+                    group_info = self.group_tab_infos.get(group_id)
+                    if group_info:
+                        group_info["members"].discard(player_obj)
+                        if not group_info["members"]:
+                            self._remove_group_container(group_id)
+
     def show_console(self):
         win32gui.ShowWindow(fg_window, win32con.SW_SHOW)
         self.settings.setValue("console", 1)
@@ -1639,7 +1940,7 @@ class MyWindow(QMainWindow):
         except Exception:
             pass
 
-        self.tab_widget.removeTab(index)
+        self._remove_player_widget(player)
         self.open_tabs_names.pop(index)
         self.players.pop(index)
         self.text_editors.pop(index)
@@ -1648,6 +1949,8 @@ class MyWindow(QMainWindow):
         # Ensure remaining players have up-to-date party information
         if should_refresh:
             self.refresh()
+        else:
+            self._update_current_player_index()
 
     def mark_group_leaders(self):
         names = [p[0].name for p in self.players]
@@ -1760,7 +2063,7 @@ class MyWindow(QMainWindow):
         pid = getattr(player_obj, "PIDnum", None)
         player_obj.reset_attrs()
         if pid is not None:
-            player_obj.PIDnum = pid
+            self._set_player_pid(player_obj, pid)
 
         player_obj.recv_packet_conditions = []
         player_obj.send_packet_conditions = []
@@ -1950,6 +2253,13 @@ class MyWindow(QMainWindow):
         self.console_groups[console] = group_record
         self.leader_to_console[leader_obj] = console
 
+        group_id = group_record.get("group_id")
+        if group_id is None and isinstance(group_info, dict):
+            group_id = group_info.get("group_id")
+        if group_id is None:
+            group_id = self.group_script_group_counter
+        self._organize_group_tabs(group_id, leader_obj, member_objs)
+
         console.set_leader_name(leader_obj.name)
         console.clear()
         console.show()
@@ -2010,7 +2320,7 @@ class MyWindow(QMainWindow):
                 pass
 
             try:
-                self.tab_widget.tabBar().setTabTextColor(index, QColor("white"))
+                self._set_tab_color_by_index(index, "white")
             except Exception:
                 pass
 
@@ -2029,10 +2339,15 @@ class MyWindow(QMainWindow):
                 pass
             player_obj.partyname = []
             player_obj.partyID = []
+            try:
+                self._move_player_to_main_tab(player_obj)
+            except Exception:
+                pass
             changed = True
 
         if changed:
             self.update_group_party_info()
+            self._update_current_player_index()
 
     def _detach_player_console(self, player_obj):
         for console, info in list(self.console_groups.items()):
@@ -2177,7 +2492,7 @@ class MyWindow(QMainWindow):
                 player_obj.display_name = display_name_override
                 player_obj.is_in_login_state = is_login_state
                 if getattr(player_obj, "PIDnum", None) != pid:
-                    player_obj.PIDnum = pid
+                    self._set_player_pid(player_obj, pid)
                 if legacy_port:
                     player_obj.api_port = str(legacy_port)
                     try:
@@ -2197,7 +2512,7 @@ class MyWindow(QMainWindow):
                 # Ensure future refreshes match by PID for already-loaded scripts
                 if self.players:
                     player_obj = self.players[-1][0]
-                    player_obj.PIDnum = pid
+                    self._set_player_pid(player_obj, pid)
                     is_login_state = bool(info.get("is_login_state"))
                     display_name_override = display_name
                     if raw_name and not is_login_state:
@@ -2236,7 +2551,7 @@ class MyWindow(QMainWindow):
                 # existing tab but update the stored PID for consistency.
                 index = self.open_tabs_names.index(display_name)
                 player_obj = self.players[index][0]
-                player_obj.PIDnum = pid
+                self._set_player_pid(player_obj, pid)
                 is_login_state = bool(info.get("is_login_state"))
                 display_name_override = display_name
                 if raw_name and not is_login_state:
@@ -2295,6 +2610,7 @@ class MyWindow(QMainWindow):
         self.saveAction.setEnabled(has_players)
 
         self.update_group_party_info()
+        self._update_current_player_index()
 
     def _update_displayed_name(self, index, new_name):
         """Update tab labels and bookkeeping when a player's name changes."""
@@ -2310,11 +2626,10 @@ class MyWindow(QMainWindow):
 
         self.open_tabs_names[index] = new_name
 
-        if index < self.tab_widget.count():
-            self.tab_widget.setTabText(index, new_name)
-
+        player_obj = None
         if index < len(self.players):
             player_obj = self.players[index][0]
+            self._set_tab_text_for_player(player_obj, new_name)
             console = getattr(player_obj, "group_console", None)
             if console:
                 group_info = self.console_groups.get(console)
@@ -2339,8 +2654,8 @@ class MyWindow(QMainWindow):
 
             if idx >= len(self.open_tabs_names):
                 self.open_tabs_names.append(current_name)
-                if idx < self.tab_widget.count():
-                    self.tab_widget.setTabText(idx, current_name)
+                player_obj = self.players[idx][0]
+                self._set_tab_text_for_player(player_obj, current_name)
                 name_changed = True
                 continue
 
@@ -2443,13 +2758,13 @@ class MyWindow(QMainWindow):
         else:
             player.new_api_port = None
         if pid is not None:
-            player.PIDnum = pid
+            self._set_player_pid(player, pid)
         player.is_connected = True
         self.players.append([player, None])
 
         # Create a layout for the tab
         tab_layout = QVBoxLayout(tab)
-   
+
         # Create a text editor with light blue background
         text_editor = Editor(tab)
         self.text_editors.append(text_editor)
@@ -2458,8 +2773,6 @@ class MyWindow(QMainWindow):
 
         # Create a horizontal layout for buttons
         button_layout = QHBoxLayout()
-
-        player = self.players[self.tab_widget.currentIndex()][0]
 
         # Buttons at the bottom
         start_button = QPushButton("Start Script", tab)
@@ -2498,30 +2811,23 @@ class MyWindow(QMainWindow):
 
         tab_layout.addLayout(save_load_layout)
 
+        self._register_player_widget(self.players[-1][0], tab)
+        self._update_current_player_index()
+
     def start_script_clicked(self):
-        # Get the current text editor in the active tab
-        text_editor = self.tab_widget.currentWidget().findChild(QsciScintilla)
+        context = self._get_current_player_context()
+        if context is None:
+            return
 
-        if text_editor.text() != "":
-            # Get the Python script from the text editor
-            #script = f"player = self.players[self.tab_widget.currentIndex()][0]\nindex = self.tab_widget.currentIndex()\n"
-            script = text_editor.text()  # Use text() method instead of toPlainText()
-#
-            #script += f'\nself.tab_widget.tabBar().setTabTextColor(index, QColor("#e88113"))'
-
-            #t = threading.Thread(target=self.run_script, args=[script, ])
-            #t.start()
-
-            t = thread_with_trace(target=self.run_script, args=[script, ])
+        text_editor = self.text_editors[context.index]
+        script = text_editor.text()
+        if script.strip():
+            t = thread_with_trace(target=self.run_script, args=[script, context.index])
             t.start()
-
-            for i in range(len(self.players)):
-                if self.players[i][0] == self.players[self.tab_widget.currentIndex()][0]:
-                    self.players[i][0].stop_script = False
-                    self.players[i][1] = t
-            # Hide the start button and show the stop button
-            self.start_stop_buttons[self.tab_widget.currentIndex()][0].hide()
-            self.start_stop_buttons[self.tab_widget.currentIndex()][1].show()
+            self.players[context.index][0].stop_script = False
+            self.players[context.index][1] = t
+            self.start_stop_buttons[context.index][0].hide()
+            self.start_stop_buttons[context.index][1].show()
         else:
             print("empty")
 
@@ -2542,31 +2848,41 @@ class MyWindow(QMainWindow):
         # Handle the stop script button click
         # You may want to perform some actions here when the script stops
 
-        for i in range(len(self.players)):
-            if self.players[i][0] == self.players[self.tab_widget.currentIndex()][0]:
-                self.players[i][0].stop_script = True
-                self.players[i][1].kill()
+        context = self._get_current_player_context()
+        if context is None:
+            return
+
+        player_obj = context.player
+        thread = self.players[context.index][1]
+        if thread:
+            try:
+                player_obj.stop_script = True
+                thread.kill()
+            except Exception:
+                pass
+            self.players[context.index][1] = None
+
+        self.start_stop_buttons[context.index][0].show()
+        self.start_stop_buttons[context.index][1].hide()
+        self._set_tab_color_for_player(player_obj, "#e88113")
         
-        #self.players[i][1].join()
-        # Hide the stop button and show the start button
-        self.start_stop_buttons[self.tab_widget.currentIndex()][0].show()
-        self.start_stop_buttons[self.tab_widget.currentIndex()][1].hide()
-        self.tab_widget.tabBar().setTabTextColor(self.tab_widget.currentIndex(), QColor("#e88113"))
-        
-    def run_script(self, script, index = None):
+    def run_script(self, script, index=None):
         if index is None:
-            index = self.tab_widget.currentIndex()
+            context = self._get_current_player_context()
+            if context is None:
+                return
+            index = context.index
         player = self.players[index][0]
         with use_group_console(getattr(player, "group_console", None)):
             try:
                 # Execute the Python script in the context of this player
-                self.tab_widget.tabBar().setTabTextColor(index, QColor("green"))
+                self._set_tab_color_by_index(index, "green")
                 exec(script, globals(), {"self": self, "player": player, "index": index})
-                self.tab_widget.tabBar().setTabTextColor(index, QColor("#e88113"))
+                self._set_tab_color_by_index(index, "#e88113")
             except Exception as e:
                 # Handle any exceptions that occur during execution
                 print(f"Error executing script: {e}")
-                self.tab_widget.tabBar().setTabTextColor(index, QColor("red"))
+                self._set_tab_color_by_index(index, "red")
 
             """ not working properly atm, most likely due to running this in thread
             text = f"{e}"
@@ -2584,27 +2900,37 @@ class MyWindow(QMainWindow):
 
             msg.exec_() 
             """
-        self.start_stop_buttons[self.tab_widget.currentIndex()][0].show()
-        self.start_stop_buttons[self.tab_widget.currentIndex()][1].hide()
+        self.start_stop_buttons[index][0].show()
+        self.start_stop_buttons[index][1].hide()
+        self.players[index][1] = None
 
     def open_condition_modifier(self):
-        condition_editor = ConditionModifier(self.players[self.tab_widget.currentIndex()][0])
+        context = self._get_current_player_context()
+        if context is None:
+            return
+        condition_editor = ConditionModifier(context.player)
         condition_editor.exec_()
 
     def save_script(self):
         file_dialog = QFileDialog()
         file_name, _ = file_dialog.getSaveFileName(self, "Save Script", "", "Text Files (*.txt);;All Files (*)")
         if file_name:
+            context = self._get_current_player_context()
+            if context is None:
+                return
             with open(file_name, 'w') as file:
-                text_editor = self.tab_widget.currentWidget().findChild(QsciScintilla)
-                file.write(text_editor.toPlainText())
+                text_editor = self.text_editors[context.index]
+                file.write(text_editor.text())
 
     def load_script(self):
         file_dialog = QFileDialog()
         file_name, _ = file_dialog.getOpenFileName(self, "Load Script", "", "Text Files (*.txt);;All Files (*)")
         if file_name:
+            context = self._get_current_player_context()
+            if context is None:
+                return
             with open(file_name, 'r') as file:
-                text_editor = self.tab_widget.currentWidget().findChild(QsciScintilla)
+                text_editor = self.text_editors[context.index]
                 text_editor.setText(file.read())
 
 class thread_with_trace(threading.Thread):

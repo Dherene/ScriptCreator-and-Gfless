@@ -19,7 +19,7 @@ class Editor(QsciScintilla):
 
     DEFAULT_TEMPLATE = """import gfless_api
 # Gets current player object
-player = self.players[self.tab_widget.currentIndex()][0]
+player = self.players[index][0]
 
 # Get pidnum = (PID number)
 pidnum = player.PIDnum
