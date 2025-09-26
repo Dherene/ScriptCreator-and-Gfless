@@ -112,7 +112,7 @@ class ConditionControl:
 
     def _toggle(self, attribute, value):
         if isinstance(value, bool) or not isinstance(value, int):
-            print(f"cond.{attribute} expects an integer index.")
+            self._player.log(f"cond.{attribute} expects an integer index.")
             return
         self._player._set_condition_active_by_number(value, attribute == "on")
 
@@ -360,6 +360,12 @@ class Player:
             # ensure condition loops are ready
             self.start_condition_loop()
 
+    def log(self, *args, **kwargs):
+        """Write log messages using the player's current console."""
+
+        with use_group_console(getattr(self, "group_console", None)):
+            print(*args, **kwargs)
+
     def start_condition_loop(self):
         """Ensure background condition tasks are running.
 
@@ -461,20 +467,20 @@ class Player:
 
     def _set_condition_active_by_number(self, seq_number, active):
         if isinstance(seq_number, bool) or not isinstance(seq_number, int):
-            print("Condition numbers must be integers.")
+            self.log("Condition numbers must be integers.")
             return
         if seq_number < 0:
-            print("Condition numbers start at 1.")
+            self.log("Condition numbers start at 1.")
             return
 
         entries = self._build_condition_sequence()
 
         if seq_number == 0:
             if active:
-                print("Condition numbers start at 1.")
+                self.log("Condition numbers start at 1.")
                 return
             if not entries:
-                print("No conditions available to toggle.")
+                self.log("No conditions available to toggle.")
                 return
 
             current_ctx = self._condition_ctx.get()
@@ -516,24 +522,24 @@ class Player:
                 for cond_type, name in disabled_entries:
                     self._record_condition_activity(cond_type, name)
                     if self.condition_logging_enabled:
-                        print(f"Condition '{name}' disabled via cond.off = 0")
+                        self.log(f"Condition '{name}' disabled via cond.off = 0")
                 if skipped_current and self.condition_logging_enabled:
-                    print(
+                    self.log(
                         "Current condition kept active while disabling others via cond.off = 0"
                     )
             elif skipped_current:
                 if self.condition_logging_enabled:
-                    print("Only the calling condition was active; nothing else to disable.")
+                    self.log("Only the calling condition was active; nothing else to disable.")
             else:
                 if self.condition_logging_enabled:
-                    print("No active conditions to disable.")
+                    self.log("No active conditions to disable.")
             return
 
         if not entries:
-            print("No conditions available to toggle.")
+            self.log("No conditions available to toggle.")
             return
         if seq_number > len(entries):
-            print(
+            self.log(
                 f"Condition index {seq_number} is out of range (max {len(entries)})."
             )
             return
@@ -565,7 +571,7 @@ class Player:
         state = "enabled" if active else "disabled"
         attr = "on" if active else "off"
         if self.condition_logging_enabled:
-            print(f"Condition '{name}' {state} via cond.{attr} = {seq_number}")
+            self.log(f"Condition '{name}' {state} via cond.{attr} = {seq_number}")
 
     # ------------------------------------------------------------------ #
     # Group-shared variable helpers
@@ -647,7 +653,7 @@ class Player:
                                     cond[0],
                                 )
                         except Exception as e:
-                            print(f"Error scheduling send_packet condition: {e}")
+                            self.log(f"Error scheduling send_packet condition: {e}")
                 if json_msg["type"] == phoenix.Type.packet_recv.value:
                     packet = json_msg["packet"]
                     splitPacket = packet.split()
@@ -808,7 +814,7 @@ class Player:
                                     cond[0],
                                 )
                         except Exception as e:
-                            print(f"Error scheduling recv_packet condition: {e}")
+                            self.log(f"Error scheduling recv_packet condition: {e}")
                 if json_msg["type"] == phoenix.Type.query_player_info.value:
                     player_info = json_msg["player_info"]
                     self.id = player_info["id"]
@@ -837,7 +843,7 @@ class Player:
                     self.players = json_msg["players"]
             else:
                 time.sleep(0.003)
-        print(f"{self.name} lost connection")
+        self.log(f"{self.name} lost connection")
         self.api.close()
         # purge any queued walk commands to avoid errors after disconnect
         with self.walk_queue.mutex:
@@ -857,7 +863,7 @@ class Player:
             try:
                 self.on_disconnect(self)
             except Exception as e:
-                print(f"Error in disconnect callback: {e}")
+                self.log(f"Error in disconnect callback: {e}")
 
     def _process_walk_queue(self):
         while True:
@@ -869,9 +875,9 @@ class Player:
             except OSError as e:
                 if getattr(e, "winerror", None) == 10053:
                     continue
-                print(f"Error executing walk command: {e}")
+                self.log(f"Error executing walk command: {e}")
             except Exception as e:
-                print(f"Error executing walk command: {e}")
+                self.log(f"Error executing walk command: {e}")
     
     async def walk_to_point(self, point, radius=0, walk_with_pet=True, skip=4, timeout=3, proximity=2):
         """Walk the player to ``point`` using non-blocking asyncio primitives.
@@ -946,9 +952,9 @@ class Player:
                     elapsed = time.perf_counter() - start_time
                     point = target
                 if Path == []:
-                    print("Failed to find a path")
+                    self.log("Failed to find a path")
                     break
-                print(f"Path found in {elapsed:.3f} seconds")
+                self.log(f"Path found in {elapsed:.3f} seconds")
                 lastpath = len(Path) - 1
                 success = True
                 for i in range(0, len(Path), skip):
@@ -1003,7 +1009,7 @@ class Player:
                     await asyncio.sleep(resend)
                     continue
         except Exception as e:
-            print(f"Error in walk_to_point: {e}")
+            self.log(f"Error in walk_to_point: {e}")
         finally:
             if cond:
                 with self.walk_lock:
@@ -1086,13 +1092,13 @@ class Player:
                         if self.map_changed:
                             break
                 if not self.map_changed:
-                    print("timeout waiting for map change")
+                    self.log("timeout waiting for map change")
                 else:
-                    print("reached new map")
+                    self.log("reached new map")
             else:
-                print("Failed to find a path")
+                self.log("Failed to find a path")
         except Exception as e:
-            print(f"Error in walk_and_switch_map: {e}")
+            self.log(f"Error in walk_and_switch_map: {e}")
 
     def use_item(self, item_vnum, inventory_type):
         if inventory_type == "equip":
@@ -1114,7 +1120,7 @@ class Player:
                     self.api.send_packet(f"u_i 1 {self.id} 2 {item_position} 0 0")
                     return True
 
-        print(f"Couldnt find item with vnum: {item_vnum} in inventory: {inventory_type}")
+        self.log(f"Couldnt find item with vnum: {item_vnum} in inventory: {inventory_type}")
         return False
 
     def put_items_in_trade(self, items, gold=0):
@@ -1141,14 +1147,14 @@ class Player:
                         best_slot = slot
                         best_qty = qty
             if best_slot is None or best_qty == 0:
-                print("Insufficient items to exchange")
+                self.log("Insufficient items to exchange")
                 return False
             packet_parts.extend([str(inv_type), str(best_slot), str(best_qty)])
 
         if gold > 0 or len(packet_parts) > 3:
             self.api.send_packet(" ".join(packet_parts))
             return True
-        print("Insufficient items to exchange")
+        self.log("Insufficient items to exchange")
         return False
 
     def put_item_in_trade(self, items, gold=0):
@@ -1211,14 +1217,14 @@ class Player:
                     self.loop,
                 )
             except Exception as e:
-                try:
-                    self.recv_packet_conditions.pop(index)
-                    self._compiled_recv_conditions.pop(cond_name, None)
-                    print(
-                        f"\nError executing recv_packet condition: {cond_name}\nError: {e}\nCondition was removed."
-                    )
-                except Exception as e2:
-                    print(f"Error removing faulty recv_packet condition: {e2}")
+                    try:
+                        self.recv_packet_conditions.pop(index)
+                        self._compiled_recv_conditions.pop(cond_name, None)
+                        self.log(
+                            f"\nError executing recv_packet condition: {cond_name}\nError: {e}\nCondition was removed."
+                        )
+                    except Exception as e2:
+                        self.log(f"Error removing faulty recv_packet condition: {e2}")
 
     def exec_send_packet_condition(self, code, packet, index, cond_name):
         with use_group_console(getattr(self, "group_console", None)):
@@ -1239,11 +1245,11 @@ class Player:
                 try:
                     self.send_packet_conditions.pop(index)
                     self._compiled_send_conditions.pop(cond_name, None)
-                    print(
+                    self.log(
                         f"\nError executing send_packet condition: {cond_name}\nError: {e}\nCondition was removed."
                     )
                 except Exception as e2:
-                    print(f"Error removing faulty send_packet condition: {e2}")
+                    self.log(f"Error removing faulty send_packet condition: {e2}")
 
     async def exec_periodic_conditions(self):
         """Schedule active periodical conditions in independent tasks.
@@ -1285,7 +1291,7 @@ class Player:
                             cond._code_cache = ""
                             if cond.last_error != signature:
                                 error_type = type(cond_error).__name__
-                                print(
+                                self.log(
                                     f"\nError preparing periodical condition '{cond.name}' "
                                     f"(index {idx}): {error_type}: {cond_error}"
                                 )
@@ -1295,20 +1301,20 @@ class Player:
                                     location = f"line {lineno}"
                                     if offset is not None:
                                         location += f", column {offset}"
-                                    print(f"    Reported location: {location}.")
+                                    self.log(f"    Reported location: {location}.")
                                 code_lines = cond.code.splitlines()
                                 if code_lines:
-                                    print("    Condition source:")
+                                    self.log("    Condition source:")
                                     highlight = lineno
                                     for line_no, line_text in enumerate(code_lines, start=1):
                                         marker = "->" if highlight == line_no else "  "
-                                        print(f"    {marker} {line_no:>4}: {line_text}")
+                                        self.log(f"    {marker} {line_no:>4}: {line_text}")
                                 else:
-                                    print("    Condition source is empty.")
+                                    self.log("    Condition source is empty.")
                             cond.last_error = signature
                     await asyncio.sleep(0.1)
                 except Exception as e:
-                    print(f"Error executing periodic conditions loop: {e}")
+                    self.log(f"Error executing periodic conditions loop: {e}")
                     await asyncio.sleep(0.1)
 
     async def _run_periodic_loop(self, cond: PeriodicCondition):
@@ -1436,11 +1442,11 @@ class Player:
                         if cond[0] == name:
                             store_list.pop(idx)
                             break
-                    print(
+                    self.log(
                         f"\nError executing {cond_type} condition: {name}\nError: {e}\nCondition was removed."
                     )
                 except Exception as e2:
-                    print(f"Error removing faulty {cond_type} condition: {e2}")
+                    self.log(f"Error removing faulty {cond_type} condition: {e2}")
             finally:
                 self._condition_ctx.reset(token)
                 self._set_condition_running(cond_type, name, False)
@@ -1462,11 +1468,11 @@ class Player:
                                     cond.task.cancel()
                                 self.periodical_conditions.pop(idx)
                                 break
-                    print(
+                    self.log(
                         f"\nError executing periodical condition: {name}\nError: {e}\nCondition was removed."
                     )
                 except Exception:
-                    print(
+                    self.log(
                         f"\nError executing periodical condition: {name}\nError: {e}\nCondition was removed."
                     )
             finally:
@@ -1494,7 +1500,7 @@ class Player:
                 self.api.send_packet(f"$Invite {name}")
                 time.sleep(3)
             except Exception as e:
-                print(f"Failed to invite {name}: {e}")
+                self.log(f"Failed to invite {name}: {e}")
 
     def close_game(self):
         """Terminate the Nostale client associated with this player."""

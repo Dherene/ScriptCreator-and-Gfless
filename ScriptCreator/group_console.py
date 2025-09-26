@@ -9,8 +9,19 @@ from contextlib import contextmanager
 from typing import Optional
 
 from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QFont, QTextCursor
-from PyQt5.QtWidgets import QPlainTextEdit, QVBoxLayout, QWidget
+from PyQt5.QtGui import QFont, QKeySequence, QTextCursor, QTextDocument
+from PyQt5.QtWidgets import (
+    QButtonGroup,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPlainTextEdit,
+    QPushButton,
+    QRadioButton,
+    QShortcut,
+    QVBoxLayout,
+    QWidget,
+)
 
 __all__ = [
     "GroupConsoleWindow",
@@ -128,8 +139,47 @@ class GroupConsoleWindow(QWidget):
             font.setFamily("Courier New")
         self._text_edit.setFont(font)
 
+        self._last_search_text = ""
+
+        self._search_bar = QWidget(self)
+        search_layout = QHBoxLayout(self._search_bar)
+        search_layout.setContentsMargins(0, 0, 0, 0)
+
+        self._search_input = QLineEdit(self._search_bar)
+        self._search_input.setPlaceholderText("Buscar...")
+        search_layout.addWidget(self._search_input)
+
+        direction_label = QLabel("Dirección:", self._search_bar)
+        search_layout.addWidget(direction_label)
+
+        self._direction_group = QButtonGroup(self._search_bar)
+        self._direction_up = QRadioButton("Arriba", self._search_bar)
+        self._direction_down = QRadioButton("Abajo", self._search_bar)
+        self._direction_down.setChecked(True)
+        self._direction_group.addButton(self._direction_up)
+        self._direction_group.addButton(self._direction_down)
+        search_layout.addWidget(self._direction_up)
+        search_layout.addWidget(self._direction_down)
+
+        self._search_button = QPushButton("Buscar siguiente", self._search_bar)
+        self._search_button.setAutoDefault(False)
+        search_layout.addWidget(self._search_button)
+
+        self._close_search_button = QPushButton("Cerrar", self._search_bar)
+        self._close_search_button.setAutoDefault(False)
+        search_layout.addWidget(self._close_search_button)
+
+        self._search_bar.setVisible(False)
+
         layout = QVBoxLayout(self)
+        layout.addWidget(self._search_bar)
         layout.addWidget(self._text_edit)
+
+        self._find_shortcut = QShortcut(QKeySequence.Find, self)
+        self._find_shortcut.activated.connect(self._show_search_bar)
+        self._search_button.clicked.connect(self._find_next)
+        self._close_search_button.clicked.connect(self._close_search_bar)
+        self._search_input.returnPressed.connect(self._find_next)
 
         self.append_requested.connect(self._append_text)
         self.set_leader_name(leader_name)
@@ -146,6 +196,55 @@ class GroupConsoleWindow(QWidget):
         if self._is_closed:
             return
         self._text_edit.clear()
+
+    def _show_search_bar(self) -> None:
+        if self._is_closed:
+            return
+        if not self._search_bar.isVisible():
+            selected = self._text_edit.textCursor().selectedText()
+            if selected:
+                self._search_input.setText(selected)
+            elif self._last_search_text:
+                self._search_input.setText(self._last_search_text)
+            self._search_bar.setVisible(True)
+        self._search_input.setFocus()
+        self._search_input.selectAll()
+
+    def _close_search_bar(self) -> None:
+        if self._is_closed:
+            return
+        self._search_bar.setVisible(False)
+        self._text_edit.setFocus()
+
+    def _find_next(self) -> None:
+        if self._is_closed:
+            return
+        pattern = self._search_input.text()
+        if not pattern:
+            return
+
+        flags = QTextDocument.FindFlags()
+        if self._direction_up.isChecked():
+            flags |= QTextDocument.FindBackward
+
+        cursor = self._text_edit.textCursor()
+        if pattern != self._last_search_text:
+            if flags & QTextDocument.FindBackward:
+                cursor.movePosition(QTextCursor.End)
+            else:
+                cursor.movePosition(QTextCursor.Start)
+            self._text_edit.setTextCursor(cursor)
+
+        self._last_search_text = pattern
+
+        if not self._text_edit.find(pattern, flags):
+            cursor = self._text_edit.textCursor()
+            if flags & QTextDocument.FindBackward:
+                cursor.movePosition(QTextCursor.End)
+            else:
+                cursor.movePosition(QTextCursor.Start)
+            self._text_edit.setTextCursor(cursor)
+            self._text_edit.find(pattern, flags)
 
     def _append_text(self, text: str) -> None:
         if self._is_closed:
