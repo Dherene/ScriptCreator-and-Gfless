@@ -1,10 +1,6 @@
 recv_packet
-0
+1
 if packet.startswith("dlgi2 #pjoin^6^"):
-        cond.off = 23
-        cond.off = 21
-        cond.off = 13
-        cond.on = 25
         self.attr90 = 3                               #available condition 10
         self.attr1 = 1                               #mark trade sequence complete
         self.attr99 = 1                              #flag initial trade done
@@ -17,3 +13,5 @@ if packet.startswith("dlgi2 #pjoin^6^"):
         selfgroup.trade = "0"
         selfgroup.trade_candidate = None
         self.attr96 = 0  # liberar el bloqueo de comercio de este miembro
+        selfsubg.sincro = int(selfsubg.sincro) + 1  #incrementa variable subgrupo+1 la siguiente condition empieza con sincro =3
+        print(f"[MEMBER] {self.name} incremento el valor de subgrupo en: {selfsubg.sincro}")

@@ -1,0 +1,6 @@
+periodical
+1
+if int(self.attr1) == 1 and int(selfsubg.sincro) == 3:
+	print(f"El valor de sincró es: {selfsubg.sincro} inicializar condicion 9")
+	time.sleep(self.randomize_delay(0.75,1.5))
+	self.walk_to_point([30,100], 3)
