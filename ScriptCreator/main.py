@@ -1,12 +1,14 @@
 import sys
 import os
 import re
+import builtins
 import ctypes
 import win32gui
 import win32con
 import threading
 import warnings
 from typing import Dict, NamedTuple, Optional, Set
+from weakref import WeakKeyDictionary, proxy, ref
 # Some PyQt5/QScintilla builds emit a deprecation warning regarding
 # ``sipPyTypeDict``. The underlying code is part of the compiled
 # extension and cannot be changed here, so hide this warning.
@@ -56,7 +58,12 @@ from funcs import randomize_time
 from conditioncreator import ConditionModifier
 from editor import Editor
 import gfless_api
-from group_console import GroupConsoleWindow, install_console_routing, use_group_console
+from group_console import (
+    GroupConsoleWindow,
+    console_print,
+    install_console_routing,
+    use_group_console,
+)
 
 install_console_routing()
 
@@ -619,6 +626,7 @@ class GroupScriptDialog(QDialog):
         existing_group=None,
         available_member_names=None,
         title=None,
+        subgroup_size=0,
     ):
         super().__init__()
 
@@ -633,6 +641,11 @@ class GroupScriptDialog(QDialog):
         self.mode = mode if mode in {"setup", "extend"} else "setup"
         self.existing_group = existing_group or {}
         self.available_member_names = available_member_names
+        try:
+            subgroup_value = int(subgroup_size)
+        except (TypeError, ValueError):
+            subgroup_value = 0
+        self.subgroup_size = max(0, subgroup_value)
         if title:
             self.setWindowTitle(title)
         try:
@@ -777,6 +790,93 @@ class GroupScriptDialog(QDialog):
                 item.setCheckState(Qt.Unchecked)
         self.members_combo.updateText()
 
+    def _coerce_pid_to_int(self, pid_value):
+        if isinstance(pid_value, int):
+            return pid_value
+        if isinstance(pid_value, str):
+            pid_value = pid_value.strip()
+            if not pid_value:
+                return None
+            try:
+                return int(pid_value, 10)
+            except ValueError:
+                digits = re.findall(r"\d+", pid_value)
+                if digits:
+                    try:
+                        return int(digits[0], 10)
+                    except ValueError:
+                        return None
+        return None
+
+    def _member_sort_key(self, player_obj):
+        if player_obj is None:
+            return (2,)
+        pid_value = self._coerce_pid_to_int(getattr(player_obj, "PIDnum", None))
+        if pid_value is not None:
+            return (0, pid_value, getattr(player_obj, "name", ""))
+        name = (
+            getattr(player_obj, "name", None)
+            or getattr(player_obj, "display_name", None)
+            or ""
+        )
+        return (1, tuple(self._natural_key(str(name))), str(name).lower())
+
+    def _prepare_subgroup_assignment(
+        self,
+        leader_name,
+        member_names,
+        existing_member_names=None,
+    ):
+        assignments = {}
+        skipped_members = set()
+        if self.subgroup_size <= 0:
+            return assignments, skipped_members, False
+
+        combined_names = []
+        if isinstance(existing_member_names, (list, tuple, set)):
+            for name in existing_member_names:
+                if isinstance(name, str) and name not in combined_names:
+                    combined_names.append(name)
+        for name in member_names:
+            if isinstance(name, str) and name not in combined_names:
+                combined_names.append(name)
+
+        if not combined_names:
+            return assignments, skipped_members, False
+
+        member_objs = []
+        seen = set()
+        for player_obj, _ in self.players:
+            name = getattr(player_obj, "name", None)
+            if not isinstance(name, str):
+                continue
+            if name == leader_name:
+                continue
+            if name in combined_names and name not in seen:
+                member_objs.append(player_obj)
+                seen.add(name)
+
+        member_objs.sort(key=self._member_sort_key)
+
+        if not member_objs:
+            return assignments, skipped_members, False
+
+        subgroup_size = max(1, self.subgroup_size)
+        total_members = len(member_objs)
+        complete_members = (total_members // subgroup_size) * subgroup_size
+        incomplete = total_members % subgroup_size != 0
+
+        for idx, player_obj in enumerate(member_objs):
+            name = getattr(player_obj, "name", None)
+            if not isinstance(name, str):
+                continue
+            if idx >= complete_members:
+                skipped_members.add(name)
+                continue
+            assignments[name] = (idx // subgroup_size) + 1
+
+        return assignments, skipped_members, incomplete
+
     def _set_member_limit(self, new_limit: int):
         limit = max(0, int(new_limit))
         self.member_limit = limit
@@ -800,6 +900,38 @@ class GroupScriptDialog(QDialog):
             return
 
         leader_name = leader_names[0]
+
+        existing_names_for_assignment = []
+        if self.mode == "extend":
+            existing_names_for_assignment = list(
+                self.existing_group.get("member_names", [])
+            )
+
+        assignments, skipped_members, incomplete_flag = self._prepare_subgroup_assignment(
+            leader_name,
+            list(member_names),
+            existing_names_for_assignment,
+        )
+
+        if skipped_members:
+            member_names = [name for name in member_names if name not in skipped_members]
+            if not member_names:
+                QMessageBox.warning(
+                    self,
+                    self.windowTitle(),
+                    "No se pudo cargar el setup al ultimo subgrupo",
+                )
+                return
+
+        if self.subgroup_size > 0:
+            member_names = [name for name in member_names if name in assignments]
+            if not member_names:
+                QMessageBox.warning(
+                    self,
+                    self.windowTitle(),
+                    "No se pudo cargar el setup al ultimo subgrupo",
+                )
+                return
 
         if leader_name in member_names:
             QMessageBox.warning(self, "Invalid Selection", "Leader cannot be selected as member.")
@@ -953,12 +1085,20 @@ class GroupScriptDialog(QDialog):
                 player_obj.attr20 = leader_name
                 player_obj.leadername = leader_name
                 member_objs.append(player_obj)
+                subgroup_index = assignments.get(player_obj.name)
+                if subgroup_index is not None:
+                    player_obj.subgroup_index = subgroup_index
+                elif hasattr(player_obj, "subgroup_index"):
+                    player_obj.subgroup_index = None
             player_obj.script_loaded = True
             player_obj.attr13 = 0
 
         if leader_obj is None:
             QMessageBox.warning(self, "Load Failed", "Unable to locate the selected leader.")
             return
+
+        if hasattr(leader_obj, "subgroup_index"):
+            leader_obj.subgroup_index = None
 
         if self.mode == "extend":
             combined_member_names = []
@@ -993,6 +1133,13 @@ class GroupScriptDialog(QDialog):
             participants = list(member_objs)
 
         for p in participants:
+            if p is not None and hasattr(p, "prepare_group_console_output"):
+                try:
+                    p.prepare_group_console_output()
+                except Exception:
+                    pass
+
+        for p in participants:
             if p is not None:
                 threading.Thread(target=p.start_condition_loop, daemon=True).start()
 
@@ -1003,6 +1150,12 @@ class GroupScriptDialog(QDialog):
             "leader_path": self.leader_path,
             "member_path": self.member_path,
         }
+        if assignments:
+            self.loaded_group_info["member_subgroups"] = assignments
+        if skipped_members:
+            self.loaded_group_info["skipped_members"] = list(skipped_members)
+        if self.subgroup_size > 0:
+            self.loaded_group_info["subgroup_size"] = self.subgroup_size
         if self.mode == "extend":
             self.loaded_group_info["new_member_names"] = list(member_names)
 
@@ -1011,6 +1164,12 @@ class GroupScriptDialog(QDialog):
             success_message = "Selected members have been added to the current group."
 
         QMessageBox.information(self, self.windowTitle(), success_message)
+        if incomplete_flag:
+            QMessageBox.warning(
+                self,
+                self.windowTitle(),
+                "No se pudo cargar el setup al ultimo subgrupo",
+            )
         self.accept()
 
     def _prepare_manual_settings(self):
@@ -1290,6 +1449,7 @@ class AddGroupMembersDialog(GroupScriptDialog):
         group_configs,
         leader_names,
         max_total_members,
+        subgroup_size,
     ):
         self.group_configs = group_configs or {}
         self.default_leader_path = default_leader_path
@@ -1313,6 +1473,7 @@ class AddGroupMembersDialog(GroupScriptDialog):
             existing_group={},
             available_member_names=[],
             title="Add players to current group",
+            subgroup_size=subgroup_size,
         )
         self.leader_combo.model().itemChanged.connect(self._on_leader_selection_changed)
         self._on_leader_selection_changed(None)
@@ -1404,6 +1565,13 @@ class MyWindow(QMainWindow):
             self.group_script_max_members = 9
         if self.group_script_max_members < 1:
             self.group_script_max_members = 1
+        subgroup_value = self.settings.value("groupScriptSubgroupSize", 0)
+        try:
+            self.group_script_subgroup_size = int(subgroup_value)
+        except (TypeError, ValueError):
+            self.group_script_subgroup_size = 0
+        if self.group_script_subgroup_size < 0:
+            self.group_script_subgroup_size = 0
         self.group_script_group_counter = 0
         self.group_leaders = []
 
@@ -1432,6 +1600,7 @@ class MyWindow(QMainWindow):
         self.text_editors = []
         self.console_groups = {}
         self.leader_to_console = {}
+        self._player_script_globals = WeakKeyDictionary()
         self._refreshing = False
         self.player_widgets: Dict[Player, QWidget] = {}
         self.widget_to_player: Dict[QWidget, Player] = {}
@@ -1530,6 +1699,9 @@ class MyWindow(QMainWindow):
         maxMembersAction = QAction('Max Members', self)
         maxMembersAction.triggered.connect(self.set_group_script_max_members)
         groupMenu.addAction(maxMembersAction)
+        subgroupSizeAction = QAction('Number of members per subgroup', self)
+        subgroupSizeAction.triggered.connect(self.set_group_script_subgroup_size)
+        groupMenu.addAction(subgroupSizeAction)
         groupPathsAction = QAction('Set Setup Paths', self)
         groupPathsAction.triggered.connect(self.set_group_script_paths)
         groupMenu.addAction(groupPathsAction)
@@ -1621,6 +1793,10 @@ class MyWindow(QMainWindow):
         index = container.indexOf(widget)
         if index != -1:
             container.setTabText(index, text)
+            if container is not self.tab_widget:
+                group_id = self._inner_tab_to_group.get(container)
+                if group_id is not None:
+                    self._update_group_tab_labels(group_id)
 
     def _set_tab_color_for_player(self, player_obj, color):
         container = self.player_tab_containers.get(player_obj)
@@ -1669,6 +1845,79 @@ class MyWindow(QMainWindow):
         )
         return (1, tuple(GroupScriptDialog._natural_key(str(name))), str(name).lower())
 
+    def _compute_subgroup_assignments(self, leader_obj, member_objs, subgroup_size=None):
+        assignments = {}
+        skipped_members = set()
+        if subgroup_size is None:
+            subgroup_size = getattr(self, "group_script_subgroup_size", 0)
+        try:
+            subgroup_size = int(subgroup_size)
+        except (TypeError, ValueError):
+            subgroup_size = 0
+        if subgroup_size <= 0:
+            return assignments, False, skipped_members
+        valid_members = [m for m in member_objs if m is not None and m is not leader_obj]
+        if not valid_members:
+            return assignments, False, skipped_members
+        valid_members.sort(key=self._player_group_sort_key)
+        subgroup_size = max(1, subgroup_size)
+        total_members = len(valid_members)
+        complete_members = (total_members // subgroup_size) * subgroup_size
+        incomplete = total_members % subgroup_size != 0
+        for idx, member in enumerate(valid_members):
+            if idx >= complete_members:
+                skipped_members.add(member)
+                continue
+            assignments[member] = (idx // subgroup_size) + 1
+        return assignments, incomplete, skipped_members
+
+    def _reapply_subgroup_assignments(self):
+        for console, info in list(self.console_groups.items()):
+            if not isinstance(info, dict):
+                continue
+            leader_obj = info.get("leader")
+            members = set(info.get("members", set()))
+            member_objs = [m for m in members if m is not None and m is not leader_obj]
+            name_mapping = {}
+            if self.group_script_subgroup_size > 0 and member_objs:
+                assignments, _incomplete, _skipped = self._compute_subgroup_assignments(
+                    leader_obj,
+                    member_objs,
+                    self.group_script_subgroup_size,
+                )
+                for member in member_objs:
+                    subgroup_index = assignments.get(member)
+                    if subgroup_index is not None:
+                        member.subgroup_index = subgroup_index
+                        if isinstance(member.name, str):
+                            name_mapping[member.name] = subgroup_index
+                    elif hasattr(member, "subgroup_index"):
+                        member.subgroup_index = None
+                if name_mapping:
+                    info["subgroup_assignments"] = name_mapping
+                else:
+                    info.pop("subgroup_assignments", None)
+                info["subgroup_size"] = self.group_script_subgroup_size
+            else:
+                info.pop("subgroup_assignments", None)
+                info.pop("subgroup_size", None)
+                for member in member_objs:
+                    if hasattr(member, "subgroup_index"):
+                        member.subgroup_index = None
+            if leader_obj is not None and hasattr(leader_obj, "subgroup_index"):
+                leader_obj.subgroup_index = None
+            group_id = info.get("group_id")
+            if group_id is None:
+                continue
+            group_info = self.group_tab_infos.get(group_id)
+            if isinstance(group_info, dict):
+                group_info["leader"] = leader_obj
+                if name_mapping and self.group_script_subgroup_size > 0:
+                    group_info["subgroup_assignments"] = dict(name_mapping)
+                else:
+                    group_info.pop("subgroup_assignments", None)
+                self._sort_group_tabs(group_id)
+
     def _sort_group_tabs(self, group_id):
         group_info = self.group_tab_infos.get(group_id)
         if not group_info:
@@ -1676,12 +1925,17 @@ class MyWindow(QMainWindow):
         target_tabs = group_info.get("tabs")
         if not isinstance(target_tabs, QTabWidget):
             return
+        leader_obj = group_info.get("leader") if isinstance(group_info, dict) else None
         entries = []
         for idx in range(target_tabs.count()):
             widget = target_tabs.widget(idx)
             player_obj = self.widget_to_player.get(widget)
-            key = self._player_group_sort_key(player_obj)
-            entries.append((key, widget))
+            base_key = self._player_group_sort_key(player_obj)
+            if leader_obj is not None and player_obj is leader_obj:
+                sort_key = (0,)
+            else:
+                sort_key = (1,) + tuple(base_key)
+            entries.append((sort_key, widget))
         entries.sort(key=lambda item: item[0])
         tab_bar = target_tabs.tabBar()
         for desired_index, (_key, widget) in enumerate(entries):
@@ -1689,6 +1943,7 @@ class MyWindow(QMainWindow):
             if current_index == -1 or current_index == desired_index:
                 continue
             tab_bar.moveTab(current_index, desired_index)
+        self._update_group_tab_labels(group_id)
 
     def _resort_player_group(self, player_obj):
         if player_obj is None:
@@ -1697,6 +1952,30 @@ class MyWindow(QMainWindow):
         if group_id is None:
             return
         self._sort_group_tabs(group_id)
+
+    def _update_group_tab_labels(self, group_id):
+        group_info = self.group_tab_infos.get(group_id)
+        if not group_info:
+            return
+        target_tabs = group_info.get("tabs")
+        if not isinstance(target_tabs, QTabWidget):
+            return
+        leader_obj = group_info.get("leader") if isinstance(group_info, dict) else None
+        tab_bar = target_tabs.tabBar()
+        for idx in range(target_tabs.count()):
+            widget = target_tabs.widget(idx)
+            player_obj = self.widget_to_player.get(widget)
+            if player_obj is None:
+                continue
+            base_text = getattr(player_obj, "display_name", None) or getattr(player_obj, "name", "Unknown")
+            if leader_obj is not None and player_obj is leader_obj:
+                tab_bar.setTabText(idx, f"{base_text} |")
+            else:
+                subgroup_index = getattr(player_obj, "subgroup_index", None)
+                if isinstance(subgroup_index, int) and subgroup_index > 0:
+                    tab_bar.setTabText(idx, f"{base_text} [{subgroup_index}]")
+                else:
+                    tab_bar.setTabText(idx, base_text)
 
     def _set_player_pid(self, player_obj, pid_value):
         if player_obj is None:
@@ -1707,13 +1986,24 @@ class MyWindow(QMainWindow):
         player_obj.PIDnum = pid_value
         self._resort_player_group(player_obj)
 
+    def _format_group_tab_title(self, group_key):
+        if isinstance(group_key, int):
+            return f"Group: {group_key + 1}"
+        return f"Group: {group_key}"
+
     def _ensure_group_container(self, group_id):
         try:
             group_key = int(group_id)
         except (TypeError, ValueError):
             group_key = group_id
         if group_key in self.group_tab_infos:
-            return self.group_tab_infos[group_key]
+            existing_info = self.group_tab_infos[group_key]
+            widget = existing_info.get("widget") if isinstance(existing_info, dict) else None
+            if isinstance(widget, QWidget):
+                tab_index = self.tab_widget.indexOf(widget)
+                if tab_index != -1:
+                    self.tab_widget.setTabText(tab_index, self._format_group_tab_title(group_key))
+            return existing_info
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -1724,13 +2014,19 @@ class MyWindow(QMainWindow):
         self.group_tab_infos[group_key] = group_info
         self._group_widget_to_id[container] = group_key
         self._inner_tab_to_group[inner_tabs] = group_key
-        self.tab_widget.addTab(container, f"Group: {group_key}")
+        self.tab_widget.addTab(container, self._format_group_tab_title(group_key))
         return group_info
 
-    def _organize_group_tabs(self, group_id, leader_obj, member_objs):
+    def _organize_group_tabs(self, group_id, leader_obj, member_objs, subgroup_assignments=None):
         if leader_obj is None:
             return
         group_info = self._ensure_group_container(group_id)
+        if isinstance(group_info, dict):
+            group_info["leader"] = leader_obj
+            if subgroup_assignments and isinstance(subgroup_assignments, dict):
+                group_info["subgroup_assignments"] = dict(subgroup_assignments)
+            else:
+                group_info.pop("subgroup_assignments", None)
         participants = [leader_obj]
         participants.extend([m for m in member_objs if m is not None])
         for player_obj in participants:
@@ -1805,6 +2101,8 @@ class MyWindow(QMainWindow):
         self.tab_widget.addTab(widget, display_name)
         self.player_tab_containers[player_obj] = self.tab_widget
         self.player_to_group[player_obj] = None
+        if hasattr(player_obj, "subgroup_index"):
+            player_obj.subgroup_index = None
 
     def _remove_group_container(self, group_id):
         group_info = self.group_tab_infos.pop(group_id, None)
@@ -1981,6 +2279,7 @@ class MyWindow(QMainWindow):
             self.group_script_group_counter,
             self.group_leaders,
             self.group_script_max_members,
+            subgroup_size=self.group_script_subgroup_size,
         )
         if dlg.exec_():
             info = dlg.get_loaded_group()
@@ -2009,6 +2308,22 @@ class MyWindow(QMainWindow):
         if ok:
             self.group_script_max_members = value
             self.settings.setValue("groupScriptMaxMembers", value)
+
+    def set_group_script_subgroup_size(self):
+        current_value = max(0, int(getattr(self, "group_script_subgroup_size", 0)))
+        value, ok = QInputDialog.getInt(
+            self,
+            "Number of members per subgroup",
+            "Select the number of members for each subgroup (0 to disable):",
+            current_value,
+            0,
+            24,
+        )
+        if not ok:
+            return
+        self.group_script_subgroup_size = value
+        self.settings.setValue("groupScriptSubgroupSize", value)
+        self._reapply_subgroup_assignments()
 
     def set_group_script_paths(self):
         leader_path = QFileDialog.getExistingDirectory(self, "Select Leader Setup Folder")
@@ -2195,6 +2510,7 @@ class MyWindow(QMainWindow):
             group_configs,
             sorted_leaders,
             self.group_script_max_members,
+            self.group_script_subgroup_size,
         )
 
         if not dlg.exec_():
@@ -2230,6 +2546,28 @@ class MyWindow(QMainWindow):
             console = GroupConsoleWindow(leader_obj.name, parent=self)
             console.closed.connect(lambda c=console: self._on_group_console_closed(c))
 
+        incoming_assignments = {}
+        if isinstance(group_info, dict):
+            provided_assignments = group_info.get("member_subgroups")
+            if isinstance(provided_assignments, dict):
+                for name, value in provided_assignments.items():
+                    if not isinstance(name, str):
+                        continue
+                    try:
+                        subgroup_index = int(value)
+                    except (TypeError, ValueError):
+                        continue
+                    if subgroup_index > 0:
+                        incoming_assignments[name] = subgroup_index
+        subgroup_size_override = None
+        if isinstance(group_info, dict) and "subgroup_size" in group_info:
+            try:
+                subgroup_size_override = int(group_info.get("subgroup_size"))
+            except (TypeError, ValueError):
+                subgroup_size_override = None
+            if subgroup_size_override is not None and subgroup_size_override < 0:
+                subgroup_size_override = None
+
         new_members = set(member_objs)
         new_members.add(leader_obj)
 
@@ -2239,14 +2577,51 @@ class MyWindow(QMainWindow):
             old_members = set(existing.get("members", set()))
         for player_obj in old_members - new_members:
             player_obj.group_console = None
+            self._refresh_player_script_print(player_obj)
+
+        console.set_leader_name(leader_obj.name)
+        console.clear()
 
         for player_obj in new_members:
             player_obj.group_console = console
+            self._refresh_player_script_print(player_obj)
+
+        subgroup_assignments_by_name = {}
+        if incoming_assignments:
+            for player_obj in member_objs:
+                index_value = incoming_assignments.get(player_obj.name)
+                if isinstance(index_value, int) and index_value > 0:
+                    subgroup_assignments_by_name[player_obj.name] = index_value
+        if not subgroup_assignments_by_name:
+            computed_assignments, _incomplete, _skipped = self._compute_subgroup_assignments(
+                leader_obj,
+                member_objs,
+                subgroup_size_override,
+            )
+            for player_obj, subgroup_index in computed_assignments.items():
+                name = getattr(player_obj, "name", None)
+                if isinstance(name, str) and subgroup_index is not None:
+                    subgroup_assignments_by_name[name] = subgroup_index
+
+        if leader_obj is not None and hasattr(leader_obj, "subgroup_index"):
+            leader_obj.subgroup_index = None
+        for player_obj in member_objs:
+            subgroup_index = subgroup_assignments_by_name.get(player_obj.name)
+            if subgroup_index is not None:
+                player_obj.subgroup_index = subgroup_index
+            elif hasattr(player_obj, "subgroup_index"):
+                player_obj.subgroup_index = None
 
         group_record = dict(existing) if isinstance(existing, dict) else {}
         group_record.update({"leader": leader_obj, "members": new_members})
         member_names = [p.name for p in member_objs]
         group_record["member_names"] = member_names
+        if subgroup_assignments_by_name:
+            group_record["subgroup_assignments"] = dict(subgroup_assignments_by_name)
+        else:
+            group_record.pop("subgroup_assignments", None)
+        if subgroup_size_override is not None and subgroup_size_override > 0:
+            group_record["subgroup_size"] = subgroup_size_override
         for key in ("group_id", "leader_path", "member_path"):
             if isinstance(group_info, dict) and key in group_info and group_info[key] is not None:
                 group_record[key] = group_info[key]
@@ -2258,10 +2633,15 @@ class MyWindow(QMainWindow):
             group_id = group_info.get("group_id")
         if group_id is None:
             group_id = self.group_script_group_counter
-        self._organize_group_tabs(group_id, leader_obj, member_objs)
+        self._organize_group_tabs(group_id, leader_obj, member_objs, subgroup_assignments_by_name)
 
-        console.set_leader_name(leader_obj.name)
-        console.clear()
+        for player_obj in new_members:
+            if hasattr(player_obj, "flush_group_console_buffer"):
+                try:
+                    player_obj.flush_group_console_buffer()
+                except Exception:
+                    pass
+
         console.show()
         console.raise_()
         console.activateWindow()
@@ -2279,6 +2659,7 @@ class MyWindow(QMainWindow):
         for player_obj in members:
             if getattr(player_obj, "group_console", None) is console:
                 player_obj.group_console = None
+                self._refresh_player_script_print(player_obj)
 
         self._reset_group_players(members)
 
@@ -2314,6 +2695,12 @@ class MyWindow(QMainWindow):
                 pass
 
             try:
+                if hasattr(player_obj, "reset_group_runtime"):
+                    player_obj.reset_group_runtime()
+            except Exception:
+                pass
+
+            try:
                 self.start_stop_buttons[index][0].show()
                 self.start_stop_buttons[index][1].hide()
             except Exception:
@@ -2324,21 +2711,16 @@ class MyWindow(QMainWindow):
             except Exception:
                 pass
 
-            player_obj.recv_packet_conditions = []
-            player_obj.send_packet_conditions = []
-            player_obj.periodical_conditions = []
-            if hasattr(player_obj, "_compiled_recv_conditions"):
-                player_obj._compiled_recv_conditions.clear()
-            if hasattr(player_obj, "_compiled_send_conditions"):
-                player_obj._compiled_send_conditions.clear()
-            player_obj.script_loaded = False
-            player_obj.stop_script = True
             try:
                 player_obj.reset_attrs()
             except Exception:
                 pass
             player_obj.partyname = []
             player_obj.partyID = []
+            if hasattr(player_obj, "subgroup_index"):
+                player_obj.subgroup_index = None
+            if hasattr(self, "_player_script_globals"):
+                self._player_script_globals.pop(player_obj, None)
             try:
                 self._move_player_to_main_tab(player_obj)
             except Exception:
@@ -2358,12 +2740,16 @@ class MyWindow(QMainWindow):
             members.discard(player_obj)
             info["members"] = members
             self.console_groups[console] = info
+            if hasattr(player_obj, "subgroup_index"):
+                player_obj.subgroup_index = None
             if info.get("leader") is player_obj:
                 player_obj.group_console = None
                 console.close()
+                self._refresh_player_script_print(player_obj)
             else:
                 if getattr(player_obj, "group_console", None) is console:
                     player_obj.group_console = None
+                    self._refresh_player_script_print(player_obj)
                 if not members or info.get("leader") not in members:
                     console.close()
             break
@@ -2831,6 +3217,49 @@ class MyWindow(QMainWindow):
         else:
             print("empty")
 
+    def _iter_shared_script_globals(self):
+        """Yield module-level globals that should be visible to scripts."""
+
+        excluded = {"__builtins__", "__name__", "__package__", "__loader__", "__spec__", "__doc__"}
+        for key, value in globals().items():
+            if key not in excluded:
+                yield key, value
+
+    def _ensure_player_script_namespace(self, player_obj):
+        """Return the persistent globals mapping used when executing scripts."""
+
+        namespace = self._player_script_globals.get(player_obj)
+        if namespace is None:
+            namespace = {}
+            self._player_script_globals[player_obj] = namespace
+
+        for key, value in self._iter_shared_script_globals():
+            namespace.setdefault(key, value)
+        namespace["__builtins__"] = builtins.__dict__
+        return namespace
+
+    def _create_player_print(self, player_obj):
+        """Create a ``print`` wrapper that targets ``player_obj``'s console."""
+
+        player_ref = ref(player_obj)
+
+        def player_print(*args, **kwargs):
+            target = player_ref()
+            if target is not None:
+                target._console_print(*args, **kwargs)
+            else:
+                console_print(None, *args, **kwargs)
+
+        return player_print
+
+    def _refresh_player_script_print(self, player_obj):
+        """Update the ``print`` binding for an existing player namespace."""
+
+        namespace = self._player_script_globals.get(player_obj)
+        if not namespace:
+            return
+        namespace["print"] = self._create_player_print(player_obj)
+
     def start_group_scripts(self):
         """Launch scripts for all group members in parallel threads."""
         for idx, (player, thread) in enumerate(self.players):
@@ -2873,11 +3302,17 @@ class MyWindow(QMainWindow):
                 return
             index = context.index
         player = self.players[index][0]
-        with use_group_console(getattr(player, "group_console", None)):
+        console = player.get_console_for_output()
+        namespace = self._ensure_player_script_namespace(player)
+        namespace["self"] = self
+        namespace["player"] = proxy(player)
+        namespace["index"] = index
+        namespace["print"] = self._create_player_print(player)
+        with use_group_console(console):
             try:
                 # Execute the Python script in the context of this player
                 self._set_tab_color_by_index(index, "green")
-                exec(script, globals(), {"self": self, "player": player, "index": index})
+                exec(script, namespace, namespace)
                 self._set_tab_color_by_index(index, "#e88113")
             except Exception as e:
                 # Handle any exceptions that occur during execution

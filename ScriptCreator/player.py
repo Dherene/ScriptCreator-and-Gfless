@@ -9,7 +9,7 @@ import contextvars
 from dataclasses import dataclass, field
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Callable
-from queue import Queue
+from queue import Queue, Empty
 from getports import returnCorrectPort, returnCorrectPID
 from path import loadMap, findPath
 from calculatefieldlocation import calculate_field_location, calculate_point_B_position
@@ -26,7 +26,7 @@ import pywinctl as pwc
 
 from PyQt5 import QtWidgets
 
-from group_console import use_group_console
+from group_console import console_print, use_group_console
 
 
 
@@ -227,6 +227,24 @@ class Player:
     _group_vars = {}
     _group_var_lock = threading.Lock()
 
+    class _GroupConsoleBuffer:
+        __slots__ = ("chunks",)
+
+        def __init__(self):
+            self.chunks = []
+
+        def append_text(self, text: str) -> None:
+            if text:
+                self.chunks.append(text)
+
+        def drain(self):
+            chunks, self.chunks = self.chunks, []
+            return chunks
+
+        def flush(self) -> None:
+            # Satisfy the interface expected by ``print`` when ``flush=True``.
+            return None
+
     def __init__(self, name=None, on_disconnect=None, api_port=None, pid=None, new_api_port=None):
         # player info
         self.name = name
@@ -319,7 +337,9 @@ class Player:
 
         # indicates when a script has been loaded into this player
         self.script_loaded = False
-        self.group_console = None
+        self._group_console = None
+        self._group_console_buffer = None
+        self._buffer_console_output = False
 
         # group info
         self.leadername = ""
@@ -389,11 +409,66 @@ class Player:
             # without a resolved port we cannot communicate with the API
             self.stop_script = True
 
+    @property
+    def group_console(self):
+        return self._group_console
+
+    @group_console.setter
+    def group_console(self, console):
+        self._group_console = console
+        if console is None and not self._buffer_console_output:
+            self._group_console_buffer = None
+
+    def prepare_group_console_output(self):
+        """Capture log output until a group console becomes available."""
+
+        self._buffer_console_output = True
+        self._group_console_buffer = self._GroupConsoleBuffer()
+
+    def flush_group_console_buffer(self):
+        """Replay buffered logs into the active group console."""
+
+        console = self._group_console
+        buffer = self._group_console_buffer
+        if console is None or buffer is None:
+            return
+        for chunk in buffer.drain():
+            try:
+                console.append_text(chunk)
+            except Exception:
+                pass
+        if hasattr(console, "flush"):
+            try:
+                console.flush()
+            except Exception:
+                pass
+        self._group_console_buffer = None
+        self._buffer_console_output = False
+
+    def clear_group_console_buffer(self):
+        """Discard any buffered log messages."""
+
+        self._group_console_buffer = None
+        self._buffer_console_output = False
+
+    def get_console_for_output(self):
+        """Return the current console target, falling back to the buffer."""
+
+        if self._buffer_console_output:
+            if self._group_console_buffer is None:
+                self._group_console_buffer = self._GroupConsoleBuffer()
+            return self._group_console_buffer
+        return self._group_console
+
+    def _console_print(self, *args, **kwargs):
+        """Send output to the assigned group console if available."""
+
+        console_print(self.get_console_for_output(), *args, **kwargs)
+
     def log(self, *args, **kwargs):
         """Write log messages using the player's current console."""
 
-        with use_group_console(getattr(self, "group_console", None)):
-            print(*args, **kwargs)
+        self._console_print(*args, **kwargs)
 
     def start_condition_loop(self):
         """Ensure background condition tasks are running.
@@ -1231,7 +1306,7 @@ class Player:
             self.api.query_map_entities()
     
     def exec_recv_packet_condition(self, code, packet, index, cond_name):
-        with use_group_console(getattr(self, "group_console", None)):
+        with use_group_console(self.get_console_for_output()):
             try:
                 cached = self._compiled_recv_conditions.get(cond_name)
                 if not cached or cached[0] != code:
@@ -1256,7 +1331,7 @@ class Player:
                         self.log(f"Error removing faulty recv_packet condition: {e2}")
 
     def exec_send_packet_condition(self, code, packet, index, cond_name):
-        with use_group_console(getattr(self, "group_console", None)):
+        with use_group_console(self.get_console_for_output()):
             try:
                 cached = self._compiled_send_conditions.get(cond_name)
                 if not cached or cached[0] != code:
@@ -1287,7 +1362,7 @@ class Player:
         each iteration, allowing characters with many conditions to run more
         smoothly and independently."""
         while True:
-            with use_group_console(getattr(self, "group_console", None)):
+            with use_group_console(self.get_console_for_output()):
                 try:
                     with self._periodic_cond_lock:
                         conds = list(enumerate(self.periodical_conditions))
@@ -1439,6 +1514,7 @@ class Player:
             "time": self._time_namespace,
             "selfgroup": self._group,
             "cond": self._cond_control,
+            "print": self._console_print,
         }
         exec(compile(module, func_name, "exec"), globs)
         return globs[func_name]
@@ -1459,7 +1535,7 @@ class Player:
         return None
 
     async def _run_packet_condition(self, name, func, packet, store_list, cond_type):
-        with use_group_console(getattr(self, "group_console", None)):
+        with use_group_console(self.get_console_for_output()):
             self._set_condition_running(cond_type, name, True)
             self._record_condition_activity(cond_type, name)
             token = self._condition_ctx.set((cond_type, name))
@@ -1481,7 +1557,7 @@ class Player:
                 self._set_condition_running(cond_type, name, False)
 
     async def _run_periodic_condition(self, name, func):
-        with use_group_console(getattr(self, "group_console", None)):
+        with use_group_console(self.get_console_for_output()):
             self._set_condition_running("periodical", name, True)
             self._record_condition_activity("periodical", name)
             self._periodic_ctx.current = name
@@ -1519,6 +1595,105 @@ class Player:
             setattr(self, f'attr{i}', 0)
         self.leadername = ""
         self.leaderID = 0
+
+    def reset_group_runtime(self):
+        """Stop scripts, cancel condition tasks and clear shared state."""
+
+        self.stop_script = True
+        self.script_loaded = False
+        self.clear_group_console_buffer()
+
+        cancel_event = threading.Event()
+
+        def _cancel_tasks():
+            try:
+                if getattr(self, "_periodic_main_task", None):
+                    try:
+                        self._periodic_main_task.cancel()
+                    except Exception:
+                        pass
+                self._periodic_main_task = None
+
+                with self._periodic_cond_lock:
+                    conds = list(self.periodical_conditions)
+                    self.periodical_conditions = []
+
+                for cond in conds:
+                    task = getattr(cond, "task", None)
+                    if task:
+                        try:
+                            task.cancel()
+                        except Exception:
+                            pass
+                    cond.task = None
+                    cond.func = None
+                    cond.last_error = None
+            finally:
+                cancel_event.set()
+
+        loop = getattr(self, "loop", None)
+        if loop and loop.is_running():
+            try:
+                loop.call_soon_threadsafe(_cancel_tasks)
+            except RuntimeError:
+                _cancel_tasks()
+            else:
+                cancel_event.wait(0.5)
+        else:
+            _cancel_tasks()
+
+        self.recv_packet_conditions = []
+        self.send_packet_conditions = []
+        if hasattr(self, "_compiled_recv_conditions"):
+            self._compiled_recv_conditions.clear()
+        if hasattr(self, "_compiled_send_conditions"):
+            self._compiled_send_conditions.clear()
+
+        self._condition_state = {
+            "recv_packet": set(),
+            "send_packet": set(),
+            "periodical": set(),
+        }
+        self._cond_counter = 0
+        if hasattr(self, "_condition_activity_by_name"):
+            self._condition_activity_by_name.clear()
+        self._last_condition_activity = time.monotonic()
+        self._last_condition_state_change = self._last_condition_activity
+
+        self._periodic_walking.clear()
+        self._last_periodic_walk.clear()
+        self._periodic_ctx = threading.local()
+        try:
+            # ensure any lingering context state is cleared without replacing the
+            # ContextVar instance so existing tokens remain valid
+            self._condition_ctx.set(None)
+        except LookupError:
+            # nothing was ever set for this context
+            pass
+
+        try:
+            while True:
+                self.walk_queue.get_nowait()
+        except Empty:
+            pass
+
+        executor = getattr(self, "_cond_executor", None)
+        if executor:
+            try:
+                executor.shutdown(wait=False, cancel_futures=True)
+            except Exception:
+                pass
+            self._cond_executor = ThreadPoolExecutor(max_workers=4)
+
+        gid = None
+        if getattr(self, "leaderID", 0):
+            gid = self.leaderID
+        elif getattr(self, "_current_gid", None) is not None:
+            gid = self._current_gid
+        if gid is not None:
+            with Player._group_var_lock:
+                Player._group_vars.pop(gid, None)
+        self._current_gid = self._unique_group_id
 
     def invite_members(self):
         """Invite all stored group members with a 3-second delay between invites."""

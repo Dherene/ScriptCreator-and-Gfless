@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 import contextvars
 import io
 import sys
@@ -29,6 +30,7 @@ __all__ = [
     "push_group_console",
     "pop_group_console",
     "use_group_console",
+    "console_print",
 ]
 
 
@@ -116,6 +118,48 @@ def use_group_console(console: Optional["GroupConsoleWindow"]):
         yield
     finally:
         pop_group_console(token)
+
+
+def console_print(console: Optional["GroupConsoleWindow"], *args, **kwargs) -> None:
+    """Print helper that writes directly to ``console`` when available.
+
+    ``print`` accepts several keyword arguments that interact with arbitrary
+    file-like objects.  When callers pass a custom ``file`` target we fall back
+    to :func:`builtins.print` to preserve the original behaviour.  Otherwise the
+    message is formatted using ``sep`` and ``end`` before being forwarded to the
+    group console.  When no console is active the helper simply delegates to the
+    standard print implementation so output continues to flow to the fallback
+    terminal.
+    """
+
+    file_obj = kwargs.get("file")
+    if file_obj not in (None, sys.stdout, sys.stderr):
+        builtins.print(*args, **kwargs)
+        return
+
+    sep = kwargs.get("sep", " ")
+    end = kwargs.get("end", "\n")
+    if args:
+        try:
+            text = sep.join(map(str, args))
+        except Exception:
+            text = sep.join(str(arg) for arg in args)
+    else:
+        text = ""
+    text += end
+
+    flush = kwargs.get("flush", False)
+
+    if console is None:
+        if file_obj is None:
+            builtins.print(text, end="", flush=flush)
+        else:
+            builtins.print(text, end="", file=file_obj, flush=flush)
+        return
+
+    console.append_text(text)
+    if flush and hasattr(console, "flush"):
+        console.flush()
 
 
 class GroupConsoleWindow(QWidget):
