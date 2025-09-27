@@ -16,11 +16,15 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QSizePolicy,
     QApplication,
+    QHBoxLayout,
+    QScrollArea,
+    QWidget,
 )
 from PyQt5.QtCore import Qt, QSettings, QSize, QTimer
 from PyQt5.QtGui import QFont, QFontMetricsF, QColor, QIcon, QIntValidator
 import os
 import re
+from itertools import chain
 import gfless_api
 
 from player import PeriodicCondition
@@ -263,81 +267,73 @@ class ConditionCreator(QDialog):
         self.setWindowTitle("Condition Creator")
         self.setWindowIcon(QIcon('src/icon.png'))
 
-        # Start with a larger resizable dialog and restore last size
         self.settings = QSettings('PBapi', 'Script Creator')
+        default_size = QSize(900, 420)
+        self.max_dialog_height = default_size.height() * 2
         last_size = self.settings.value(
-            "condition_creator_size", QSize(650, 250), type=QSize
+            "condition_creator_size", default_size, type=QSize
         )
-        self.resize(last_size)
-        self.setMinimumSize(650, 250)
+        last_size = QSize(last_size)
+        last_size.setHeight(min(last_size.height(), self.max_dialog_height))
+        self.setMinimumSize(default_size)
+        self.setMaximumHeight(self.max_dialog_height)
+        self.resize(last_size.expandedTo(default_size))
         self.setSizeGripEnabled(True)
 
-        self.condition_widgets = []
-        self.condition_group_box = []
+        self.sections = []
 
-        self.action_widgets = []
-        self.action_group_boxes = []
-        self.else_action_widgets = []
-        self.else_action_group_boxes = []
+        self.main_layout = QVBoxLayout()
+        self.setLayout(self.main_layout)
 
-        # Create main layout
-        self.main_layout = QGridLayout()
-        for i in range(6):
-            self.main_layout.setColumnStretch(i, 1)
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll_area.setFrameShape(QScrollArea.NoFrame)
+        self.main_layout.addWidget(self.scroll_area)
 
-        # Add a + button at the bottom
-        self.add_condition_button = QPushButton("+")
-        self.add_condition_button.clicked.connect(self.add_new_condition)
-        self.main_layout.addWidget(self.add_condition_button, 2, 5, 1, 1)
+        self.scroll_content = QWidget()
+        self.scroll_area.setWidget(self.scroll_content)
 
-        # Add a - button at the bottom
-        self.remove_condition_button = QPushButton("-")
-        self.remove_condition_button.clicked.connect(self.remove_last_condition)
-        self.main_layout.addWidget(self.remove_condition_button, 2, 4, 1, 1)
-        self.remove_condition_button.setVisible(False)
+        self.scroll_layout = QVBoxLayout()
+        self.scroll_layout.setContentsMargins(0, 0, 0, 0)
+        self.scroll_layout.setSpacing(12)
+        self.scroll_content.setLayout(self.scroll_layout)
 
-        # add a review button at the bottom
+        self.sections_container = QWidget()
+        self.sections_layout = QVBoxLayout()
+        self.sections_layout.setContentsMargins(0, 0, 0, 0)
+        self.sections_layout.setSpacing(12)
+        self.sections_container.setLayout(self.sections_layout)
+        self.scroll_layout.addWidget(self.sections_container)
+
+        self.if_section = self._create_section('if', 1)
+        self.sections.append(self.if_section)
+        self.sections_layout.addWidget(self.if_section['container'])
+
+        self.if_section['add_condition_button'].clicked.connect(self.add_new_condition)
+        self.if_section['remove_condition_button'].clicked.connect(self.remove_last_condition)
+        self.if_section['add_action_button'].clicked.connect(self.add_new_action)
+        self.if_section['remove_action_button'].clicked.connect(self.remove_last_action)
+
+        self._add_condition_row(self.if_section)
+        self._add_action_group(self.if_section)
+
+        self.elif_controls_layout = QHBoxLayout()
+        self.add_elif_button = QPushButton("Add Elif")
+        self.add_elif_button.clicked.connect(self.add_elif_section)
+        self.remove_elif_button = QPushButton("Remove Elif")
+        self.remove_elif_button.clicked.connect(self.remove_last_elif_section)
+        self.remove_elif_button.setVisible(False)
+        self.elif_controls_layout.addWidget(self.add_elif_button)
+        self.elif_controls_layout.addWidget(self.remove_elif_button)
+        self.elif_controls_layout.addStretch()
+        self.scroll_layout.addLayout(self.elif_controls_layout)
+        self.scroll_layout.addStretch()
+
         self.review_button = QPushButton("review")
         self.review_button.clicked.connect(self.review_condition)
-        self.main_layout.addWidget(self.review_button, 4, 0, 1, 3)
-
-        # Add a + button at the bottom
-        self.add_action_button = QPushButton("+")
-        self.add_action_button.clicked.connect(self.add_new_action)
-        self.main_layout.addWidget(self.add_action_button, 4, 5, 1, 1)
-
-        # Add a - button at the bottom
-        self.remove_action_button = QPushButton("-")
-        self.remove_action_button.clicked.connect(self.remove_last_action)
-        self.main_layout.addWidget(self.remove_action_button, 4, 4, 1, 1)
-        self.remove_action_button.setVisible(False)
-
-        self.else_button = QPushButton("Else")
-        self.else_button.setCheckable(True)
-        self.else_button.toggled.connect(self.toggle_else_section)
-        self.main_layout.addWidget(self.else_button, 5, 0, 1, 3)
-
-        self.add_else_action_button = QPushButton("+")
-        self.add_else_action_button.clicked.connect(self.add_new_else_action)
-        self.add_else_action_button.setVisible(False)
-        self.main_layout.addWidget(self.add_else_action_button, 5, 5, 1, 1)
-
-        self.remove_else_action_button = QPushButton("-")
-        self.remove_else_action_button.clicked.connect(self.remove_last_else_action)
-        self.remove_else_action_button.setVisible(False)
-        self.main_layout.addWidget(self.remove_else_action_button, 5, 4, 1, 1)
-
-        # Create layouts to hold the action group boxes
-        self.actions_container_layout = QVBoxLayout()
-        self.group_boxes_layout = QVBoxLayout()
-        self.actions_container_layout.addLayout(self.group_boxes_layout)
-        self.main_layout.addLayout(self.actions_container_layout, 3, 0, 1, 6)
-
-        self.else_container = QGroupBox("Else Actions")
-        self.else_container.setVisible(False)
-        self.else_group_boxes_layout = QVBoxLayout()
-        self.else_container.setLayout(self.else_group_boxes_layout)
-        self.actions_container_layout.addWidget(self.else_container)
+        self.main_layout.addWidget(self.review_button)
 
         self.cond_helper_label = QLabel(
             "Tip: cond.on / cond.off require the target condition's number "
@@ -345,15 +341,8 @@ class ConditionCreator(QDialog):
             "all other active conditions while keeping the calling one running."
         )
         self.cond_helper_label.setWordWrap(True)
-        self.main_layout.addWidget(self.cond_helper_label, 6, 0, 1, 6)
+        self.main_layout.addWidget(self.cond_helper_label)
 
-        #self.setMaximumWidth(500)
-        #self.setMinimumWidth(500)
-
-        self.setLayout(self.main_layout)
-
-        self.add_new_condition()
-        self.add_new_action()
         self.update_dialog_geometry()
 
     @staticmethod
@@ -371,29 +360,33 @@ class ConditionCreator(QDialog):
         message_box.exec_()
 
     @staticmethod
-    def _add_label_field(layout: QGridLayout, row: int, start_col: int, label_widget, field_widget, field_expands: bool = True) -> None:
+    def _add_label_field(
+        layout: QGridLayout,
+        row: int,
+        start_col: int,
+        label_widget,
+        field_widget,
+        field_expands: bool = True,
+    ) -> None:
+        if isinstance(label_widget, QLabel):
+            label_widget.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+
         layout.addWidget(label_widget, row, start_col)
         layout.addWidget(field_widget, row, start_col + 1)
         layout.setColumnStretch(start_col, 0)
         layout.setColumnStretch(start_col + 1, 1 if field_expands else 0)
 
     @staticmethod
-    def _add_single(layout: QGridLayout, row: int, column: int, widget, expands: bool = False) -> None:
+    def _add_single(
+        layout: QGridLayout, row: int, column: int, widget, expands: bool = False
+    ) -> None:
         layout.addWidget(widget, row, column)
         layout.setColumnStretch(column, 1 if expands else 0)
 
     @staticmethod
     def _standardize_action_layout(layout: QGridLayout) -> None:
         """Ensure action editors keep a consistent proportion."""
-        stretch_map = {
-            0: 3,
-            1: 0,
-            2: 4,
-            3: 0,
-            4: 4,
-            5: 0,
-            6: 4,
-        }
+        stretch_map = {0: 3, 1: 0, 2: 4, 3: 0, 4: 4, 5: 0, 6: 4}
         for column, stretch in stretch_map.items():
             layout.setColumnStretch(column, stretch)
 
@@ -403,37 +396,106 @@ class ConditionCreator(QDialog):
             for col in range(column, column + column_span):
                 occupied_columns.add(col)
 
-        min_width_map = {
-            0: 150,
-            1: 70,
-            2: 120,
-            3: 70,
-            4: 120,
-            5: 70,
-            6: 120,
-        }
+        min_width_map = {0: 150, 1: 70, 2: 120, 3: 70, 4: 120, 5: 70, 6: 120}
         for column, minimum in min_width_map.items():
-            layout.setColumnMinimumWidth(column, minimum if column in occupied_columns else 0)
+            layout.setColumnMinimumWidth(
+                column, minimum if column in occupied_columns else 0
+            )
 
-    def add_new_condition(self):
-        try:
-            self.condition_group_box.deleteLater()
-            text_list = ["AND IF", "AND IF NOT"]
-            self.remove_condition_button.setVisible(True)
-        except:
-            text_list = ["IF", "IF NOT"]
+    def _create_section(self, kind: str, index: int):
+        title = "Conditions" if kind == 'if' else f"Elif Conditions {index}"
+        container = QGroupBox(title)
+        container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
-        # Create condition group box and set layout
-        condition_group_box = QGroupBox("Conditions")
-        condition_group_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        container_layout = QVBoxLayout()
+        container_layout.setContentsMargins(8, 8, 8, 8)
+        container_layout.setSpacing(12)
+        container.setLayout(container_layout)
 
+        condition_layout = QGridLayout()
+        condition_layout.setContentsMargins(0, 0, 0, 0)
+        condition_layout.setHorizontalSpacing(4)
+        container_layout.addLayout(condition_layout)
+
+        condition_buttons_layout = QHBoxLayout()
+        condition_buttons_layout.addStretch()
+        remove_condition_button = QPushButton("-")
+        remove_condition_button.setVisible(False)
+        add_condition_button = QPushButton("+")
+        condition_buttons_layout.addWidget(remove_condition_button)
+        condition_buttons_layout.addWidget(add_condition_button)
+        container_layout.addLayout(condition_buttons_layout)
+
+        actions_layout = QVBoxLayout()
+        actions_layout.setSpacing(10)
+        container_layout.addLayout(actions_layout)
+
+        action_buttons_layout = QHBoxLayout()
+        action_buttons_layout.addStretch()
+        remove_action_button = QPushButton("-")
+        remove_action_button.setVisible(False)
+        add_action_button = QPushButton("+")
+        action_buttons_layout.addWidget(remove_action_button)
+        action_buttons_layout.addWidget(add_action_button)
+        container_layout.addLayout(action_buttons_layout)
+
+        return {
+            'kind': kind,
+            'index': index,
+            'container': container,
+            'condition_layout': condition_layout,
+            'condition_widgets': [],
+            'add_condition_button': add_condition_button,
+            'remove_condition_button': remove_condition_button,
+            'actions_layout': actions_layout,
+            'action_widgets': [],
+            'action_group_boxes': [],
+            'add_action_button': add_action_button,
+            'remove_action_button': remove_action_button,
+        }
+
+    def _condition_labels(self, section):
+        if section['condition_widgets']:
+            return ["AND IF", "AND IF NOT"]
+        if section['kind'] == 'if':
+            return ["IF", "IF NOT"]
+        return ["ELIF", "ELIF NOT"]
+
+    def _refresh_condition_layout(self, section):
+        layout = section['condition_layout']
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(None)
+        for row, widgets in enumerate(section['condition_widgets']):
+            layout.addWidget(widgets[0], row, 0)
+            layout.addWidget(widgets[1], row, 1)
+            layout.addWidget(widgets[2], row, 2)
+            layout.addWidget(widgets[3], row, 3)
+            layout.addWidget(widgets[4], row, 4)
+            layout.addWidget(widgets[8], row, 4)
+            layout.addWidget(widgets[6], row, 5)
+            layout.addWidget(widgets[5], row, 6)
+            layout.addWidget(widgets[7], row, 7)
+        layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 0)
+        layout.setColumnStretch(2, 0)
+        layout.setColumnStretch(3, 0)
+        layout.setColumnStretch(4, 1)
+        layout.setColumnStretch(5, 0)
+        layout.setColumnStretch(6, 0)
+        layout.setColumnStretch(7, 1)
+
+    def _add_condition_row(self, section):
+        text_list = self._condition_labels(section)
 
         if_combobox = QComboBox()
         if_combobox.addItems(text_list)
 
         combo_condition = QComboBox()
         combo_condition.setStyleSheet("QComboBox { combobox-popup: 0; }")
-        
+
         elements_list = [
             "recv_packet",
             "send_packet",
@@ -462,8 +524,6 @@ class ConditionCreator(QDialog):
                 combo_condition.addItem(entry)
         for i in range(1, 101):
             combo_condition.addItem(f"attr{i}")
-        combo_condition.currentIndexChanged.connect(self.update_condition_widgets)
-        combo_condition.setProperty("index", len(self.condition_widgets))
 
         combo_operator = QComboBox()
         combo_operator.addItems(["startswith", "contains", "endswith", "equals"])
@@ -471,15 +531,12 @@ class ConditionCreator(QDialog):
         var_type = QComboBox()
         var_type.addItems(["string", "int", "raw"])
 
-        delimeter_combo = QComboBox()
-        delimeter_combo.addItems([" ", "^", "#", "."])
-        delimeter_combo.setVisible(False)
+        delimiter_combo = QComboBox()
+        delimiter_combo.addItems([" ", "^", "#", "."])
+        delimiter_combo.setVisible(False)
 
-        index_list = []
         index_combo = QComboBox()
-        for i in range(100):
-            index_list.append(f"{i}")
-        index_combo.addItems(index_list)
+        index_combo.addItems([f"{i}" for i in range(100)])
         index_combo.setVisible(False)
 
         text_edit_expression = QLineEdit()
@@ -501,141 +558,46 @@ class ConditionCreator(QDialog):
 
         make_party_state_combo.currentIndexChanged.connect(_sync_make_party_state)
         _sync_make_party_state()
+
         subgroup_name_edit = QLineEdit()
         subgroup_name_edit.setPlaceholderText("variable name")
         subgroup_name_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         subgroup_name_edit.setVisible(False)
 
-        self.condition_widgets.append([
+        index = len(section['condition_widgets'])
+        combo_condition.currentIndexChanged.connect(
+            lambda _, widgets=section['condition_widgets'], idx=index: self.update_condition_widgets(widgets, idx)
+        )
+
+        section['condition_widgets'].append([
             if_combobox,
             combo_condition,
             index_combo,
             combo_operator,
             text_edit_expression,
-            delimeter_combo,
+            delimiter_combo,
             var_type,
             subgroup_name_edit,
             make_party_state_combo,
         ])
-        self.condition_group_box = condition_group_box
 
-        condition_layout = QGridLayout()
-        condition_layout.setContentsMargins(8, 8, 8, 8)
-        condition_layout.setHorizontalSpacing(8)
-
-        for i in range(len(self.condition_widgets)):
-            row_widgets = self.condition_widgets[i]
-            condition_layout.addWidget(row_widgets[0], i, 0)
-            condition_layout.addWidget(row_widgets[1], i, 1)
-            condition_layout.addWidget(row_widgets[2], i, 2)
-            condition_layout.addWidget(row_widgets[3], i, 3)
-            condition_layout.addWidget(row_widgets[4], i, 4)
-            condition_layout.addWidget(row_widgets[8], i, 4)
-            condition_layout.addWidget(row_widgets[6], i, 5)
-            condition_layout.addWidget(row_widgets[5], i, 6)
-            condition_layout.addWidget(row_widgets[7], i, 7)
-
-        condition_layout.setColumnStretch(0, 0)
-        condition_layout.setColumnStretch(1, 0)
-        condition_layout.setColumnStretch(2, 0)
-        condition_layout.setColumnStretch(3, 0)
-        condition_layout.setColumnStretch(4, 1)
-        condition_layout.setColumnStretch(5, 0)
-        condition_layout.setColumnStretch(6, 0)
-        condition_layout.setColumnStretch(7, 1)
-
-        # Create condition group box and set layout
-        condition_group_box.setLayout(condition_layout)
-
-        # Add condition group box to the main layout
-        self.main_layout.addWidget(condition_group_box, 0, 0, 1, 6)
-
+        self._refresh_condition_layout(section)
+        section['remove_condition_button'].setVisible(len(section['condition_widgets']) > 1)
+        self.update_condition_widgets(section['condition_widgets'], index)
         self.update_dialog_geometry(maintain_current_height=True)
 
-    def remove_last_condition(self):
-        for condition in self.condition_widgets[-1]:
-            condition.deleteLater()
-
-        self.condition_widgets.pop(-1)
-
-        if len(self.condition_widgets) < 2:
-            self.remove_condition_button.setVisible(False)
-
+    def _remove_condition_row(self, section):
+        if len(section['condition_widgets']) <= 1:
+            return
+        last_row = section['condition_widgets'].pop()
+        for widget in last_row:
+            widget.deleteLater()
+        self._refresh_condition_layout(section)
+        section['remove_condition_button'].setVisible(len(section['condition_widgets']) > 1)
         self.update_dialog_geometry()
 
-    def update_dialog_geometry(
-        self, maintain_current_height: bool = False, extra_height_ratio: float = 0.0
-    ):
-        layout = self.layout()
-        if layout is None:
-            return
-
-        layout.invalidate()
-        layout.activate()
-
-        size_hint = layout.sizeHint()
-        if not size_hint.isValid():
-            size_hint = self.sizeHint()
-        minimum_hint = layout.minimumSize()
-        minimum_size_hint = self.minimumSizeHint()
-
-        desired_width = max(
-            self.minimumWidth(),
-            minimum_hint.width(),
-            minimum_size_hint.width(),
-            size_hint.width(),
-            self.width(),
-        )
-        desired_height = max(
-            self.minimumHeight(),
-            minimum_hint.height(),
-            minimum_size_hint.height(),
-            size_hint.height(),
-        )
-
-        if extra_height_ratio > 0:
-            desired_height = int(desired_height * (1 + extra_height_ratio))
-
-        if maintain_current_height:
-            desired_height = max(desired_height, self.height())
-
-        available_geometry = QApplication.desktop().availableGeometry(self)
-        if available_geometry.width() > 0:
-            desired_width = min(desired_width, available_geometry.width())
-        if available_geometry.height() > 0:
-            desired_height = min(desired_height, available_geometry.height())
-
-        self.resize(desired_width, desired_height)
-
-    def _get_action_section(self, section):
-        if section == "if":
-            return (
-                self.action_widgets,
-                self.action_group_boxes,
-                self.group_boxes_layout,
-                self.remove_action_button,
-                "action",
-            )
-        if section == "else":
-            return (
-                self.else_action_widgets,
-                self.else_action_group_boxes,
-                self.else_group_boxes_layout,
-                self.remove_else_action_button,
-                "else action",
-            )
-        raise ValueError(f"Unknown action section: {section}")
-
     def _add_action_group(self, section):
-        action_widgets, action_group_boxes, layout, remove_button, title_prefix = self._get_action_section(section)
-
         new_action_combobox = QComboBox()
-        new_min_wait_label = QLabel("min:")
-        new_min_wait = QLineEdit("0.75")
-        new_min_wait.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        new_max_wait_label = QLabel("max:")
-        new_max_wait = QLineEdit("1.5")
-        new_max_wait.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         elements_list = [
             "wait", "walk_to_point", "send_packet", "recv_packet",
             "cond.on", "cond.off",
@@ -649,25 +611,39 @@ class ConditionCreator(QDialog):
             elements_list.append(f"attr{i}")
         new_action_combobox.setStyleSheet("QComboBox { combobox-popup: 0; }")
         new_action_combobox.addItems(elements_list)
-        row_position = len(action_widgets) + 1
+
+        row_position = len(section['action_widgets']) + 1
+        if section['kind'] == 'if':
+            title_prefix = "Action"
+        else:
+            title_prefix = "Elif action"
 
         group_box = QGroupBox(f"{title_prefix} {row_position}")
         group_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         group_box_layout = QGridLayout()
         group_box_layout.setContentsMargins(8, 8, 8, 8)
-        group_box_layout.setHorizontalSpacing(8)
+        group_box_layout.setHorizontalSpacing(4)
+
+        new_min_wait_label = QLabel("min:")
+        new_min_wait = QLineEdit("0.75")
+        new_min_wait.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        new_max_wait_label = QLabel("max:")
+        new_max_wait = QLineEdit("1.5")
+        new_max_wait.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
         self._add_single(group_box_layout, 0, 0, new_action_combobox)
         self._add_label_field(group_box_layout, 0, 1, new_min_wait_label, new_min_wait)
         self._add_label_field(group_box_layout, 0, 3, new_max_wait_label, new_max_wait)
         group_box.setLayout(group_box_layout)
 
-        layout.addWidget(group_box)
+        section['actions_layout'].addWidget(group_box)
 
-        index = len(action_widgets)
+        index = len(section['action_widgets'])
         new_action_combobox.currentIndexChanged.connect(
-            lambda _, idx=index, sec=section: self.update_action_widgets(sec, idx)
+            lambda _, sec=section, idx=index: self.update_action_widgets(sec, idx)
         )
-        action_widgets.append([
+
+        section['action_widgets'].append([
             new_action_combobox,
             new_min_wait,
             new_max_wait,
@@ -676,62 +652,78 @@ class ConditionCreator(QDialog):
             group_box_layout,
         ])
 
-        if len(action_widgets) > 1:
-            remove_button.setVisible(True)
+        section['action_group_boxes'].append(group_box)
 
-        action_group_boxes.append(group_box)
+        if len(section['action_widgets']) > 1:
+            section['remove_action_button'].setVisible(True)
 
         self._standardize_action_layout(group_box_layout)
 
         self.update_dialog_geometry(maintain_current_height=True, extra_height_ratio=0.1)
 
     def _remove_last_action(self, section):
-        action_widgets, action_group_boxes, _, remove_button, _ = self._get_action_section(section)
-        if not action_widgets:
+        if not section['action_widgets']:
             return
 
-        last_action_widgets = action_widgets[-1]
+        last_action_widgets = section['action_widgets'][-1]
         for widget_to_delete in last_action_widgets:
             if hasattr(widget_to_delete, "deleteLater"):
                 widget_to_delete.deleteLater()
 
-        action_group_boxes[-1].deleteLater()
-        action_group_boxes.pop()
-        action_widgets.pop()
+        section['action_group_boxes'][-1].deleteLater()
+        section['action_group_boxes'].pop()
+        section['action_widgets'].pop()
 
-        if len(action_widgets) < 2:
-            remove_button.setVisible(False)
+        if len(section['action_widgets']) < 2:
+            section['remove_action_button'].setVisible(False)
 
         self.update_dialog_geometry()
 
-    def toggle_else_section(self, checked):
-        self.else_container.setVisible(checked)
-        self.add_else_action_button.setVisible(checked)
-        if checked:
-            if not self.else_action_widgets:
-                self._add_action_group("else")
-            self.remove_else_action_button.setVisible(len(self.else_action_widgets) > 1)
-        else:
-            self.remove_else_action_button.setVisible(False)
+    def add_new_condition(self):
+        self._add_condition_row(self.if_section)
 
-        self.update_dialog_geometry(maintain_current_height=checked)
+    def remove_last_condition(self):
+        self._remove_condition_row(self.if_section)
 
     def add_new_action(self):
-        self._add_action_group("if")
-
-    def add_new_else_action(self):
-        if not self.else_button.isChecked():
-            return
-        self._add_action_group("else")
+        self._add_action_group(self.if_section)
 
     def remove_last_action(self):
-        self._remove_last_action("if")
+        self._remove_last_action(self.if_section)
 
-    def remove_last_else_action(self):
-        self._remove_last_action("else")
+    def add_elif_section(self):
+        index = len(self.sections)
+        section = self._create_section('elif', index)
+        section['add_condition_button'].clicked.connect(
+            lambda _, sec=section: self._add_condition_row(sec)
+        )
+        section['remove_condition_button'].clicked.connect(
+            lambda _, sec=section: self._remove_condition_row(sec)
+        )
+        section['add_action_button'].clicked.connect(
+            lambda _, sec=section: self._add_action_group(sec)
+        )
+        section['remove_action_button'].clicked.connect(
+            lambda _, sec=section: self._remove_last_action(sec)
+        )
+        self.sections.append(section)
+        self.sections_layout.addWidget(section['container'])
+        self._add_condition_row(section)
+        self._add_action_group(section)
+        self.remove_elif_button.setVisible(len(self.sections) > 1)
+        self.update_dialog_geometry(maintain_current_height=True, extra_height_ratio=0.15)
+        QTimer.singleShot(0, lambda: self.scroll_area.ensureWidgetVisible(section['container']))
+
+    def remove_last_elif_section(self):
+        if len(self.sections) <= 1:
+            return
+        section = self.sections.pop()
+        section['container'].deleteLater()
+        self.remove_elif_button.setVisible(len(self.sections) > 1)
+        self.update_dialog_geometry()
 
     def update_action_widgets(self, section, index):
-        action_widgets, _, _, _, _ = self._get_action_section(section)
+        action_widgets = section['action_widgets']
         group_box_layout = action_widgets[index][-1]
 
         for i in range(1, len(action_widgets[index]) - 1):
@@ -1016,6 +1008,26 @@ class ConditionCreator(QDialog):
 
         self.update_dialog_geometry()
 
+
+    def _collect_conditions(self, widgets_list):
+        conditions_array = []
+        for row in widgets_list:
+            new_row = []
+            for widget in row:
+                if widget.__class__.__name__ == "QLineEdit":
+                    new_row.append(widget.text())
+                if widget.__class__.__name__ == "QComboBox":
+                    if widget.property("skip_export"):
+                        continue
+                    value = widget.currentData()
+                    if value is None:
+                        value = widget.currentText()
+                    if not isinstance(value, str):
+                        value = str(value)
+                    new_row.append(value)
+            conditions_array.append(new_row)
+        return conditions_array
+
     def _collect_actions(self, action_widgets):
         actions_array = []
         for row in action_widgets:
@@ -1152,42 +1164,35 @@ class ConditionCreator(QDialog):
         return script
 
     def review_condition(self):
-        conditions_array = []
+        sections_data = []
+        for section in self.sections:
+            conditions_array = self._collect_conditions(section['condition_widgets'])
+            if not conditions_array:
+                continue
+            condition_type = self.validate_script(conditions_array)
+            if condition_type == 3:
+                message_box = QMessageBox()
+                message_box.setIcon(QMessageBox.Warning)
+                message_box.setText(
+                    "You cannot combine send_packet and recv_packet conditions together.\n"
+                )
+                message_box.setStandardButtons(QMessageBox.Ok)
+                message_box.setDefaultButton(QMessageBox.Ok)
+                message_box.setWindowTitle("Bad condition combination")
+                message_box.exec_()
+                return
+            actions_array = self._collect_actions(section['action_widgets'])
+            sections_data.append({
+                'section': section,
+                'conditions': conditions_array,
+                'actions': actions_array,
+                'condition_type': condition_type,
+            })
 
-        for row in self.condition_widgets:
-            new_row = []
-            for widget in row:
-                if widget.__class__.__name__ == "QLineEdit":
-                    new_row.append(widget.text())
-                if widget.__class__.__name__ == "QComboBox":
-                    if widget.property("skip_export"):
-                        continue
-                    value = widget.currentData()
-                    if value is None:
-                        value = widget.currentText()
-                    if not isinstance(value, str):
-                        value = str(value)
-                    new_row.append(value)
-            conditions_array.append(new_row)
-
-        condition_type = self.validate_script(conditions_array)
-
-        if self.validate_script(conditions_array) == 3:
-            message_box = QMessageBox()
-            message_box.setIcon(QMessageBox.Warning)
-            message_box.setText("You cannot combine send_packet and recv_packet conditions together.\n")
-            message_box.setStandardButtons(QMessageBox.Ok)
-            message_box.setDefaultButton(QMessageBox.Ok)
-            message_box.setWindowTitle("Bad condition combination")
-            message_box.exec_()
+        if not sections_data:
             return
 
-        actions_array = self._collect_actions(self.action_widgets)
-        else_actions_array = []
-        if self.else_button.isChecked():
-            else_actions_array = self._collect_actions(self.else_action_widgets)
-
-        all_actions = actions_array + else_actions_array
+        all_actions = list(chain.from_iterable(data['actions'] for data in sections_data))
 
         for action in all_actions:
             if action[0] in {"cond.on", "cond.off"}:
@@ -1198,78 +1203,80 @@ class ConditionCreator(QDialog):
                     )
                     return
 
-        for condition in conditions_array:
-            if len(condition) >= 2 and condition[1] == "make_party":
-                value_text = condition[4].strip() if len(condition) > 4 else ""
-                if not value_text:
-                    self._show_warning(
-                        "Missing make_party state",
-                        "Please choose whether to check for state 0 or 2.",
-                    )
-                    return
-                try:
-                    state_value = int(value_text)
-                except ValueError:
-                    self._show_warning(
-                        "Invalid make_party state",
-                        "Make party conditions only accept the values 0 or 2.",
-                    )
-                    return
-                if state_value not in (0, 2):
-                    self._show_warning(
-                        "Unsupported make_party state",
-                        "Make party conditions only support state 0 (waiting) or 2 (completed).",
-                    )
-                    return
+        for data in sections_data:
+            conditions_array = data['conditions']
+            for condition in conditions_array:
+                if len(condition) >= 2 and condition[1] == "make_party":
+                    value_text = condition[4].strip() if len(condition) > 4 else ""
+                    if not value_text:
+                        self._show_warning(
+                            "Missing make_party state",
+                            "Please choose whether to check for state 0 or 2.",
+                        )
+                        return
+                    try:
+                        state_value = int(value_text)
+                    except ValueError:
+                        self._show_warning(
+                            "Invalid make_party state",
+                            "Make party conditions only accept the values 0 or 2.",
+                        )
+                        return
+                    if state_value not in (0, 2):
+                        self._show_warning(
+                            "Unsupported make_party state",
+                            "Make party conditions only support state 0 (waiting) or 2 (completed).",
+                        )
+                        return
 
-        for condition in conditions_array:
-            if len(condition) >= 2 and condition[1] == "subgroup_variable":
-                var_name = condition[7].strip() if len(condition) > 7 else ""
-                if not var_name:
-                    self._show_warning(
-                        "Missing subgroup variable",
-                        "Please enter the subgroup variable name.",
-                    )
-                    return
-                if not self._is_valid_subgroup_name(var_name):
-                    self._show_warning(
-                        "Invalid subgroup variable",
-                        "Subgroup variable names must start with a letter or underscore and contain only alphanumeric characters or underscores.",
-                    )
-                    return
-                value_text = condition[4].strip() if len(condition) > 4 else ""
-                if not value_text:
-                    self._show_warning(
-                        "Missing subgroup value",
-                        "Please provide an integer value for the subgroup comparison.",
-                    )
-                    return
-                try:
-                    int(value_text)
-                except ValueError:
-                    self._show_warning(
-                        "Invalid subgroup value",
-                        "Subgroup comparisons only accept integers.",
-                    )
-                    return
+            for condition in conditions_array:
+                if len(condition) >= 2 and condition[1] == "subgroup_variable":
+                    var_name = condition[7].strip() if len(condition) > 7 else ""
+                    if not var_name:
+                        self._show_warning(
+                            "Missing subgroup variable",
+                            "Please enter the subgroup variable name.",
+                        )
+                        return
+                    if not self._is_valid_subgroup_name(var_name):
+                        self._show_warning(
+                            "Invalid subgroup variable",
+                            "Subgroup variable names must start with a letter or underscore and contain only alphanumeric characters or underscores.",
+                        )
+                        return
+                    value_text = condition[4].strip() if len(condition) > 4 else ""
+                    if not value_text:
+                        self._show_warning(
+                            "Missing subgroup value",
+                            "Please provide an integer value for the subgroup comparison.",
+                        )
+                        return
+                    try:
+                        int(value_text)
+                    except ValueError:
+                        self._show_warning(
+                            "Invalid subgroup value",
+                            "Subgroup comparisons only accept integers.",
+                        )
+                        return
 
-        for condition in conditions_array:
-            if len(condition) >= 2 and condition[1] == "subgroup_member_index":
-                value_text = condition[4].strip() if len(condition) > 4 else ""
-                if not value_text:
-                    self._show_warning(
-                        "Missing subgroup index",
-                        "Please provide an integer value for the subgroup member index.",
-                    )
-                    return
-                try:
-                    int(value_text)
-                except ValueError:
-                    self._show_warning(
-                        "Invalid subgroup index",
-                        "Subgroup member index comparisons only accept integers.",
-                    )
-                    return
+            for condition in conditions_array:
+                if len(condition) >= 2 and condition[1] == "subgroup_member_index":
+                    value_text = condition[4].strip() if len(condition) > 4 else ""
+                    if not value_text:
+                        self._show_warning(
+                            "Missing subgroup index",
+                            "Please provide an integer value for the subgroup member index.",
+                        )
+                        return
+                    try:
+                        int(value_text)
+                    except ValueError:
+                        self._show_warning(
+                            "Invalid subgroup index",
+                            "Subgroup member index comparisons only accept integers.",
+                        )
+                        return
 
         for action in all_actions:
             if action[0] == "subgroup_variable":
@@ -1310,20 +1317,41 @@ class ConditionCreator(QDialog):
                         )
                         return
 
-        script = self.construct_script(conditions_array, actions_array, else_actions_array)
-        condition_review = ConditionReview(self.player, script, condition_type, self.cond_modifier, self)
+        script = self.construct_script(sections_data)
+        primary_type = sections_data[0]['condition_type']
+        condition_review = ConditionReview(self.player, script, primary_type, self.cond_modifier, self)
         condition_review.exec_()
 
-    def construct_script(self, conditions_array, actions_array, else_actions_array):
-        combined_actions = actions_array + else_actions_array
+    def construct_script(self, sections_data):
+        combined_actions = list(chain.from_iterable(data['actions'] for data in sections_data))
         need_import = any(action[0] in ("auto_login", "relogin") for action in combined_actions)
         script = ""
         if need_import:
             script += "import gfless_api\n"
+        for idx, data in enumerate(sections_data):
+            normalized_conditions = self._normalize_condition_labels(data['conditions'])
+            keyword = "if" if idx == 0 else "elif"
+            script = self._append_condition_clause(script, normalized_conditions, keyword)
+            script = self._append_actions_to_script(script, data['actions'])
+        return script
+
+    @staticmethod
+    def _normalize_condition_labels(conditions_array):
+        normalized = []
+        for row in conditions_array:
+            new_row = list(row)
+            if new_row and new_row[0].startswith("ELIF"):
+                new_row[0] = new_row[0].replace("ELIF", "IF", 1)
+            normalized.append(new_row)
+        return normalized
+
+    def _append_condition_clause(self, script, conditions_array, keyword):
+        if script and not script.endswith("\n"):
+            script += "\n"
         if conditions_array[0][0] == "IF":
-            script += "if "
+            script += f"{keyword} "
         else:
-            script += "if not "
+            script += f"{keyword} not "
 
         for i in range(len(conditions_array)):
             if_condition = conditions_array[i][0]
@@ -1358,74 +1386,56 @@ class ConditionCreator(QDialog):
                 classic_operators = ["==", "!=", ">", "<", ">=", "<="]
                 if operator in classic_operators:
                     if user_input_type == "string":
-                        script += f'self.split_packet(packet, "{separator}")[{split_index}] {operator} "{user_input_value}"'
-                    elif user_input_type == "raw":
-                        script += f'self.split_packet(packet, "{separator}")[{split_index}] {operator} {user_input_value}'
+                        script += f'parts[int({split_index})] {operator} "{user_input_value}"'
                     elif user_input_type == "int":
-                        script += f'int(self.split_packet(packet, "{separator}")[{split_index}]) {operator} {user_input_value}'
-                if operator == "startswith" or operator == "endswith":
-                    if user_input_type == "string":
-                        script += f'self.split_packet(packet, "{separator}"){split_index}.{operator}("{user_input_value}")'
+                        script += f'int(parts[int({split_index})]) {operator} int({user_input_value})'
                     elif user_input_type == "raw":
-                        script += f'self.split_packet(packet, "{separator}"){split_index}.{operator}({user_input_value})'
+                        script += f'parts[int({split_index})] {operator} {user_input_value}'
                 if operator == "contains":
                     if user_input_type == "string":
-                        script += f'self.split_packet(packet, "{separator}"){split_index} in "{user_input_value}"'
+                        script += f'"{user_input_value}" in parts[int({split_index})]'
                     elif user_input_type == "raw":
-                        script += f'self.split_packet(packet, "{separator}"){split_index} in {user_input_value}'
+                        script += f'{user_input_value} in parts[int({split_index})]'
+                if operator == "startswith" or operator == "endswith":
+                    if user_input_type == "string":
+                        script += f'parts[int({split_index})].{operator}("{user_input_value}")'
+                    elif user_input_type == "raw":
+                        script += f'parts[int({split_index})].{operator}({user_input_value})'
+                if operator == "regex":
+                    script += f're.search({user_input_value}, parts[int({split_index})])'
+            elif argument == "pos_x" or argument == "pos_y" or argument == "level" or argument == "champion_level" or argument == "hp_percent" or argument == "mp_percent":
+                script += f'int(self.{argument}) {operator} int({user_input_value})'
+            elif argument == "id" or argument == "name" or argument == "map_id" or argument == "is_resting":
                 if operator == "equals":
-                    if user_input_type == "string":
-                        script += f'self.split_packet(packet, "{separator}"){split_index} == "{user_input_value}"'
-                    elif user_input_type == "raw":
-                        script += f'self.split_packet(packet, "{separator}"){split_index} == {user_input_value}'
+                    script += f'self.{argument} == "{user_input_value}"'
+                elif operator == "startswith" or operator == "endswith" or operator == "contains":
+                    script += f'self.{argument}.{operator}("{user_input_value}")'
+                else:
+                    script += f'self.{argument} {operator} {user_input_value}'
             elif argument == "time.cond":
-                classic_operators = ["==", "!=", ">", "<", ">=", "<="]
-                if operator in classic_operators:
-                    left_expr = "int(time.cond)" if user_input_type == "int" else "float(time.cond)"
-                    if user_input_type == "string":
-                        comparison_value = f'"{user_input_value}"'
-                    else:
-                        comparison_value = user_input_value
-                    script += f'{left_expr} {operator} {comparison_value}'
+                if user_input_type == "int":
+                    left_expr = "int(time.cond)"
+                else:
+                    left_expr = "float(time.cond)"
+                if user_input_type == "int":
+                    right_expr = f"int({user_input_value})"
+                elif user_input_type == "raw":
+                    right_expr = user_input_value
+                else:
+                    right_expr = f"float({user_input_value})"
+                script += f'{left_expr} {operator} {right_expr}'
             elif argument == "make_party":
-                try:
-                    target_state = int(user_input_value)
-                except (TypeError, ValueError):
-                    target_state = 0
-                target_state = 2 if target_state == 2 else 0
-                script += f'self.make_party({target_state})'
+                script += f'int(self.make_party_state) == {user_input_value}'
+            elif argument == "subgroup_member_index":
+                script += f'int(self.subgroup_member_index) {operator} int({user_input_value})'
             elif argument == "subgroup_variable":
                 var_name = conditions_array[i][7].strip() if len(conditions_array[i]) > 7 else ""
-                try:
-                    comparison_value = int(user_input_value)
-                except (TypeError, ValueError):
-                    comparison_value = 0
-                script += f'int(selfsubg.{var_name}) {operator} {comparison_value}'
+                script += f'int(selfsubg.{var_name}) {operator} int({user_input_value})'
+            elif argument.startswith("attr"):
+                script += f'str(self.{argument}) {operator} "{user_input_value}"'
             else:
-                classic_operators = ["==", "!=", ">", "<", ">=", "<="]
-                if operator in classic_operators:
-                    if user_input_type == "string":
-                        script += f'self.{argument} {operator} "{user_input_value}"'
-                    elif user_input_type == "raw":
-                        script += f'self.{argument} {operator} {user_input_value}'
-                    elif user_input_type == "int":
-                        script += f'int(self.{argument}) {operator} {user_input_value}'
-                if operator == "startswith" or operator == "endswith":
-                    if user_input_type == "string":
-                        script += f'self.{argument}.{operator}("{user_input_value}")'
-                    elif user_input_type == "raw":
-                        script += f'self.{argument}.{operator}({user_input_value})'
-                if operator == "contains":
-                    if user_input_type == "string":
-                        script += f'"{user_input_value}" in self.{argument}'
-                    elif user_input_type == "raw":
-                        script += f'{user_input_value} in self.{argument}'
+                script += f'"{user_input_value}" in self.{argument}'
         script += ":"
-        script = self._append_actions_to_script(script, actions_array)
-        if else_actions_array:
-            script += "\nelse:"
-            script = self._append_actions_to_script(script, else_actions_array)
-
         return script
 
     def validate_script(self, conditions_array):
@@ -1442,21 +1452,22 @@ class ConditionCreator(QDialog):
                 send_packet = 2
                 break
 
-        return send_packet+recv_packet
+        return send_packet + recv_packet
 
-    def update_condition_widgets(self, ):
+    def update_condition_widgets(self, widgets_list, index):
         cur_sender = self.sender()
+        if not isinstance(cur_sender, QComboBox):
+            cur_sender = widgets_list[index][1]
         selected_item = cur_sender.currentData()
         if selected_item is None:
             selected_item = cur_sender.currentText()
-        index = cur_sender.property("index")
-        operator_combo = self.condition_widgets[index][3]
-        value_type_combo = self.condition_widgets[index][6]
+        operator_combo = widgets_list[index][3]
+        value_type_combo = widgets_list[index][6]
 
-        subgroup_name_edit = self.condition_widgets[index][7]
+        subgroup_name_edit = widgets_list[index][7]
         subgroup_name_edit.setVisible(False)
 
-        state_selector = self.condition_widgets[index][8]
+        state_selector = widgets_list[index][8]
         state_selector.setVisible(False)
 
         operator_combo.clear()
@@ -1465,7 +1476,7 @@ class ConditionCreator(QDialog):
         value_type_combo.clear()
         value_type_combo.setEnabled(True)
         value_type_combo.setVisible(True)
-        value_input = self.condition_widgets[index][4]
+        value_input = widgets_list[index][4]
         value_input.setEnabled(True)
         value_input.setVisible(True)
         value_input.setPlaceholderText("value")
@@ -1508,11 +1519,60 @@ class ConditionCreator(QDialog):
             value_type_combo.setCurrentIndex(0)
 
         if selected_item == "split_recv_packet" or selected_item == "split_send_packet":
-            self.condition_widgets[index][5].setVisible(True)
-            self.condition_widgets[index][2].setVisible(True)
+            widgets_list[index][5].setVisible(True)
+            widgets_list[index][2].setVisible(True)
         else:
-            self.condition_widgets[index][5].setVisible(False)
-            self.condition_widgets[index][2].setVisible(False)
+            widgets_list[index][5].setVisible(False)
+            widgets_list[index][2].setVisible(False)
+
+    def update_dialog_geometry(
+        self, maintain_current_height: bool = False, extra_height_ratio: float = 0.0
+    ):
+        layout = self.layout()
+        if layout is None:
+            return
+
+        if hasattr(self, "scroll_content"):
+            self.scroll_content.adjustSize()
+
+        layout.invalidate()
+        layout.activate()
+
+        size_hint = layout.sizeHint()
+        if not size_hint.isValid():
+            size_hint = self.sizeHint()
+        minimum_hint = layout.minimumSize()
+        minimum_size_hint = self.minimumSizeHint()
+
+        desired_width = max(
+            self.minimumWidth(),
+            minimum_hint.width(),
+            minimum_size_hint.width(),
+            size_hint.width(),
+            self.width(),
+        )
+        desired_height = max(
+            self.minimumHeight(),
+            minimum_hint.height(),
+            minimum_size_hint.height(),
+            size_hint.height(),
+        )
+
+        if extra_height_ratio > 0:
+            desired_height = int(desired_height * (1 + extra_height_ratio))
+
+        if maintain_current_height:
+            desired_height = max(desired_height, self.height())
+
+        desired_height = min(desired_height, self.max_dialog_height)
+
+        available_geometry = QApplication.desktop().availableGeometry(self)
+        if available_geometry.width() > 0:
+            desired_width = min(desired_width, available_geometry.width())
+        if available_geometry.height() > 0:
+            desired_height = min(desired_height, available_geometry.height())
+
+        self.resize(desired_width, desired_height)
 
     def closeEvent(self, event):
         """Persist the user's chosen window size before closing."""
