@@ -1,0 +1,73 @@
+periodical
+1
+import time
+
+# --- Template configuration -------------------------------------------------
+# Replace the following values to adapt the condition for any NPC.
+TARGET_VNUM = 955          # VNUM=<your target NPC VNUM>
+TARGET_NAME = "Tower"      # NAME=<your target NPC name>
+TRIGGER_ATTR1_STATE = 3    # attr1 state that activates this condition
+NEXT_ATTR1_STATE = 4       # next.self.attr1 = <desired attr1 value>
+QUERY_COOLDOWN_SECONDS = 10
+
+
+def _tower_tp_reset_query_state():
+    if hasattr(self, "_tower_tp_last_query"):
+        delattr(self, "_tower_tp_last_query")
+
+
+def _tower_tp_complete(npc_id, npc_x, npc_y, current_map):
+    label = TARGET_NAME or f"VNUM {TARGET_VNUM}"
+    self.TowerTP = {
+        "ID": int(npc_id),
+        "x": int(npc_x),
+        "y": int(npc_y),
+        "map_id": current_map,
+    }
+    print(
+        f"Saved {label} Identity: ID={int(npc_id)}, x={int(npc_x)}, y={int(npc_y)}"
+    )
+    self.attr1 = str(NEXT_ATTR1_STATE)
+    _tower_tp_reset_query_state()
+
+
+try:
+    should_run = int(getattr(self, "attr1", 0)) == TRIGGER_ATTR1_STATE
+except (TypeError, ValueError):
+    should_run = False
+
+if not should_run:
+    _tower_tp_reset_query_state()
+else:
+    current_map = getattr(self, "map_id", None)
+    existing_info = getattr(self, "TowerTP", {})
+    has_existing = (
+        isinstance(existing_info, dict)
+        and existing_info.get("map_id") == current_map
+        and all(key in existing_info for key in ("ID", "x", "y"))
+    )
+
+    if has_existing:
+        _tower_tp_complete(existing_info["ID"], existing_info["x"], existing_info["y"], current_map)
+    else:
+        tower_data = None
+        for npc in getattr(self, "npcs", []):
+            try:
+                if int(npc.get("vnum", 0)) == TARGET_VNUM:
+                    tower_data = npc
+                    break
+            except (AttributeError, TypeError, ValueError):
+                continue
+
+        if tower_data is not None:
+            _tower_tp_complete(tower_data["id"], tower_data["x"], tower_data["y"], current_map)
+        else:
+            now = time.monotonic()
+            last_query = getattr(self, "_tower_tp_last_query", 0)
+            if now - last_query >= QUERY_COOLDOWN_SECONDS:
+                if getattr(self, "api", None) and hasattr(self.api, "query_map_entities"):
+                    label = TARGET_NAME or f"VNUM {TARGET_VNUM}"
+                    if last_query == 0:
+                        print(f"Requesting map entities to locate {label} teleporter.")
+                    self.api.query_map_entities()
+                    self._tower_tp_last_query = now
