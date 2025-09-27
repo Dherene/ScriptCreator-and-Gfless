@@ -1,0 +1,7 @@
+periodical
+1
+if int(self.attr1) == 2 and int(selfsubg.sincro) == 6:
+	print(f"[MEMBER] {self.name} making party")
+	time.sleep(self.randomize_delay(0.75,1.5))
+	self.make_party()
+	self.attr1 = 3
