@@ -1073,11 +1073,15 @@ class ConditionCreator(QDialog):
             elif name == "send_packet":
                 if action[2] == "string":
                     script += f'self.api.send_packet("{action[1]}")'
+                elif action[2] == "int":
+                    script += f'self.api.send_packet(int({action[1]}))'
                 if action[2] == "raw":
                     script += f'self.api.send_packet({action[1]})'
             elif name == "recv_packet":
                 if action[2] == "string":
                     script += f'self.api.recv_packet("{action[1]}")'
+                elif action[2] == "int":
+                    script += f'self.api.recv_packet(int({action[1]}))'
                 if action[2] == "raw":
                     script += f'self.api.recv_packet({action[1]})'
             elif name in {"start_bot", "stop_bot", "continue_bot", "start_minigame_bot", "stop_minigame_bot"}:
@@ -1159,6 +1163,8 @@ class ConditionCreator(QDialog):
             elif len(action) >= 3:
                 if action[2] == "string":
                     script += f'self.{name} = "{action[1]}"'
+                elif action[2] == "int":
+                    script += f'self.{name} = int({action[1]})'
                 if action[2] == "raw":
                     script += f'self.{name} = {action[1]}'
         return script
@@ -1370,16 +1376,22 @@ class ConditionCreator(QDialog):
                 if operator == "startswith" or operator == "endswith":
                     if user_input_type == "string":
                         script += f'packet.{operator}("{user_input_value}")'
+                    elif user_input_type == "int":
+                        script += f'packet.{operator}(str({user_input_value}))'
                     elif user_input_type == "raw":
                         script += f'packet.{operator}({user_input_value})'
                 if operator == "contains":
                     if user_input_type == "string":
                         script += f'"{user_input_value}" in packet'
+                    elif user_input_type == "int":
+                        script += f'str({user_input_value}) in packet'
                     elif user_input_type == "raw":
                         script += f'{user_input_value} in packet'
                 if operator == "equals":
                     if user_input_type == "string":
                         script += f'packet == "{user_input_value}"'
+                    elif user_input_type == "int":
+                        script += f'int(packet) == {user_input_value}'
                     elif user_input_type == "raw":
                         script += f'packet == {user_input_value}'
             elif argument == "split_send_packet" or argument == "split_recv_packet":
@@ -1432,7 +1444,46 @@ class ConditionCreator(QDialog):
                 var_name = conditions_array[i][7].strip() if len(conditions_array[i]) > 7 else ""
                 script += f'int(selfsubg.{var_name}) {operator} {user_input_value}'
             elif argument.startswith("attr"):
-                script += f'str(self.{argument}) {operator} "{user_input_value}"'
+                classic_operators = {"==", "!=", ">", "<", ">=", "<="}
+                if user_input_type == "int":
+                    left_expr = f"int(self.{argument})"
+                elif user_input_type == "raw":
+                    left_expr = f"self.{argument}"
+                else:
+                    left_expr = f"str(self.{argument})"
+
+                if operator in classic_operators:
+                    if user_input_type == "string":
+                        right_expr = f'"{user_input_value}"'
+                    elif user_input_type == "int":
+                        right_expr = f"{user_input_value}"
+                    else:
+                        right_expr = user_input_value
+                    script += f"{left_expr} {operator} {right_expr}"
+                elif operator == "contains":
+                    if user_input_type == "string":
+                        member = f'"{user_input_value}"'
+                        container = left_expr
+                    elif user_input_type == "int":
+                        member = f"str({user_input_value})"
+                        container = f"str(self.{argument})"
+                    else:
+                        member = user_input_value
+                        container = left_expr
+                    script += f"{member} in {container}"
+                elif operator in {"startswith", "endswith"}:
+                    if user_input_type == "string":
+                        method_arg = f'"{user_input_value}"'
+                        target = left_expr
+                    elif user_input_type == "int":
+                        method_arg = f"str({user_input_value})"
+                        target = f"str(self.{argument})"
+                    else:
+                        method_arg = user_input_value
+                        target = left_expr
+                    script += f"{target}.{operator}({method_arg})"
+                else:
+                    script += f'"{user_input_value}" in self.{argument}'
             else:
                 script += f'"{user_input_value}" in self.{argument}'
         script += ":"
