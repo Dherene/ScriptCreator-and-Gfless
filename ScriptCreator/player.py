@@ -6,6 +6,7 @@ import asyncio
 import ast
 import re
 import contextvars
+import copy
 from dataclasses import dataclass, field
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Callable
@@ -368,6 +369,10 @@ class Player:
         self.partyname = []
         self.partyID = []
         self.subgroup_index = None
+        self._make_party_tasks = {}
+        self._party_members = set()
+        self._party_members_lock = threading.Lock()
+        self._last_party_update = 0.0
 
         # unique identifier for isolated group namespace before leaderID is known
         self._unique_group_id = id(self)
@@ -842,6 +847,576 @@ class Player:
             if not subgroup_data:
                 Player._subgroup_vars.pop(gid, None)
 
+    # ------------------------------------------------------------------ #
+    # Party coordination helpers
+    # ------------------------------------------------------------------ #
+    def _get_make_party_config(self):
+        config = self.get_group_var("make_party_config", None)
+        if isinstance(config, dict):
+            return copy.deepcopy(config)
+        return None
+
+    def _get_make_party_substate(self, subgroup_index):
+        try:
+            subgroup_index = int(subgroup_index)
+        except (TypeError, ValueError):
+            return {}
+        gid = self._resolve_gid(None)
+        with Player._group_var_lock:
+            group = Player._group_vars.get(gid, {})
+            state = group.get("make_party_state")
+            if not isinstance(state, dict):
+                return {}
+            sub_state = state.get(subgroup_index)
+            return copy.deepcopy(sub_state) if isinstance(sub_state, dict) else {}
+
+    def _update_make_party_substate(self, subgroup_index, updater):
+        try:
+            subgroup_index = int(subgroup_index)
+        except (TypeError, ValueError):
+            return {}
+        gid = self._resolve_gid(None)
+        with Player._group_var_lock:
+            group = Player._group_vars.setdefault(gid, {})
+            state = group.get("make_party_state")
+            if not isinstance(state, dict):
+                state = {}
+            sub_state = state.setdefault(subgroup_index, {})
+            updater(sub_state)
+            group["make_party_state"] = state
+            return copy.deepcopy(sub_state)
+
+    def make_party(self, enable=True):
+        subgroup_index = getattr(self, "subgroup_index", None)
+        try:
+            subgroup_index = int(subgroup_index)
+        except (TypeError, ValueError):
+            subgroup_index = 0
+
+        if not enable:
+            if subgroup_index > 0:
+                def _reset(sub_state):
+                    sub_state.pop("ready", None)
+                    sub_state.pop("started", None)
+                    sub_state.pop("completed", None)
+                    invitations = sub_state.get("invitations")
+                    if isinstance(invitations, dict):
+                        invitations.clear()
+                    sub_state.pop("invitations", None)
+                    accepted = sub_state.get("accepted")
+                    if isinstance(accepted, list):
+                        accepted.clear()
+                    sub_state.pop("accepted", None)
+
+                self._update_make_party_substate(subgroup_index, _reset)
+
+                tasks = getattr(self, "_make_party_tasks", None)
+                if isinstance(tasks, dict):
+                    future = tasks.pop(subgroup_index, None)
+                    if future and not future.done():
+                        future.cancel()
+                self.log(
+                    f"[MAKE PARTY] Automation disabled for subgroup {subgroup_index}."
+                )
+            else:
+                self.log("[MAKE PARTY] Automation disabled for this member.")
+            return False
+
+        if not getattr(self, "api", None):
+            self.log("[MAKE PARTY] API connection is required to create a party.")
+            return False
+
+        if subgroup_index <= 0:
+            self.log("[MAKE PARTY] Unable to determine subgroup index for this member.")
+            return False
+
+        config = self._get_make_party_config()
+        if not config or not isinstance(config.get("subgroups"), dict):
+            self.log("[MAKE PARTY] Subgroup configuration is not available yet.")
+            return False
+
+        subgroup_config = config["subgroups"].get(subgroup_index)
+        if not subgroup_config:
+            self.log(f"[MAKE PARTY] No members configured for subgroup {subgroup_index}.")
+            return False
+
+        expected_size = subgroup_config.get("size")
+        try:
+            expected_size = int(expected_size)
+        except (TypeError, ValueError):
+            expected_size = 0
+        if expected_size not in (2, 3):
+            self.log("You cannot create parties with the current number of members per subgroup.")
+            return False
+
+        members = []
+        for entry in subgroup_config.get("members", []):
+            if not isinstance(entry, dict):
+                continue
+            member_id = entry.get("id")
+            try:
+                member_id = int(member_id) if member_id is not None else None
+            except (TypeError, ValueError):
+                member_id = None
+            name = entry.get("name") or ""
+            position = entry.get("position")
+            try:
+                position = int(position)
+            except (TypeError, ValueError):
+                position = None
+            members.append({"id": member_id, "name": name, "position": position})
+
+        if not members:
+            self.log(f"[MAKE PARTY] Subgroup {subgroup_index} does not have registered members.")
+            return False
+
+        members.sort(
+            key=lambda item: (
+                item.get("position") if isinstance(item.get("position"), int) else 0,
+                item.get("id") if isinstance(item.get("id"), int) else 0,
+                item.get("name", ""),
+            )
+        )
+
+        ordered_members = []
+        for idx, entry in enumerate(members, start=1):
+            ordered_members.append(
+                {
+                    "id": entry.get("id"),
+                    "name": entry.get("name", ""),
+                    "position": idx,
+                }
+            )
+
+        current_id = getattr(self, "id", None)
+        try:
+            current_id = int(current_id)
+        except (TypeError, ValueError):
+            current_id = None
+
+        current_entry = None
+        for entry in ordered_members:
+            if current_id is not None and entry.get("id") == current_id:
+                current_entry = entry
+                break
+        if current_entry is None and isinstance(self.name, str):
+            for entry in ordered_members:
+                if entry.get("name") == self.name:
+                    current_entry = entry
+                    break
+
+        if current_entry is None:
+            self.log("[MAKE PARTY] Unable to locate this member inside the subgroup definition.")
+            return False
+
+        if not isinstance(current_entry.get("id"), int) or current_entry["id"] <= 0:
+            self.log("[MAKE PARTY] A valid character ID is required to create a party.")
+            return False
+
+        sequence_ids = [entry.get("id") for entry in ordered_members if isinstance(entry.get("id"), int)]
+        if len(sequence_ids) != len(ordered_members):
+            self.log("[MAKE PARTY] Some subgroup members are missing their IDs; cannot coordinate party.")
+            return False
+
+        config_version = config.get("version")
+        current_sequence = list(sequence_ids)
+
+        def _update_state(sub_state):
+            previous_sequence = sub_state.get("sequence")
+            previous_ready = sub_state.get("ready")
+            if not isinstance(previous_ready, list):
+                previous_ready = []
+
+            expected_members = sub_state.get("expected_size")
+            try:
+                expected_members = int(expected_members)
+            except (TypeError, ValueError):
+                expected_members = 0
+
+            new_cycle = False
+            if config_version is not None and sub_state.get("version") not in (None, config_version):
+                new_cycle = True
+            elif previous_sequence and previous_sequence != current_sequence:
+                new_cycle = True
+            elif not previous_ready:
+                new_cycle = True
+            elif sub_state.get("completed"):
+                new_cycle = True
+            elif len(previous_ready) >= expected_members and current_entry["id"] not in previous_ready:
+                new_cycle = True
+
+            if new_cycle:
+                sub_state["ready"] = []
+                sub_state["invitations"] = {}
+                sub_state["accepted"] = []
+                sub_state["completed"] = False
+                sub_state["started"] = False
+                sub_state["run_token"] = time.monotonic()
+
+            sub_state["expected_size"] = expected_size
+            sub_state["sequence"] = list(current_sequence)
+            sub_state["members"] = copy.deepcopy(ordered_members)
+            if config_version is not None:
+                sub_state["version"] = config_version
+            ready = sub_state.setdefault("ready", [])
+            if current_entry["id"] not in ready:
+                ready.append(current_entry["id"])
+            sub_state.setdefault("invitations", {})
+            accepted = sub_state.setdefault("accepted", [])
+            sub_state.setdefault("completed", False)
+            if len(ready) >= expected_size:
+                sub_state["started"] = True
+            else:
+                sub_state.setdefault("started", False)
+            accepted[:] = [aid for aid in accepted if isinstance(aid, int)]
+
+        sub_state = self._update_make_party_substate(subgroup_index, _update_state)
+        ready_count = len([mid for mid in sub_state.get("ready", []) if isinstance(mid, int)])
+        self.log(f"Subgroup [{subgroup_index}] have {ready_count} member waiting to make party")
+
+        self.start_condition_loop()
+        position = current_entry["position"]
+        existing_future = self._make_party_tasks.get(subgroup_index)
+        if existing_future is None or existing_future.done():
+            coro = self._run_make_party_sequence(
+                subgroup_index,
+                expected_size,
+                position,
+                ordered_members,
+                current_entry["id"],
+            )
+            future = asyncio.run_coroutine_threadsafe(coro, self.loop)
+
+            def _log_result(fut):
+                try:
+                    fut.result()
+                except asyncio.CancelledError:
+                    pass
+                except Exception as error:
+                    self.log(f"[MAKE PARTY] Background error: {error}")
+
+            future.add_done_callback(_log_result)
+            self._make_party_tasks[subgroup_index] = future
+
+        return True
+
+    async def _wait_for_make_party_start(self, subgroup_index, expected_size):
+        while not getattr(self, "stop_script", False):
+            sub_state = self._get_make_party_substate(subgroup_index)
+            ready = sub_state.get("ready", [])
+            if len(ready) >= expected_size and sub_state.get("started"):
+                return True
+            await asyncio.sleep(0.5)
+        return False
+
+    async def _wait_for_make_party_invitation(
+        self, subgroup_index, member_id, expected_inviter, timeout=30.0
+    ):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline and not getattr(self, "stop_script", False):
+            if self._has_party_membership(subgroup_index, member_id):
+                return True
+            sub_state = self._get_make_party_substate(subgroup_index)
+            invitations = sub_state.get("invitations", {})
+            inviter_id = invitations.get(member_id)
+            if inviter_id == expected_inviter:
+                return True
+            await asyncio.sleep(0.5)
+        return False
+
+    def _mark_party_invitation(self, subgroup_index, target_id, inviter_id):
+        try:
+            target_id = int(target_id)
+        except (TypeError, ValueError):
+            return
+        def _mark(sub_state):
+            invitations = sub_state.setdefault("invitations", {})
+            invitations[target_id] = inviter_id
+            invite_times = sub_state.setdefault("invite_times", {})
+            invite_times[target_id] = time.monotonic()
+
+        self._update_make_party_substate(subgroup_index, _mark)
+
+    def _mark_party_acceptance(self, subgroup_index, member_id):
+        try:
+            member_id = int(member_id)
+        except (TypeError, ValueError):
+            return
+        def _mark(sub_state):
+            accepted = sub_state.setdefault("accepted", [])
+            if member_id not in accepted:
+                accepted.append(member_id)
+            invite_times = sub_state.get("invite_times")
+            if isinstance(invite_times, dict):
+                invite_times.pop(member_id, None)
+
+        self._update_make_party_substate(subgroup_index, _mark)
+
+    def _mark_party_completion(self, subgroup_index):
+        def _mark(sub_state):
+            sub_state["completed"] = True
+
+        self._update_make_party_substate(subgroup_index, _mark)
+
+    def _is_party_member(self, member_id):
+        if member_id is None:
+            return False
+        try:
+            member_id = int(member_id)
+        except (TypeError, ValueError):
+            return False
+        with self._party_members_lock:
+            return member_id in self._party_members
+
+    def _has_party_membership(self, subgroup_index, member_id):
+        if member_id is None:
+            return False
+        try:
+            member_id = int(member_id)
+        except (TypeError, ValueError):
+            return False
+        if self._is_party_member(member_id):
+            return True
+        sub_state = self._get_make_party_substate(subgroup_index)
+        accepted = sub_state.get("accepted") if isinstance(sub_state, dict) else None
+        if isinstance(accepted, list) and member_id in accepted:
+            return True
+        return False
+
+    async def _wait_for_party_acceptance(self, subgroup_index, member_id, timeout=10.0):
+        if member_id is None:
+            return False
+        deadline = time.monotonic() + max(timeout, 0)
+        while time.monotonic() < deadline and not getattr(self, "stop_script", False):
+            if self._has_party_membership(subgroup_index, member_id):
+                return True
+            await asyncio.sleep(0.2)
+        return self._has_party_membership(subgroup_index, member_id)
+
+    def _update_party_members(self, member_ids, member_names=None):
+        if not isinstance(member_ids, (list, tuple, set)):
+            return
+        normalized_ids = set()
+        for member_id in member_ids:
+            try:
+                mid = int(member_id)
+            except (TypeError, ValueError):
+                continue
+            normalized_ids.add(mid)
+
+        with self._party_members_lock:
+            self._party_members = normalized_ids
+            self._last_party_update = time.monotonic()
+
+        subgroup_index = getattr(self, "subgroup_index", None)
+        if not subgroup_index:
+            return
+
+        def _mark(sub_state):
+            sequence = sub_state.get("sequence")
+            if not isinstance(sequence, list):
+                return
+            accepted = sub_state.setdefault("accepted", [])
+            changed = False
+            for mid in normalized_ids:
+                if mid in sequence and mid not in accepted:
+                    accepted.append(mid)
+                    changed = True
+            if changed and len(accepted) >= sub_state.get("expected_size", 0):
+                sub_state["completed"] = True
+
+        self._update_make_party_substate(subgroup_index, _mark)
+
+    def _handle_party_init_packet(self, packet_parts):
+        if len(packet_parts) < 2:
+            return
+        member_segments = packet_parts[2:]
+        member_ids = []
+        for segment in member_segments:
+            fields = segment.split("|")
+            if len(fields) < 2:
+                continue
+            try:
+                member_id = int(fields[1])
+            except (TypeError, ValueError):
+                continue
+            member_ids.append(member_id)
+        if member_ids:
+            self._update_party_members(member_ids)
+
+    def _send_party_invite(self, target_id):
+        if target_id is None:
+            return False
+        if self._is_party_member(target_id):
+            return False
+        try:
+            self.api.send_packet(f"pjoin 0 {int(target_id)}")
+            return True
+        except Exception as error:
+            self.log(f"[MAKE PARTY] Failed to invite member {target_id}: {error}")
+            return False
+
+    def _send_party_accept(self, inviter_id):
+        try:
+            self.api.send_packet(f"#pjoin^3^{int(inviter_id)}")
+        except Exception as error:
+            self.log(f"[MAKE PARTY] Failed to accept invitation from {inviter_id}: {error}")
+
+    async def _invite_member_until_accepted(
+        self,
+        subgroup_index,
+        inviter_id,
+        current_name,
+        target_entry,
+        invite_timeout=10.0,
+    ):
+        if not isinstance(target_entry, dict):
+            return False
+        target_id = target_entry.get("id")
+        if target_id is None:
+            return False
+        target_name = target_entry.get("name") or str(target_id)
+
+        attempt = 0
+        while not getattr(self, "stop_script", False):
+            if self._has_party_membership(subgroup_index, target_id):
+                self._mark_party_acceptance(subgroup_index, target_id)
+                self.log(
+                    f"[MAKE PARTY] {target_name} already shares a party with {current_name}, skipping invite."
+                )
+                return True
+
+            attempt += 1
+            if attempt == 1:
+                self.log(f"[MAKE PARTY] {current_name} inviting {target_name}")
+            else:
+                self.log(
+                    f"[MAKE PARTY] Retrying invitation from {current_name} to {target_name} (attempt {attempt})"
+                )
+
+            if self._send_party_invite(target_id):
+                self._mark_party_invitation(subgroup_index, target_id, inviter_id)
+                accepted = await self._wait_for_party_acceptance(
+                    subgroup_index, target_id, timeout=invite_timeout
+                )
+                if accepted:
+                    self._mark_party_acceptance(subgroup_index, target_id)
+                    return True
+                if getattr(self, "stop_script", False):
+                    break
+                self.log(
+                    f"[MAKE PARTY] {target_name} did not accept {current_name}'s invitation in time."
+                )
+            else:
+                self.log(
+                    f"[MAKE PARTY] Failed to dispatch invitation from {current_name} to {target_name}."
+                )
+
+            await asyncio.sleep(self.randomize_delay(1.0, 1.5))
+
+        return False
+
+    async def _run_make_party_sequence(
+        self,
+        subgroup_index,
+        expected_size,
+        position,
+        ordered_members,
+        current_id,
+    ):
+        try:
+            ready = await self._wait_for_make_party_start(subgroup_index, expected_size)
+            if not ready:
+                return
+
+            id_sequence = [entry["id"] for entry in ordered_members]
+            name_lookup = {
+                entry["id"]: entry.get("name") or str(entry["id"])
+                for entry in ordered_members
+                if isinstance(entry.get("id"), int)
+            }
+            current_name = name_lookup.get(current_id, getattr(self, "name", str(current_id)))
+
+            previous_id = id_sequence[position - 2] if position > 1 else None
+            next_id = id_sequence[position] if position < len(id_sequence) else None
+
+            def _find_member_entry(member_id):
+                for entry in ordered_members:
+                    if entry.get("id") == member_id:
+                        return entry
+                return None
+
+            if previous_id is None:
+                if len(ordered_members) > 1:
+                    target_entry = ordered_members[1]
+                    target_id = target_entry.get("id")
+                    target_name = target_entry.get("name") or str(target_id)
+                    if self._has_party_membership(subgroup_index, target_id):
+                        self._mark_party_acceptance(subgroup_index, target_id)
+                        self.log(
+                            f"[MAKE PARTY] {target_name} is already grouped with {current_name}."
+                        )
+                        return
+                    await asyncio.sleep(self.randomize_delay(1.0, 2.0))
+                    success = await self._invite_member_until_accepted(
+                        subgroup_index,
+                        current_id,
+                        current_name,
+                        target_entry,
+                    )
+                    if not success:
+                        self.log(
+                            f"[MAKE PARTY] Unable to confirm invitation from {current_name} to {target_name}."
+                        )
+                return
+
+            invited = await self._wait_for_make_party_invitation(
+                subgroup_index, current_id, previous_id
+            )
+            if not invited:
+                inviter_name = name_lookup.get(previous_id, str(previous_id))
+                self.log(
+                    f"[MAKE PARTY] Invitation from {inviter_name} did not arrive in time."
+                )
+                return
+
+            await asyncio.sleep(self.randomize_delay(1.0, 2.0))
+            inviter_name = name_lookup.get(previous_id, str(previous_id))
+            self.log(f"[MAKE PARTY] {current_name} accepting invitation from {inviter_name}")
+            self._send_party_accept(previous_id)
+            self._mark_party_acceptance(subgroup_index, current_id)
+
+            if next_id is None:
+                self._mark_party_completion(subgroup_index)
+                return
+
+            await asyncio.sleep(2.0)
+            if self._has_party_membership(subgroup_index, next_id):
+                self._mark_party_acceptance(subgroup_index, next_id)
+                next_name = name_lookup.get(next_id, str(next_id))
+                self.log(
+                    f"[MAKE PARTY] {next_name} already shares a party with {current_name}, skipping invite."
+                )
+                return
+
+            next_entry = _find_member_entry(next_id)
+            next_name = name_lookup.get(next_id, str(next_id))
+            success = await self._invite_member_until_accepted(
+                subgroup_index,
+                current_id,
+                current_name,
+                next_entry,
+            )
+            if not success:
+                self.log(
+                    f"[MAKE PARTY] Unable to confirm invitation from {current_name} to {next_name}."
+                )
+
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            self.log(f"[MAKE PARTY] Unexpected error: {error}")
+
     def rolename(self) -> str:
         """Return a fantasy-style name up to 12 characters."""
         name = random.choice(PREFIXES) + random.choice(ROOTS) + random.choice(SUFFIXES)
@@ -886,6 +1461,10 @@ class Player:
                         self.name = splitPacket[1]
                         self.id = splitPacket[6]
                         self.sp = splitPacket[15]
+                    if splitPacket[0] == ("pinit"):
+                        self._handle_party_init_packet(splitPacket)
+                    if splitPacket[0] == ("pleave"):
+                        self._update_party_members([])
                     if splitPacket[0] == ("at"):
                         self.pos_x, self.pos_y = int(splitPacket[3]), int(splitPacket[4])
                     if splitPacket[0] == ("cond"):
@@ -1807,6 +2386,16 @@ class Player:
             except Exception:
                 pass
             self._cond_executor = ThreadPoolExecutor(max_workers=4)
+
+        tasks = getattr(self, "_make_party_tasks", None)
+        if isinstance(tasks, dict):
+            for future in list(tasks.values()):
+                try:
+                    if future and not future.done():
+                        future.cancel()
+                except Exception:
+                    pass
+            self._make_party_tasks = {}
 
         gid = None
         if getattr(self, "leaderID", 0):
