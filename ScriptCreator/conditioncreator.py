@@ -15,8 +15,9 @@ from PyQt5.QtWidgets import (
     QComboBox,
     QLineEdit,
     QSizePolicy,
+    QApplication,
 )
-from PyQt5.QtCore import QTimer, Qt, QSettings, QSize
+from PyQt5.QtCore import Qt, QSettings, QSize, QTimer
 from PyQt5.QtGui import QFont, QFontMetricsF, QColor, QIcon, QIntValidator
 import os
 import re
@@ -276,6 +277,8 @@ class ConditionCreator(QDialog):
 
         self.action_widgets = []
         self.action_group_boxes = []
+        self.else_action_widgets = []
+        self.else_action_group_boxes = []
 
         # Create main layout
         self.main_layout = QGridLayout()
@@ -309,9 +312,32 @@ class ConditionCreator(QDialog):
         self.main_layout.addWidget(self.remove_action_button, 4, 4, 1, 1)
         self.remove_action_button.setVisible(False)
 
-        # Create a vertical layout to hold the group boxes
+        self.else_button = QPushButton("Else")
+        self.else_button.setCheckable(True)
+        self.else_button.toggled.connect(self.toggle_else_section)
+        self.main_layout.addWidget(self.else_button, 5, 0, 1, 3)
+
+        self.add_else_action_button = QPushButton("+")
+        self.add_else_action_button.clicked.connect(self.add_new_else_action)
+        self.add_else_action_button.setVisible(False)
+        self.main_layout.addWidget(self.add_else_action_button, 5, 5, 1, 1)
+
+        self.remove_else_action_button = QPushButton("-")
+        self.remove_else_action_button.clicked.connect(self.remove_last_else_action)
+        self.remove_else_action_button.setVisible(False)
+        self.main_layout.addWidget(self.remove_else_action_button, 5, 4, 1, 1)
+
+        # Create layouts to hold the action group boxes
+        self.actions_container_layout = QVBoxLayout()
         self.group_boxes_layout = QVBoxLayout()
-        self.main_layout.addLayout(self.group_boxes_layout, 3, 0, 1, 6)
+        self.actions_container_layout.addLayout(self.group_boxes_layout)
+        self.main_layout.addLayout(self.actions_container_layout, 3, 0, 1, 6)
+
+        self.else_container = QGroupBox("Else Actions")
+        self.else_container.setVisible(False)
+        self.else_group_boxes_layout = QVBoxLayout()
+        self.else_container.setLayout(self.else_group_boxes_layout)
+        self.actions_container_layout.addWidget(self.else_container)
 
         self.cond_helper_label = QLabel(
             "Tip: cond.on / cond.off require the target condition's number "
@@ -319,20 +345,16 @@ class ConditionCreator(QDialog):
             "all other active conditions while keeping the calling one running."
         )
         self.cond_helper_label.setWordWrap(True)
-        self.main_layout.addWidget(self.cond_helper_label, 5, 0, 1, 6)
+        self.main_layout.addWidget(self.cond_helper_label, 6, 0, 1, 6)
 
         #self.setMaximumWidth(500)
         #self.setMinimumWidth(500)
 
         self.setLayout(self.main_layout)
 
-        # Create a timer to call adjustSize every 0.01 seconds
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.adjust_size_periodically)
-        self.timer.start(100)
-
         self.add_new_condition()
         self.add_new_action()
+        self.update_dialog_geometry()
 
     @staticmethod
     def _is_valid_subgroup_name(name: str) -> bool:
@@ -359,6 +381,39 @@ class ConditionCreator(QDialog):
     def _add_single(layout: QGridLayout, row: int, column: int, widget, expands: bool = False) -> None:
         layout.addWidget(widget, row, column)
         layout.setColumnStretch(column, 1 if expands else 0)
+
+    @staticmethod
+    def _standardize_action_layout(layout: QGridLayout) -> None:
+        """Ensure action editors keep a consistent proportion."""
+        stretch_map = {
+            0: 3,
+            1: 0,
+            2: 4,
+            3: 0,
+            4: 4,
+            5: 0,
+            6: 4,
+        }
+        for column, stretch in stretch_map.items():
+            layout.setColumnStretch(column, stretch)
+
+        occupied_columns = set()
+        for index in range(layout.count()):
+            _, column, _, column_span = layout.getItemPosition(index)
+            for col in range(column, column + column_span):
+                occupied_columns.add(col)
+
+        min_width_map = {
+            0: 150,
+            1: 70,
+            2: 120,
+            3: 70,
+            4: 120,
+            5: 70,
+            6: 120,
+        }
+        for column, minimum in min_width_map.items():
+            layout.setColumnMinimumWidth(column, minimum if column in occupied_columns else 0)
 
     def add_new_condition(self):
         try:
@@ -495,16 +550,85 @@ class ConditionCreator(QDialog):
         # Add condition group box to the main layout
         self.main_layout.addWidget(condition_group_box, 0, 0, 1, 6)
 
+        self.update_dialog_geometry(maintain_current_height=True)
+
     def remove_last_condition(self):
         for condition in self.condition_widgets[-1]:
             condition.deleteLater()
-        
+
         self.condition_widgets.pop(-1)
 
         if len(self.condition_widgets) < 2:
             self.remove_condition_button.setVisible(False)
 
-    def add_new_action(self):
+        self.update_dialog_geometry()
+
+    def update_dialog_geometry(
+        self, maintain_current_height: bool = False, extra_height_ratio: float = 0.0
+    ):
+        layout = self.layout()
+        if layout is None:
+            return
+
+        layout.invalidate()
+        layout.activate()
+
+        size_hint = layout.sizeHint()
+        if not size_hint.isValid():
+            size_hint = self.sizeHint()
+        minimum_hint = layout.minimumSize()
+        minimum_size_hint = self.minimumSizeHint()
+
+        desired_width = max(
+            self.minimumWidth(),
+            minimum_hint.width(),
+            minimum_size_hint.width(),
+            size_hint.width(),
+            self.width(),
+        )
+        desired_height = max(
+            self.minimumHeight(),
+            minimum_hint.height(),
+            minimum_size_hint.height(),
+            size_hint.height(),
+        )
+
+        if extra_height_ratio > 0:
+            desired_height = int(desired_height * (1 + extra_height_ratio))
+
+        if maintain_current_height:
+            desired_height = max(desired_height, self.height())
+
+        available_geometry = QApplication.desktop().availableGeometry(self)
+        if available_geometry.width() > 0:
+            desired_width = min(desired_width, available_geometry.width())
+        if available_geometry.height() > 0:
+            desired_height = min(desired_height, available_geometry.height())
+
+        self.resize(desired_width, desired_height)
+
+    def _get_action_section(self, section):
+        if section == "if":
+            return (
+                self.action_widgets,
+                self.action_group_boxes,
+                self.group_boxes_layout,
+                self.remove_action_button,
+                "action",
+            )
+        if section == "else":
+            return (
+                self.else_action_widgets,
+                self.else_action_group_boxes,
+                self.else_group_boxes_layout,
+                self.remove_else_action_button,
+                "else action",
+            )
+        raise ValueError(f"Unknown action section: {section}")
+
+    def _add_action_group(self, section):
+        action_widgets, action_group_boxes, layout, remove_button, title_prefix = self._get_action_section(section)
+
         new_action_combobox = QComboBox()
         new_min_wait_label = QLabel("min:")
         new_min_wait = QLineEdit("0.75")
@@ -525,10 +649,9 @@ class ConditionCreator(QDialog):
             elements_list.append(f"attr{i}")
         new_action_combobox.setStyleSheet("QComboBox { combobox-popup: 0; }")
         new_action_combobox.addItems(elements_list)
-        row_position = len(self.action_widgets) + 1
+        row_position = len(action_widgets) + 1
 
-        # Create a group box for the new set of widgets
-        group_box = QGroupBox(f"action {row_position}")
+        group_box = QGroupBox(f"{title_prefix} {row_position}")
         group_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         group_box_layout = QGridLayout()
         group_box_layout.setContentsMargins(8, 8, 8, 8)
@@ -536,44 +659,87 @@ class ConditionCreator(QDialog):
         self._add_single(group_box_layout, 0, 0, new_action_combobox)
         self._add_label_field(group_box_layout, 0, 1, new_min_wait_label, new_min_wait)
         self._add_label_field(group_box_layout, 0, 3, new_max_wait_label, new_max_wait)
-        group_box_layout.setColumnStretch(5, 1)
         group_box.setLayout(group_box_layout)
 
-        # Add the group box to the main layout
-        self.group_boxes_layout.addWidget(group_box)
+        layout.addWidget(group_box)
 
-        # Connect the currentIndexChanged signal of the new combo box to update_action_widgets function
-        index = len(self.action_widgets)
-        new_action_combobox.currentIndexChanged.connect(lambda: self.update_action_widgets(index))
-        self.action_widgets.append([new_action_combobox, new_min_wait, new_max_wait, new_min_wait_label, new_max_wait_label, group_box_layout])
-        
-        if len(self.action_widgets) > 1:
-            self.remove_action_button.setVisible(True)
+        index = len(action_widgets)
+        new_action_combobox.currentIndexChanged.connect(
+            lambda _, idx=index, sec=section: self.update_action_widgets(sec, idx)
+        )
+        action_widgets.append([
+            new_action_combobox,
+            new_min_wait,
+            new_max_wait,
+            new_min_wait_label,
+            new_max_wait_label,
+            group_box_layout,
+        ])
 
-        self.action_group_boxes.append(group_box)
+        if len(action_widgets) > 1:
+            remove_button.setVisible(True)
+
+        action_group_boxes.append(group_box)
+
+        self._standardize_action_layout(group_box_layout)
+
+        self.update_dialog_geometry(maintain_current_height=True, extra_height_ratio=0.1)
+
+    def _remove_last_action(self, section):
+        action_widgets, action_group_boxes, _, remove_button, _ = self._get_action_section(section)
+        if not action_widgets:
+            return
+
+        last_action_widgets = action_widgets[-1]
+        for widget_to_delete in last_action_widgets:
+            if hasattr(widget_to_delete, "deleteLater"):
+                widget_to_delete.deleteLater()
+
+        action_group_boxes[-1].deleteLater()
+        action_group_boxes.pop()
+        action_widgets.pop()
+
+        if len(action_widgets) < 2:
+            remove_button.setVisible(False)
+
+        self.update_dialog_geometry()
+
+    def toggle_else_section(self, checked):
+        self.else_container.setVisible(checked)
+        self.add_else_action_button.setVisible(checked)
+        if checked:
+            if not self.else_action_widgets:
+                self._add_action_group("else")
+            self.remove_else_action_button.setVisible(len(self.else_action_widgets) > 1)
+        else:
+            self.remove_else_action_button.setVisible(False)
+
+        self.update_dialog_geometry(maintain_current_height=checked)
+
+    def add_new_action(self):
+        self._add_action_group("if")
+
+    def add_new_else_action(self):
+        if not self.else_button.isChecked():
+            return
+        self._add_action_group("else")
 
     def remove_last_action(self):
-        for i in range(len(self.action_widgets[-1])):
-            last_action_widgets = self.action_widgets[-1]
-            widget_to_delete = last_action_widgets[i]
-            widget_to_delete.deleteLater()
+        self._remove_last_action("if")
 
-        self.action_group_boxes[-1].deleteLater()
-        self.action_group_boxes.pop(len(self.action_group_boxes)-1)
-        self.action_widgets.pop(len(self.action_widgets)-1)
+    def remove_last_else_action(self):
+        self._remove_last_action("else")
 
-        if len(self.action_widgets) < 2:
-            self.remove_action_button.setVisible(False)
+    def update_action_widgets(self, section, index):
+        action_widgets, _, _, _, _ = self._get_action_section(section)
+        group_box_layout = action_widgets[index][-1]
 
-    def update_action_widgets(self, index):
-        group_box_layout = self.action_widgets[index][-1]
+        for i in range(1, len(action_widgets[index]) - 1):
+            action_widgets[index][i].deleteLater()
 
-        for i in range(1, len(self.action_widgets[index])-1):
-            self.action_widgets[index][i].deleteLater()
+        action_widgets[index] = [action_widgets[index][0]]
 
-        self.action_widgets[index] = [self.action_widgets[index][0]]
-
-        condition = self.action_widgets[index][0].currentText()
+        condition = action_widgets[index][0].currentText()
 
         if condition == "wait":
             new_min_wait = QLineEdit("0.75")
@@ -585,12 +751,11 @@ class ConditionCreator(QDialog):
 
             self._add_label_field(group_box_layout, 0, 1, new_min_wait_label, new_min_wait)
             self._add_label_field(group_box_layout, 0, 3, new_max_wait_label, new_max_wait)
-            group_box_layout.setColumnStretch(5, 1)
 
-            self.action_widgets[index].append(new_min_wait_label)
-            self.action_widgets[index].append(new_min_wait)
-            self.action_widgets[index].append(new_max_wait_label)
-            self.action_widgets[index].append(new_max_wait)
+            action_widgets[index].append(new_min_wait_label)
+            action_widgets[index].append(new_min_wait)
+            action_widgets[index].append(new_max_wait_label)
+            action_widgets[index].append(new_max_wait)
         elif condition == "send_packet" or condition == "recv_packet":
             new_packet_label = QLabel("Packet:")
             new_packet = QLineEdit()
@@ -600,11 +765,10 @@ class ConditionCreator(QDialog):
 
             self._add_label_field(group_box_layout, 0, 1, new_packet_label, new_packet)
             self._add_single(group_box_layout, 0, 3, new_type_decision)
-            group_box_layout.setColumnStretch(4, 1)
 
-            self.action_widgets[index].append(new_packet_label)
-            self.action_widgets[index].append(new_packet)
-            self.action_widgets[index].append(new_type_decision)
+            action_widgets[index].append(new_packet_label)
+            action_widgets[index].append(new_packet)
+            action_widgets[index].append(new_type_decision)
 
         elif condition == "cond.on" or condition == "cond.off":
             index_label = QLabel("number:")
@@ -617,10 +781,9 @@ class ConditionCreator(QDialog):
             index_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
             self._add_label_field(group_box_layout, 0, 1, index_label, index_input)
-            group_box_layout.setColumnStretch(3, 1)
 
-            self.action_widgets[index].append(index_label)
-            self.action_widgets[index].append(index_input)
+            action_widgets[index].append(index_label)
+            action_widgets[index].append(index_input)
 
         elif condition == "walk_to_point" or condition == "player_walk" or condition == "pets_walk":
             new_x = QLineEdit()
@@ -632,10 +795,10 @@ class ConditionCreator(QDialog):
             self._add_label_field(group_box_layout, 0, 1, new_x_label, new_x)
             self._add_label_field(group_box_layout, 0, 3, new_y_label, new_y)
 
-            self.action_widgets[index].append(new_x_label)
-            self.action_widgets[index].append(new_x)
-            self.action_widgets[index].append(new_y_label)
-            self.action_widgets[index].append(new_y)
+            action_widgets[index].append(new_x_label)
+            action_widgets[index].append(new_x)
+            action_widgets[index].append(new_y_label)
+            action_widgets[index].append(new_y)
 
             if condition == "walk_to_point":
                 new_radius = QLineEdit("0")
@@ -646,8 +809,8 @@ class ConditionCreator(QDialog):
 
                 self._add_label_field(group_box_layout, 0, 5, new_radius_label, new_radius)
 
-                self.action_widgets[index].append(new_radius_label)
-                self.action_widgets[index].append(new_radius)
+                action_widgets[index].append(new_radius_label)
+                action_widgets[index].append(new_radius)
 
                 skip_timeout_checkbox = QCheckBox("custom")
                 skip_label = QLabel("skip:")
@@ -676,21 +839,20 @@ class ConditionCreator(QDialog):
                 self._add_label_field(group_box_layout, 0, 10, timeout_label, timeout_input)
                 group_box_layout.setColumnStretch(12, 1)
 
-                self.action_widgets[index].append(skip_timeout_checkbox)
-                self.action_widgets[index].append(skip_label)
-                self.action_widgets[index].append(skip_input)
-                self.action_widgets[index].append(timeout_label)
-                self.action_widgets[index].append(timeout_input)
+                action_widgets[index].append(skip_timeout_checkbox)
+                action_widgets[index].append(skip_label)
+                action_widgets[index].append(skip_input)
+                action_widgets[index].append(timeout_label)
+                action_widgets[index].append(timeout_input)
         elif condition == "load_settings":
             new_settings_path_label = QLabel("Settings path:")
             new_settings_path = QLineEdit()
             new_settings_path.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
             self._add_label_field(group_box_layout, 0, 1, new_settings_path_label, new_settings_path)
-            group_box_layout.setColumnStretch(3, 1)
 
-            self.action_widgets[index].append(new_settings_path_label)
-            self.action_widgets[index].append(new_settings_path)
+            action_widgets[index].append(new_settings_path_label)
+            action_widgets[index].append(new_settings_path)
         elif condition == "use_item":
             new_item_vnum_label = QLabel("VNUM: ")
             new_item_vnum = QLineEdit()
@@ -701,11 +863,10 @@ class ConditionCreator(QDialog):
 
             self._add_label_field(group_box_layout, 0, 1, new_item_vnum_label, new_item_vnum)
             self._add_single(group_box_layout, 0, 3, new_inventory_type)
-            group_box_layout.setColumnStretch(4, 1)
 
-            self.action_widgets[index].append(new_item_vnum_label)
-            self.action_widgets[index].append(new_item_vnum)
-            self.action_widgets[index].append(new_inventory_type)
+            action_widgets[index].append(new_item_vnum_label)
+            action_widgets[index].append(new_item_vnum)
+            action_widgets[index].append(new_inventory_type)
         elif condition == "put_item_in_trade":
             for n in range(10):
                 inv_combo = QComboBox()
@@ -720,9 +881,8 @@ class ConditionCreator(QDialog):
                 self._add_single(group_box_layout, n, 1, inv_combo)
                 self._add_label_field(group_box_layout, n, 2, v_label, v_edit)
                 self._add_label_field(group_box_layout, n, 4, q_label, q_edit)
-                group_box_layout.setColumnStretch(6, 1)
 
-                self.action_widgets[index].extend([inv_combo, v_label, v_edit, q_label, q_edit])
+                action_widgets[index].extend([inv_combo, v_label, v_edit, q_label, q_edit])
         elif condition == "auto_login":
             # Use comboboxes similar to the Server Configuration dialog
             lang_label = QLabel("Language:")
@@ -753,9 +913,8 @@ class ConditionCreator(QDialog):
             self._add_label_field(group_box_layout, 1, 1, server_label, server_combo, field_expands=False)
             self._add_label_field(group_box_layout, 2, 1, channel_label, channel_combo, field_expands=False)
             self._add_label_field(group_box_layout, 3, 1, char_label, char_combo, field_expands=False)
-            group_box_layout.setColumnStretch(3, 1)
 
-            self.action_widgets[index].extend([
+            action_widgets[index].extend([
                 lang_label, lang_combo,
                 server_label, server_combo,
                 channel_label, channel_combo,
@@ -766,19 +925,17 @@ class ConditionCreator(QDialog):
             pid_edit = QLineEdit("pidnum")
             pid_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             self._add_label_field(group_box_layout, 0, 1, pid_label, pid_edit)
-            group_box_layout.setColumnStretch(3, 1)
-            self.action_widgets[index].append(pid_label)
-            self.action_widgets[index].append(pid_edit)
+            action_widgets[index].append(pid_label)
+            action_widgets[index].append(pid_edit)
         elif condition == "python_code":
             new_equals_label = QLabel("=")
             new_python_code = QLineEdit()
             new_python_code.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
             self._add_label_field(group_box_layout, 0, 1, new_equals_label, new_python_code)
-            group_box_layout.setColumnStretch(3, 1)
 
-            self.action_widgets[index].append(new_equals_label)
-            self.action_widgets[index].append(new_python_code)
+            action_widgets[index].append(new_equals_label)
+            action_widgets[index].append(new_python_code)
         elif condition == "make_party":
             pass
         elif condition == "subgroup_variable":
@@ -803,9 +960,8 @@ class ConditionCreator(QDialog):
             self._add_label_field(group_box_layout, 0, 1, name_label, name_edit)
             self._add_label_field(group_box_layout, 0, 3, operation_label, operation_combo, field_expands=False)
             self._add_label_field(group_box_layout, 0, 5, value_label, value_edit)
-            group_box_layout.setColumnStretch(7, 1)
 
-            self.action_widgets[index].extend([
+            action_widgets[index].extend([
                 name_label,
                 name_edit,
                 operation_label,
@@ -822,21 +978,19 @@ class ConditionCreator(QDialog):
 
             self._add_label_field(group_box_layout, 0, 1, new_equals_label, new_equals)
             self._add_single(group_box_layout, 0, 3, new_str_or_raw)
-            group_box_layout.setColumnStretch(4, 1)
 
-            self.action_widgets[index].append(new_equals_label)
-            self.action_widgets[index].append(new_equals)
-            self.action_widgets[index].append(new_str_or_raw)
+            action_widgets[index].append(new_equals_label)
+            action_widgets[index].append(new_equals)
+            action_widgets[index].append(new_str_or_raw)
         elif condition == "attack":
             new_monster_id_label = QLabel("monster_id: ")
             new_monster_id = QLineEdit()
             new_monster_id.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
             self._add_label_field(group_box_layout, 0, 1, new_monster_id_label, new_monster_id)
-            group_box_layout.setColumnStretch(3, 1)
 
-            self.action_widgets[index].append(new_monster_id_label)
-            self.action_widgets[index].append(new_monster_id)
+            action_widgets[index].append(new_monster_id_label)
+            action_widgets[index].append(new_monster_id)
         elif condition == "player_skill":
             new_monster_id_label = QLabel("monster_id: ")
             new_monster_id = QLineEdit()
@@ -847,17 +1001,155 @@ class ConditionCreator(QDialog):
 
             self._add_label_field(group_box_layout, 0, 1, new_monster_id_label, new_monster_id)
             self._add_label_field(group_box_layout, 0, 3, new_skill_id_label, new_skill_id)
-            group_box_layout.setColumnStretch(5, 1)
 
-            self.action_widgets[index].append(new_monster_id_label)
-            self.action_widgets[index].append(new_monster_id)
-            self.action_widgets[index].append(new_skill_id_label)
-            self.action_widgets[index].append(new_skill_id)
+            action_widgets[index].append(new_monster_id_label)
+            action_widgets[index].append(new_monster_id)
+            action_widgets[index].append(new_skill_id_label)
+            action_widgets[index].append(new_skill_id)
         elif condition == "close_game":
             # no additional widgets needed for closing the game
             pass
 
-        self.action_widgets[index].append(group_box_layout)
+        action_widgets[index].append(group_box_layout)
+
+        self._standardize_action_layout(group_box_layout)
+
+        self.update_dialog_geometry()
+
+    def _collect_actions(self, action_widgets):
+        actions_array = []
+        for row in action_widgets:
+            action_name = row[0].currentText()
+            new_row = [action_name]
+            if action_name == "auto_login":
+                new_row.extend([
+                    str(row[2].currentIndex()),
+                    str(row[4].currentIndex()),
+                    str(row[6].currentIndex()),
+                    str(row[8].currentIndex() - 1),
+                ])
+            elif action_name == "walk_to_point":
+                new_row.extend([row[2].text(), row[4].text()])
+                new_row.append(row[6].text())
+                if len(row) > 7 and isinstance(row[7], QCheckBox) and row[7].isChecked():
+                    new_row.extend([row[9].text(), row[11].text()])
+            elif action_name == "make_party":
+                new_row.append("1")
+            else:
+                for widget in row[1:]:
+                    if isinstance(widget, QLineEdit):
+                        new_row.append(widget.text())
+                    elif isinstance(widget, QComboBox):
+                        value = widget.currentData()
+                        if value is None:
+                            value = widget.currentText()
+                        if not isinstance(value, str):
+                            value = str(value)
+                        new_row.append(value)
+            actions_array.append(new_row)
+        return actions_array
+
+    def _append_actions_to_script(self, script, actions_array, indent_level=1):
+        indent = "\n" + "\t" * indent_level
+        for action in actions_array:
+            if not action:
+                continue
+            name = action[0]
+            script += indent
+            if name == "wait":
+                script += f'time.sleep(self.randomize_delay({action[1]},{action[2]}))'
+            elif name == "send_packet":
+                if action[2] == "string":
+                    script += f'self.api.send_packet("{action[1]}")'
+                if action[2] == "raw":
+                    script += f'self.api.send_packet({action[1]})'
+            elif name == "recv_packet":
+                if action[2] == "string":
+                    script += f'self.api.recv_packet("{action[1]}")'
+                if action[2] == "raw":
+                    script += f'self.api.recv_packet({action[1]})'
+            elif name in {"start_bot", "stop_bot", "continue_bot", "start_minigame_bot", "stop_minigame_bot"}:
+                script += f'self.api.{name}()'
+            elif name == "attack":
+                script += f'self.api.attack({action[1]})'
+            elif name == "player_skill":
+                script += f'self.api.player_skill({action[1]}, {action[2]})'
+            elif name == "load_settings":
+                script += f'self.api.load_settings({action[1]})'
+            elif name == "walk_to_point":
+                if len(action) >= 6:
+                    script += (
+                        f'self.walk_to_point([{action[1]},{action[2]}], '
+                        f'{action[3]}, skip={action[4]}, timeout={action[5]})'
+                    )
+                elif len(action) >= 4:
+                    script += f'self.walk_to_point([{action[1]},{action[2]}], {action[3]})'
+                else:
+                    script += f'self.walk_to_point([{action[1]},{action[2]}])'
+            elif name in {"player_walk", "pets_walk"}:
+                script += f'self.api.{name}({action[1]}, {action[2]})'
+            elif name == "use_item":
+                script += f'self.use_item({int(action[1])}, "{action[2]}")'
+            elif name == "put_item_in_trade":
+                items = []
+                inv_map = {"equip": 0, "main": 1, "etc": 2}
+                for j in range(1, len(action), 3):
+                    inv = action[j]
+                    v = action[j + 1] if j + 1 < len(action) else ""
+                    q = action[j + 2] if j + 2 < len(action) else ""
+                    if inv and v and q:
+                        inv_code = inv_map.get(inv, inv)
+                        items.append((int(inv_code), int(v), int(q)))
+                if items:
+                    items_str = ", ".join(f"({inv}, {v}, {q})" for inv, v, q in items)
+                    script += f'self.put_items_in_trade([{items_str}])'
+            elif name == "auto_login":
+                script += (
+                    "# Save parameters and login (performs DLL injection)\n"
+                    f"\tgfless_api.save_config(int({action[1]}), int({action[2]}), "
+                    f"int({action[3]}), int({action[4]}))\n"
+                    "\tgfless_api.close_login_pipe()\n"
+                    f"\tgfless_api.login(int({action[1]}), int({action[2]}), "
+                    f"int({action[3]}), int({action[4]}), pid=self.PIDnum, force_reinject=True)"
+                )
+            elif name == "relogin":
+                script += f'gfless_api.inject_dll(pid=int({action[1]}))'
+            elif name in {"cond.on", "cond.off"}:
+                try:
+                    number = int(action[1])
+                except (TypeError, ValueError, IndexError):
+                    number = 0
+                attr = name.split(".")[-1]
+                script += f'cond.{attr} = {number}'
+            elif name == "python_code":
+                script += f'{action[1]}'
+            elif name == "delete_condition":
+                script += 'raise ValueError("Intentional Exit By User")'
+            elif name == "close_game":
+                script += 'self.close_game()'
+            elif name == "invite_members":
+                script += 'self.invite_members()'
+            elif name == "make_party":
+                script += 'self.make_party(1)'
+            elif name == "subgroup_variable":
+                var_name = action[1].strip() if len(action) > 1 else ""
+                operation = action[2] if len(action) > 2 else ""
+                if operation == "Set Value":
+                    try:
+                        numeric_value = int(action[3]) if len(action) > 3 else 0
+                    except (TypeError, ValueError):
+                        numeric_value = 0
+                    script += f'selfsubg.{var_name} = {numeric_value}'
+                elif operation == "Increase (+1)":
+                    script += f'selfsubg.{var_name} = int(selfsubg.{var_name}) + 1'
+                else:
+                    script += f'selfsubg.{var_name} = int(selfsubg.{var_name}) - 1'
+            elif len(action) >= 3:
+                if action[2] == "string":
+                    script += f'self.{name} = "{action[1]}"'
+                if action[2] == "raw":
+                    script += f'self.{name} = {action[1]}'
+        return script
 
     def review_condition(self):
         conditions_array = []
@@ -890,39 +1182,14 @@ class ConditionCreator(QDialog):
             message_box.exec_()
             return
 
-        actions_array = []
-        for row in self.action_widgets:
-            action_name = row[0].currentText()
-            new_row = [action_name]
-            if action_name == "auto_login":
-                # Collect indices from comboboxes: lang, server, channel, character
-                new_row.extend([
-                    str(row[2].currentIndex()),
-                    str(row[4].currentIndex()),
-                    str(row[6].currentIndex()),
-                    str(row[8].currentIndex() - 1),
-                ])
-            elif action_name == "walk_to_point":
-                new_row.extend([row[2].text(), row[4].text()])
-                new_row.append(row[6].text())
-                if row[7].isChecked():
-                    new_row.extend([row[9].text(), row[11].text()])
-            elif action_name == "make_party":
-                new_row.append("1")
-            else:
-                for widget in row[1:]:
-                    if widget.__class__.__name__ == "QLineEdit":
-                        new_row.append(widget.text())
-                    elif widget.__class__.__name__ == "QComboBox":
-                        value = widget.currentData()
-                        if value is None:
-                            value = widget.currentText()
-                        if not isinstance(value, str):
-                            value = str(value)
-                        new_row.append(value)
-            actions_array.append(new_row)
+        actions_array = self._collect_actions(self.action_widgets)
+        else_actions_array = []
+        if self.else_button.isChecked():
+            else_actions_array = self._collect_actions(self.else_action_widgets)
 
-        for action in actions_array:
+        all_actions = actions_array + else_actions_array
+
+        for action in all_actions:
             if action[0] in {"cond.on", "cond.off"}:
                 if len(action) < 2 or not action[1]:
                     self._show_warning(
@@ -1004,7 +1271,7 @@ class ConditionCreator(QDialog):
                     )
                     return
 
-        for action in actions_array:
+        for action in all_actions:
             if action[0] == "subgroup_variable":
                 name_text = action[1].strip() if len(action) > 1 else ""
                 if not name_text:
@@ -1043,12 +1310,13 @@ class ConditionCreator(QDialog):
                         )
                         return
 
-        script = self.construct_script(conditions_array, actions_array)
+        script = self.construct_script(conditions_array, actions_array, else_actions_array)
         condition_review = ConditionReview(self.player, script, condition_type, self.cond_modifier, self)
         condition_review.exec_()
 
-    def construct_script(self, conditions_array, actions_array):
-        need_import = any(action[0] in ("auto_login", "relogin") for action in actions_array)
+    def construct_script(self, conditions_array, actions_array, else_actions_array):
+        combined_actions = actions_array + else_actions_array
+        need_import = any(action[0] in ("auto_login", "relogin") for action in combined_actions)
         script = ""
         if need_import:
             script += "import gfless_api\n"
@@ -1153,102 +1421,10 @@ class ConditionCreator(QDialog):
                     elif user_input_type == "raw":
                         script += f'{user_input_value} in self.{argument}'
         script += ":"
-
-        for i in range(len(actions_array)):
-            script += "\n\t"
-            if actions_array[i][0] == "wait":
-                script += f'time.sleep(self.randomize_delay({actions_array[i][1]},{actions_array[i][2]}))'
-            elif actions_array[i][0] == "send_packet":
-                if actions_array[i][2] == "string":
-                    script += f'self.api.send_packet("{actions_array[i][1]}")'
-                if actions_array[i][2] == "raw":
-                    script += f'self.api.send_packet({actions_array[i][1]})'
-            elif actions_array[i][0] == "recv_packet":
-                if actions_array[i][2] == "string":
-                    script += f'self.api.recv_packet("{actions_array[i][1]}")'
-                if actions_array[i][2] == "raw":
-                    script += f'self.api.recv_packet({actions_array[i][1]})'
-            elif actions_array[i][0] == "start_bot" or actions_array[i][0] == "stop_bot" or actions_array[i][0] == "continue_bot" or actions_array[i][0] == "start_minigame_bot" or actions_array[i][0] == "stop_minigame_bot":
-                script += f'self.api.{actions_array[i][0]}()'
-            elif actions_array[i][0] == "attack":
-                script+= f'self.api.attack({actions_array[i][1]})'
-            elif actions_array[i][0] == "player_skill":
-                script+= f'self.api.player_skill({actions_array[i][1]}, {actions_array[i][2]})'
-            elif actions_array[i][0] == "load_settings":
-                script += f'self.api.load_settings({actions_array[i][1]})'
-            elif actions_array[i][0] == "walk_to_point":
-                if len(actions_array[i]) >= 6:
-                    script += (
-                        f'self.walk_to_point([{actions_array[i][1]},{actions_array[i][2]}], '
-                        f'{actions_array[i][3]}, skip={actions_array[i][4]}, timeout={actions_array[i][5]})'
-                    )
-                elif len(actions_array[i]) >= 4:
-                    script += f'self.walk_to_point([{actions_array[i][1]},{actions_array[i][2]}], {actions_array[i][3]})'
-                else:
-                    script += f'self.walk_to_point([{actions_array[i][1]},{actions_array[i][2]}])'
-            elif actions_array[i][0] == "player_walk" or actions_array[i][0] == "pets_walk":
-                script += f'self.api.{actions_array[i][0]}({actions_array[i][1]}, {actions_array[i][2]})'
-            elif actions_array[i][0] == "use_item":
-                script += f'self.use_item({int(actions_array[i][1])}, "{actions_array[i][2]}")'
-            elif actions_array[i][0] == "put_item_in_trade":
-                items = []
-                inv_map = {"equip": 0, "main": 1, "etc": 2}
-                for j in range(1, len(actions_array[i]), 3):
-                    inv = actions_array[i][j]
-                    v = actions_array[i][j+1] if j+1 < len(actions_array[i]) else ""
-                    q = actions_array[i][j+2] if j+2 < len(actions_array[i]) else ""
-                    if inv and v and q:
-                        inv_code = inv_map.get(inv, inv)
-                        items.append((int(inv_code), int(v), int(q)))
-                if items:
-                    items_str = ", ".join(f"({inv}, {v}, {q})" for inv, v, q in items)
-                    script += f'self.put_items_in_trade([{items_str}])'
-            elif actions_array[i][0] == "auto_login":
-                script += (
-                    "# Save parameters and login (performs DLL injection)\n"
-                    f"\tgfless_api.save_config(int({actions_array[i][1]}), int({actions_array[i][2]}), "
-                    f"int({actions_array[i][3]}), int({actions_array[i][4]}))\n"
-                    "\tgfless_api.close_login_pipe()\n"
-                    f"\tgfless_api.login(int({actions_array[i][1]}), int({actions_array[i][2]}), "
-                    f"int({actions_array[i][3]}), int({actions_array[i][4]}), pid=self.PIDnum, force_reinject=True)"
-                )
-            elif actions_array[i][0] == "relogin":
-                script += f'gfless_api.inject_dll(pid=int({actions_array[i][1]}))'
-            elif actions_array[i][0] == "cond.on" or actions_array[i][0] == "cond.off":
-                try:
-                    number = int(actions_array[i][1])
-                except (TypeError, ValueError):
-                    number = 0
-                attr = actions_array[i][0].split(".")[-1]
-                script += f'cond.{attr} = {number}'
-            elif actions_array[i][0] == "python_code":
-                script += f'{actions_array[i][1]}'
-            elif actions_array[i][0] == "delete_condition":
-                script += f'raise ValueError("Intentional Exit By User")'
-            elif actions_array[i][0] == "close_game":
-                script += 'self.close_game()'
-            elif actions_array[i][0] == "invite_members":
-                script += 'self.invite_members()'
-            elif actions_array[i][0] == "make_party":
-                script += 'self.make_party(1)'
-            elif actions_array[i][0] == "subgroup_variable":
-                var_name = actions_array[i][1].strip() if len(actions_array[i]) > 1 else ""
-                operation = actions_array[i][2] if len(actions_array[i]) > 2 else ""
-                if operation == "Set Value":
-                    try:
-                        numeric_value = int(actions_array[i][3]) if len(actions_array[i]) > 3 else 0
-                    except (TypeError, ValueError):
-                        numeric_value = 0
-                    script += f'selfsubg.{var_name} = {numeric_value}'
-                elif operation == "Increase (+1)":
-                    script += f'selfsubg.{var_name} = int(selfsubg.{var_name}) + 1'
-                else:
-                    script += f'selfsubg.{var_name} = int(selfsubg.{var_name}) - 1'
-            else:
-                if actions_array[i][2] == "string":
-                    script += f'self.{actions_array[i][0]} = "{actions_array[i][1]}"'
-                if actions_array[i][2] == "raw":
-                    script += f'self.{actions_array[i][0]} = {actions_array[i][1]}'
+        script = self._append_actions_to_script(script, actions_array)
+        if else_actions_array:
+            script += "\nelse:"
+            script = self._append_actions_to_script(script, else_actions_array)
 
         return script
 
@@ -1337,10 +1513,6 @@ class ConditionCreator(QDialog):
         else:
             self.condition_widgets[index][5].setVisible(False)
             self.condition_widgets[index][2].setVisible(False)
-
-    def adjust_size_periodically(self):
-        # Ensure the dialog can grow/shrink while keeping a sensible minimum height
-        self.setMinimumHeight(len(self.action_group_boxes) * 65 + len(self.condition_widgets) * 26 + 107)
 
     def closeEvent(self, event):
         """Persist the user's chosen window size before closing."""
@@ -1729,4 +1901,4 @@ class ConditionModifier(QDialog):
                 self.run_condition_button.setVisible(False)
             else:
                 self.pause_condition_button.setVisible(False)
-         
+    
