@@ -1016,6 +1016,8 @@ class GroupScriptDialog(QDialog):
                 continue
 
             player_obj.reset_attrs()
+            if hasattr(player_obj, "subgroup_member_limit"):
+                player_obj.subgroup_member_limit = 0
 
             script_dir = os.path.join(setup_path, "script")
             cond_dir = os.path.join(setup_path, "conditions")
@@ -1089,6 +1091,8 @@ class GroupScriptDialog(QDialog):
                 player_obj.attr20 = player_obj.name
                 player_obj.leadername = player_obj.name
                 player_obj.leaderID = player_obj.id
+                if hasattr(player_obj, "subgroup_member_limit"):
+                    player_obj.subgroup_member_limit = 0
                 leader_obj = player_obj
             else:
                 player_obj.attr19 = self.group_id
@@ -1100,6 +1104,10 @@ class GroupScriptDialog(QDialog):
                     player_obj.subgroup_index = subgroup_index
                 elif hasattr(player_obj, "subgroup_index"):
                     player_obj.subgroup_index = None
+                if hasattr(player_obj, "subgroup_member_limit"):
+                    player_obj.subgroup_member_limit = (
+                        self.subgroup_size if self.subgroup_size > 0 else 0
+                    )
             player_obj.script_loaded = True
             player_obj.attr13 = 0
 
@@ -1109,6 +1117,8 @@ class GroupScriptDialog(QDialog):
 
         if hasattr(leader_obj, "subgroup_index"):
             leader_obj.subgroup_index = None
+        if hasattr(leader_obj, "subgroup_member_limit"):
+            leader_obj.subgroup_member_limit = 0
 
         if self.mode == "extend":
             combined_member_names = []
@@ -1899,10 +1909,14 @@ class MyWindow(QMainWindow):
                     subgroup_index = assignments.get(member)
                     if subgroup_index is not None:
                         member.subgroup_index = subgroup_index
+                        if hasattr(member, "subgroup_member_limit"):
+                            member.subgroup_member_limit = self.group_script_subgroup_size
                         if isinstance(member.name, str):
                             name_mapping[member.name] = subgroup_index
                     elif hasattr(member, "subgroup_index"):
                         member.subgroup_index = None
+                        if hasattr(member, "subgroup_member_limit"):
+                            member.subgroup_member_limit = 0
                 if name_mapping:
                     info["subgroup_assignments"] = name_mapping
                 else:
@@ -1914,8 +1928,12 @@ class MyWindow(QMainWindow):
                 for member in member_objs:
                     if hasattr(member, "subgroup_index"):
                         member.subgroup_index = None
+                    if hasattr(member, "subgroup_member_limit"):
+                        member.subgroup_member_limit = 0
             if leader_obj is not None and hasattr(leader_obj, "subgroup_index"):
                 leader_obj.subgroup_index = None
+            if leader_obj is not None and hasattr(leader_obj, "subgroup_member_limit"):
+                leader_obj.subgroup_member_limit = 0
             group_id = info.get("group_id")
             if group_id is None:
                 continue
@@ -2113,6 +2131,8 @@ class MyWindow(QMainWindow):
         self.player_to_group[player_obj] = None
         if hasattr(player_obj, "subgroup_index"):
             player_obj.subgroup_index = None
+        if hasattr(player_obj, "subgroup_member_limit"):
+            player_obj.subgroup_member_limit = 0
 
     def _remove_group_container(self, group_id):
         group_info = self.group_tab_infos.pop(group_id, None)
@@ -2615,12 +2635,25 @@ class MyWindow(QMainWindow):
 
         if leader_obj is not None and hasattr(leader_obj, "subgroup_index"):
             leader_obj.subgroup_index = None
+        if leader_obj is not None and hasattr(leader_obj, "subgroup_member_limit"):
+            leader_obj.subgroup_member_limit = 0
+
+        effective_subgroup_size = subgroup_size_override
+        if effective_subgroup_size is None or effective_subgroup_size <= 0:
+            effective_subgroup_size = getattr(self, "group_script_subgroup_size", 0)
+
         for player_obj in member_objs:
             subgroup_index = subgroup_assignments_by_name.get(player_obj.name)
             if subgroup_index is not None:
                 player_obj.subgroup_index = subgroup_index
+                if hasattr(player_obj, "subgroup_member_limit"):
+                    player_obj.subgroup_member_limit = (
+                        effective_subgroup_size if effective_subgroup_size and effective_subgroup_size > 0 else 0
+                    )
             elif hasattr(player_obj, "subgroup_index"):
                 player_obj.subgroup_index = None
+                if hasattr(player_obj, "subgroup_member_limit"):
+                    player_obj.subgroup_member_limit = 0
 
         group_record = dict(existing) if isinstance(existing, dict) else {}
         group_record.update({"leader": leader_obj, "members": new_members})
@@ -2729,6 +2762,8 @@ class MyWindow(QMainWindow):
             player_obj.partyID = []
             if hasattr(player_obj, "subgroup_index"):
                 player_obj.subgroup_index = None
+            if hasattr(player_obj, "subgroup_member_limit"):
+                player_obj.subgroup_member_limit = 0
             if hasattr(self, "_player_script_globals"):
                 self._player_script_globals.pop(player_obj, None)
             try:
