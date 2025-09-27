@@ -1432,33 +1432,7 @@ class ConditionCreator(QDialog):
                 var_name = conditions_array[i][7].strip() if len(conditions_array[i]) > 7 else ""
                 script += f'int(selfsubg.{var_name}) {operator} int({user_input_value})'
             elif argument.startswith("attr"):
-                if user_input_type == "int":
-                    if operator in {"startswith", "endswith"}:
-                        script += (
-                            f'str(int(self.{argument})).{operator}("{user_input_value}")'
-                        )
-                    elif operator == "contains":
-                        script += (
-                            f'"{user_input_value}" in str(int(self.{argument}))'
-                        )
-                    else:
-                        script += (
-                            f'int(self.{argument}) {operator} int({user_input_value})'
-                        )
-                elif user_input_type == "raw":
-                    if operator in {"startswith", "endswith"}:
-                        script += f'self.{argument}.{operator}({user_input_value})'
-                    elif operator == "contains":
-                        script += f'{user_input_value} in self.{argument}'
-                    else:
-                        script += f'self.{argument} {operator} {user_input_value}'
-                else:
-                    if operator in {"startswith", "endswith"}:
-                        script += f'str(self.{argument}).{operator}("{user_input_value}")'
-                    elif operator == "contains":
-                        script += f'"{user_input_value}" in str(self.{argument})'
-                    else:
-                        script += f'str(self.{argument}) {operator} "{user_input_value}"'
+                script += f'str(self.{argument}) {operator} "{user_input_value}"'
             else:
                 script += f'"{user_input_value}" in self.{argument}'
         script += ":"

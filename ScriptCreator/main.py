@@ -7,6 +7,7 @@ import win32gui
 import win32con
 import threading
 import warnings
+from collections import defaultdict
 from typing import Dict, NamedTuple, Optional, Set
 from weakref import WeakKeyDictionary, proxy, ref
 # Some PyQt5/QScintilla builds emit a deprecation warning regarding
@@ -91,6 +92,56 @@ def value_to_bool(value, default: bool = False) -> bool:
         return bool(int(value))
     except (TypeError, ValueError):
         return bool(value)
+
+
+def _compute_subgroup_metadata(members, assignments=None):
+    """Return subgroup ownership and ordered positions for party members.
+
+    Members are grouped by their subgroup identifier.  Within each subgroup the
+    ordering is based on the numeric ``id`` of the member so the left-most slot
+    always belongs to the lowest PID in that subgroup.  ``assignments`` can be
+    supplied to override the ``subgroup_index`` attribute during the lookup.
+
+    The returned ordering uses a 1-based index to match the expectations of the
+    member conditions that evaluate ``subgroup_member_index``.
+    """
+
+    subgroup_map = {}
+    subgroup_order = {}
+    members_by_subgroup = defaultdict(list)
+
+    if not isinstance(assignments, dict):
+        assignments = None
+
+    for member in members:
+        subgroup_index = None
+        if assignments is not None:
+            subgroup_index = assignments.get(member.name)
+        if subgroup_index is None:
+            subgroup_index = getattr(member, "subgroup_index", None)
+
+        try:
+            subgroup_int = int(subgroup_index)
+        except (TypeError, ValueError):
+            continue
+        if subgroup_int <= 0:
+            continue
+
+        member_id = getattr(member, "id", None)
+        try:
+            member_id_int = int(member_id)
+        except (TypeError, ValueError):
+            continue
+
+        subgroup_map[member_id_int] = subgroup_int
+        members_by_subgroup[subgroup_int].append(member_id_int)
+
+    for subgroup_int, pid_list in members_by_subgroup.items():
+        pid_list.sort()
+        for position, member_id_int in enumerate(pid_list):
+            subgroup_order[member_id_int] = position + 1
+
+    return subgroup_map, subgroup_order
 
 
 class PlayerTabContext(NamedTuple):
@@ -1141,28 +1192,9 @@ class GroupScriptDialog(QDialog):
         party_names = [leader_obj.name] + [m.name for m in member_party_objs]
         party_ids = [leader_id] + member_ids
 
-        subgroup_counts = {}
-        subgroup_map = {}
-        subgroup_order = {}
-        for member in member_party_objs:
-            subgroup_index = assignments.get(member.name)
-            if subgroup_index is None:
-                subgroup_index = getattr(member, "subgroup_index", None)
-            try:
-                subgroup_int = int(subgroup_index)
-            except (TypeError, ValueError):
-                continue
-            if subgroup_int <= 0:
-                continue
-            member_id = getattr(member, "id", None)
-            try:
-                member_id_int = int(member_id)
-            except (TypeError, ValueError):
-                continue
-            position = subgroup_counts.get(subgroup_int, 0)
-            subgroup_counts[subgroup_int] = position + 1
-            subgroup_map[member_id_int] = subgroup_int
-            subgroup_order[member_id_int] = position
+        subgroup_map, subgroup_order = _compute_subgroup_metadata(
+            member_party_objs, assignments
+        )
 
         shared_subgroups = dict(subgroup_map)
         shared_order = dict(subgroup_order)
@@ -3162,26 +3194,7 @@ class MyWindow(QMainWindow):
             party_names = [leader_obj.name] + [m.name for m in member_objs]
             party_ids = [leader_obj.id] + [m.id for m in member_objs]
 
-            subgroup_counts = {}
-            subgroup_map = {}
-            subgroup_order = {}
-            for member in member_objs:
-                subgroup_index = getattr(member, "subgroup_index", None)
-                try:
-                    subgroup_int = int(subgroup_index)
-                except (TypeError, ValueError):
-                    continue
-                if subgroup_int <= 0:
-                    continue
-                member_id = getattr(member, "id", None)
-                try:
-                    member_id_int = int(member_id)
-                except (TypeError, ValueError):
-                    continue
-                position = subgroup_counts.get(subgroup_int, 0)
-                subgroup_counts[subgroup_int] = position + 1
-                subgroup_map[member_id_int] = subgroup_int
-                subgroup_order[member_id_int] = position
+            subgroup_map, subgroup_order = _compute_subgroup_metadata(member_objs)
 
             shared_subgroups = dict(subgroup_map)
             shared_order = dict(subgroup_order)
