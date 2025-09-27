@@ -1179,6 +1179,50 @@ class Player:
 
         return member_ids, member_names, position, computed_subgroup
 
+    @property
+    def subgroup_member_index(self):
+        """Return the 1-based position of this player inside its subgroup.
+
+        The index is calculated using the subgroup assignment and member limit
+        metadata gathered from the client. The overall group leader reserves
+        index ``0`` so scripts can distinguish leadership roles from subgroup
+        members. When the information is incomplete, ``0`` is returned.
+        """
+
+        try:
+            player_id = int(getattr(self, "id", 0))
+        except (TypeError, ValueError):
+            return 0
+
+        try:
+            leader_id = int(getattr(self, "leaderID", 0))
+        except (TypeError, ValueError):
+            leader_id = 0
+
+        if leader_id and player_id == leader_id:
+            return 0
+
+        try:
+            expected_size = int(getattr(self, "subgroup_member_limit", 0))
+        except (TypeError, ValueError):
+            expected_size = 0
+
+        subgroup_index = getattr(self, "subgroup_index", None)
+        try:
+            subgroup_hint = int(subgroup_index) if subgroup_index is not None else None
+        except (TypeError, ValueError):
+            subgroup_hint = None
+
+        membership = self._get_subgroup_membership_info(expected_size, subgroup_hint)
+        if membership is None:
+            return 0
+
+        _member_ids, _member_names, position, _effective_subgroup = membership
+        if position is None:
+            return 0
+
+        return position + 1
+
     def make_party(self, condition_index=0):
         if condition_index in (0, 2):
             state = getattr(self, "_make_party_condition_state", 0)

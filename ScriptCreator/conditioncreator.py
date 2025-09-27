@@ -396,11 +396,17 @@ class ConditionCreator(QDialog):
             "is_resting",
             "time.cond",
             "make_party",
+            ("Index of the subgroup member", "subgroup_member_index"),
             "subgroup_variable",
         ]
+        for entry in elements_list:
+            if isinstance(entry, tuple):
+                text, data = entry
+                combo_condition.addItem(text, data)
+            else:
+                combo_condition.addItem(entry)
         for i in range(1, 101):
-            elements_list.append(f"attr{i}")
-        combo_condition.addItems(elements_list)
+            combo_condition.addItem(f"attr{i}")
         combo_condition.currentIndexChanged.connect(self.update_condition_widgets)
         combo_condition.setProperty("index", len(self.condition_widgets))
 
@@ -864,7 +870,12 @@ class ConditionCreator(QDialog):
                 if widget.__class__.__name__ == "QComboBox":
                     if widget.property("skip_export"):
                         continue
-                    new_row.append(widget.currentText())
+                    value = widget.currentData()
+                    if value is None:
+                        value = widget.currentText()
+                    if not isinstance(value, str):
+                        value = str(value)
+                    new_row.append(value)
             conditions_array.append(new_row)
 
         condition_type = self.validate_script(conditions_array)
@@ -903,7 +914,12 @@ class ConditionCreator(QDialog):
                     if widget.__class__.__name__ == "QLineEdit":
                         new_row.append(widget.text())
                     elif widget.__class__.__name__ == "QComboBox":
-                        new_row.append(widget.currentText())
+                        value = widget.currentData()
+                        if value is None:
+                            value = widget.currentText()
+                        if not isinstance(value, str):
+                            value = str(value)
+                        new_row.append(value)
             actions_array.append(new_row)
 
         for action in actions_array:
@@ -967,6 +983,24 @@ class ConditionCreator(QDialog):
                     self._show_warning(
                         "Invalid subgroup value",
                         "Subgroup comparisons only accept integers.",
+                    )
+                    return
+
+        for condition in conditions_array:
+            if len(condition) >= 2 and condition[1] == "subgroup_member_index":
+                value_text = condition[4].strip() if len(condition) > 4 else ""
+                if not value_text:
+                    self._show_warning(
+                        "Missing subgroup index",
+                        "Please provide an integer value for the subgroup member index.",
+                    )
+                    return
+                try:
+                    int(value_text)
+                except ValueError:
+                    self._show_warning(
+                        "Invalid subgroup index",
+                        "Subgroup member index comparisons only accept integers.",
                     )
                     return
 
@@ -1236,7 +1270,9 @@ class ConditionCreator(QDialog):
 
     def update_condition_widgets(self, ):
         cur_sender = self.sender()
-        selected_item = cur_sender.currentText()
+        selected_item = cur_sender.currentData()
+        if selected_item is None:
+            selected_item = cur_sender.currentText()
         index = cur_sender.property("index")
         operator_combo = self.condition_widgets[index][3]
         value_type_combo = self.condition_widgets[index][6]
@@ -1278,6 +1314,12 @@ class ConditionCreator(QDialog):
             selected_state = state_selector.currentData()
             if selected_state is not None:
                 value_input.setText(str(selected_state))
+        elif selected_item == "subgroup_member_index":
+            operator_combo.addItems(["==", ">=", "<=", ">", "<"])
+            value_type_combo.addItem("int")
+            value_type_combo.setCurrentIndex(0)
+            value_type_combo.setEnabled(False)
+            value_input.setPlaceholderText("member index")
         elif selected_item == "subgroup_variable":
             operator_combo.addItems(["==", "!=", ">", "<", ">=", "<="])
             value_type_combo.addItem("int")
