@@ -85,6 +85,38 @@ SUFFIXES = [
 
 
 
+def _coerce_pid_value(pid_value):
+    if isinstance(pid_value, int):
+        return pid_value
+    if isinstance(pid_value, str):
+        pid_value = pid_value.strip()
+        if not pid_value:
+            return None
+        try:
+            return int(pid_value, 10)
+        except ValueError:
+            digits = re.findall(r"\d+", pid_value)
+            if digits:
+                try:
+                    return int(digits[0], 10)
+                except ValueError:
+                    return None
+    return None
+
+
+def _resolve_pid_value(pid_value, name=None):
+    pid_int = _coerce_pid_value(pid_value)
+    if pid_int is not None:
+        return pid_int
+    if isinstance(name, str) and name:
+        try:
+            pid_lookup = returnCorrectPID(name)
+        except Exception:
+            pid_lookup = None
+        return _coerce_pid_value(pid_lookup)
+    return None
+
+
 # proxy object exposing group-scoped variables via attribute access
 class GroupNamespace:
     """Allow scripts to access group variables as attributes."""
@@ -371,8 +403,10 @@ class Player:
         self.leaderID = 0
         self.partyname = []
         self.partyID = []
+        self.partyPID = []
         self.party_subgroups = {}
         self.party_subgroup_order = {}
+        self.party_subgroup_members = {}
         self.subgroup_index = None
         self.subgroup_member_limit = 0
 
@@ -1072,32 +1106,57 @@ class Player:
         if expected <= 0:
             return None
 
-        party_ids = getattr(self, "partyID", [])
+        party_pids = getattr(self, "partyPID", [])
         party_names = getattr(self, "partyname", [])
-        if not isinstance(party_ids, list) or len(party_ids) <= 1:
-            return None
+        party_ids = getattr(self, "partyID", [])
+        if not isinstance(party_pids, list):
+            party_pids = []
         if not isinstance(party_names, list):
             party_names = []
+        if not isinstance(party_ids, list):
+            party_ids = []
+
+        if len(party_pids) <= 1 and len(party_names) > 1:
+            resolved = []
+            for name in party_names:
+                resolved.append(_resolve_pid_value(None, name))
+            party_pids = resolved
+            self.partyPID = list(party_pids)
+
+        if len(party_pids) <= 1:
+            return None
+
+        player_pid = _resolve_pid_value(getattr(self, "PIDnum", None), getattr(self, "name", None))
+        if player_pid is None:
+            return None
 
         members = []
-        for idx in range(1, len(party_ids)):
-            pid = party_ids[idx]
-            try:
-                pid_int = int(pid)
-            except (TypeError, ValueError):
-                continue
+        for idx in range(1, len(party_pids)):
             name = party_names[idx] if idx < len(party_names) else None
+            pid_int = _coerce_pid_value(party_pids[idx])
+            if pid_int is None and isinstance(name, str) and name:
+                pid_int = _resolve_pid_value(party_pids[idx], name)
+                if pid_int is not None:
+                    party_pids[idx] = pid_int
+            if pid_int is None:
+                continue
+            member_id_raw = party_ids[idx] if idx < len(party_ids) else None
+            try:
+                member_id = int(member_id_raw)
+            except (TypeError, ValueError):
+                member_id = None
             if not isinstance(name, str) or not name:
                 name = f"Member {pid_int}"
-            members.append((pid_int, name))
+            members.append((pid_int, name, member_id))
+
+        self.partyPID = list(party_pids)
 
         if not members:
             return None
 
-        try:
-            player_id = int(self.id)
-        except (TypeError, ValueError):
-            return None
+        members.sort(key=lambda item: item[0])
+        name_by_pid = {pid: name for pid, name, _member_id in members}
+        id_by_pid = {pid: member_id for pid, _name, member_id in members if member_id is not None}
 
         try:
             target_subgroup = int(subgroup_index)
@@ -1107,77 +1166,91 @@ class Player:
             target_subgroup = None
 
         subgroup_map = {}
+        raw_map = getattr(self, "party_subgroups", None)
+        if isinstance(raw_map, dict):
+            for key, subgroup_value in raw_map.items():
+                pid_key = _coerce_pid_value(key)
+                try:
+                    subgroup_int = int(subgroup_value)
+                except (TypeError, ValueError):
+                    continue
+                if pid_key is None or subgroup_int <= 0:
+                    continue
+                subgroup_map[pid_key] = subgroup_int
+
         order_map = {}
-        if target_subgroup is not None:
-            raw_map = getattr(self, "party_subgroups", None)
-            if isinstance(raw_map, dict):
-                for key, subgroup_value in raw_map.items():
-                    try:
-                        pid_int = int(key)
-                        subgroup_int = int(subgroup_value)
-                    except (TypeError, ValueError):
-                        continue
-                    if subgroup_int > 0:
-                        subgroup_map[pid_int] = subgroup_int
-            raw_order = getattr(self, "party_subgroup_order", None)
-            if isinstance(raw_order, dict):
-                for key, order_value in raw_order.items():
-                    try:
-                        pid_int = int(key)
-                        order_int = int(order_value)
-                    except (TypeError, ValueError):
-                        continue
-                    if order_int >= 0:
-                        order_map[pid_int] = order_int
+        raw_order = getattr(self, "party_subgroup_order", None)
+        if isinstance(raw_order, dict):
+            for key, order_value in raw_order.items():
+                pid_key = _coerce_pid_value(key)
+                try:
+                    order_int = int(order_value)
+                except (TypeError, ValueError):
+                    continue
+                if pid_key is None or order_int < 0:
+                    continue
+                order_map[pid_key] = order_int
 
         if target_subgroup is not None and subgroup_map:
+            subgroup_members_data = getattr(self, "party_subgroup_members", {})
+            roster_entries = None
+            if isinstance(subgroup_members_data, dict):
+                raw_roster = subgroup_members_data.get(target_subgroup)
+                if isinstance(raw_roster, (list, tuple)):
+                    roster_entries = raw_roster
             filtered_members = []
             contains_player = False
-            for enum_index, (pid, name) in enumerate(members):
-                if subgroup_map.get(pid) == target_subgroup:
-                    order = order_map.get(pid)
-                    filtered_members.append((pid, name, order, enum_index))
-                    if pid == player_id:
-                        contains_player = True
-            if (
-                contains_player
-                and len(filtered_members) == expected
-            ):
+            iterable = roster_entries if roster_entries else [
+                (pid, name_by_pid.get(pid))
+                for pid in sorted(pid for pid, group in subgroup_map.items() if group == target_subgroup)
+            ]
+            for pid_value, name_value in iterable:
+                pid_int = _coerce_pid_value(pid_value)
+                if pid_int is None:
+                    continue
+                if subgroup_map.get(pid_int) != target_subgroup:
+                    continue
+                name = name_value if isinstance(name_value, str) and name_value else name_by_pid.get(pid_int, f"Member {pid_int}")
+                order = order_map.get(pid_int)
+                member_id = id_by_pid.get(pid_int)
+                filtered_members.append((pid_int, name, order, member_id))
+                if pid_int == player_pid:
+                    contains_player = True
+            if contains_player and len(filtered_members) == expected:
                 filtered_members.sort(
-                    key=lambda item: (
-                        item[2] is None,
-                        item[2] if item[2] is not None else item[3],
-                        item[0],
-                    )
+                    key=lambda item: (item[2] if item[2] is not None else item[0], item[0])
                 )
-                member_ids = [pid for pid, _name, _order, _idx in filtered_members]
-                member_names = [name for _pid, name, _order, _idx in filtered_members]
+                member_pids = [pid for pid, _name, _order, _member_id in filtered_members]
+                member_names = [name for _pid, name, _order, _member_id in filtered_members]
+                member_ids = [member_id for _pid, _name, _order, member_id in filtered_members]
                 try:
-                    position = next(
-                        idx for idx, pid in enumerate(member_ids) if pid == player_id
-                    )
-                except StopIteration:
+                    position = member_pids.index(player_pid)
+                except ValueError:
                     position = None
                 if position is not None:
-                    return member_ids, member_names, position, target_subgroup
+                    return member_pids, member_names, position, target_subgroup, member_ids
 
-        try:
-            global_index = next(i for i, info in enumerate(members) if info[0] == player_id)
-        except StopIteration:
+        position = None
+        for idx, (pid, _name, _member_id) in enumerate(members):
+            if pid == player_pid:
+                position = idx
+                break
+        if position is None:
             return None
 
-        computed_subgroup = (global_index // expected) + 1
+        computed_subgroup = (position // expected) + 1
         start_index = (computed_subgroup - 1) * expected
         end_index = start_index + expected
         if end_index > len(members):
             return None
 
         subgroup_members = members[start_index:end_index]
-        member_ids = [pid for pid, _ in subgroup_members]
-        member_names = [name for _, name in subgroup_members]
-        position = global_index - start_index
+        member_pids = [pid for pid, _name, _member_id in subgroup_members]
+        member_names = [name for _pid, name, _member_id in subgroup_members]
+        member_ids = [member_id for _pid, _name, member_id in subgroup_members]
+        offset = position - start_index
 
-        return member_ids, member_names, position, computed_subgroup
+        return member_pids, member_names, offset, computed_subgroup, member_ids
 
     @property
     def subgroup_member_index(self):
@@ -1217,7 +1290,7 @@ class Player:
         if membership is None:
             return 0
 
-        _member_ids, _member_names, position, _effective_subgroup = membership
+        _member_pids, _member_names, position, _effective_subgroup, _member_ids = membership
         if position is None:
             return 0
 
@@ -1260,9 +1333,20 @@ class Player:
             print(f"[MEMBER] {self.name} cannot determine subgroup composition for party creation.")
             return self._record_make_party_result(False)
 
-        member_ids, member_names, position, effective_subgroup = membership
+        member_pids, member_names, position, effective_subgroup, member_ids = membership
         if len(member_ids) != expected_size:
             print(f"[MEMBER] {self.name} cannot create party because subgroup members are incomplete.")
+            return self._record_make_party_result(False)
+        missing_slots = [
+            member_names[idx] if idx < len(member_names) else f"Member #{idx + 1}"
+            for idx, value in enumerate(member_ids)
+            if value is None
+        ]
+        if missing_slots:
+            print(
+                f"[MEMBER] {self.name} cannot create party because some subgroup member IDs are unknown:"
+                f" {', '.join(missing_slots)}"
+            )
             return self._record_make_party_result(False)
 
         # reset state before attempting to coordinate party creation
@@ -2255,10 +2339,14 @@ class Player:
             setattr(self, f'attr{i}', 0)
         self.leadername = ""
         self.leaderID = 0
+        self.partyname = []
+        self.partyID = []
+        self.partyPID = []
         self.subgroup_index = None
         self.subgroup_member_limit = 0
         self.party_subgroups = {}
         self.party_subgroup_order = {}
+        self.party_subgroup_members = {}
 
     def reset_group_runtime(self):
         """Stop scripts, cancel condition tasks and clear shared state."""

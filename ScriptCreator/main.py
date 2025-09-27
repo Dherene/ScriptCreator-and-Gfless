@@ -54,7 +54,7 @@ from PyQt5.Qsci import QsciScintilla
 from license_manager import prompt_for_license
 
 from player import Player, PeriodicCondition
-from getports import returnAllPorts
+from getports import returnAllPorts, returnCorrectPID
 from funcs import randomize_time
 from conditioncreator import ConditionModifier
 from editor import Editor
@@ -94,13 +94,53 @@ def value_to_bool(value, default: bool = False) -> bool:
         return bool(value)
 
 
+def _coerce_pid_value(pid_value):
+    """Return an integer PID when possible."""
+
+    if isinstance(pid_value, int):
+        return pid_value
+    if isinstance(pid_value, str):
+        pid_value = pid_value.strip()
+        if not pid_value:
+            return None
+        try:
+            return int(pid_value, 10)
+        except ValueError:
+            digits = re.findall(r"\d+", pid_value)
+            if digits:
+                try:
+                    return int(digits[0], 10)
+                except ValueError:
+                    return None
+    return None
+
+
+def _resolve_player_pid(player_obj):
+    """Look up the PID associated with ``player_obj``."""
+
+    if player_obj is None:
+        return None
+    pid_value = _coerce_pid_value(getattr(player_obj, "PIDnum", None))
+    if pid_value is not None:
+        return pid_value
+    name = getattr(player_obj, "name", None)
+    if isinstance(name, str) and name:
+        try:
+            pid_lookup = returnCorrectPID(name)
+        except Exception:
+            pid_lookup = None
+        return _coerce_pid_value(pid_lookup)
+    return None
+
+
 def _compute_subgroup_metadata(members, assignments=None):
     """Return subgroup ownership and ordered positions for party members.
 
     Members are grouped by their subgroup identifier.  Within each subgroup the
-    ordering is based on the numeric ``id`` of the member so the left-most slot
-    always belongs to the lowest PID in that subgroup.  ``assignments`` can be
-    supplied to override the ``subgroup_index`` attribute during the lookup.
+    ordering is based on the numeric PID of the member so the left-most slot
+    always belongs to the lowest running client PID in that subgroup.
+    ``assignments`` can be supplied to override the ``subgroup_index``
+    attribute during the lookup.
 
     The returned ordering uses a 1-based index to match the expectations of the
     member conditions that evaluate ``subgroup_member_index``.
@@ -108,7 +148,7 @@ def _compute_subgroup_metadata(members, assignments=None):
 
     subgroup_map = {}
     subgroup_order = {}
-    members_by_subgroup = defaultdict(list)
+    subgroup_members = defaultdict(list)
 
     if not isinstance(assignments, dict):
         assignments = None
@@ -127,21 +167,27 @@ def _compute_subgroup_metadata(members, assignments=None):
         if subgroup_int <= 0:
             continue
 
-        member_id = getattr(member, "id", None)
-        try:
-            member_id_int = int(member_id)
-        except (TypeError, ValueError):
+        pid_int = _resolve_player_pid(member)
+        if pid_int is None:
             continue
 
-        subgroup_map[member_id_int] = subgroup_int
-        members_by_subgroup[subgroup_int].append(member_id_int)
+        name = getattr(member, "name", None)
+        if not isinstance(name, str) or not name:
+            name = f"Member {pid_int}"
 
-    for subgroup_int, pid_list in members_by_subgroup.items():
-        pid_list.sort()
-        for position, member_id_int in enumerate(pid_list):
-            subgroup_order[member_id_int] = position + 1
+        subgroup_map[pid_int] = subgroup_int
+        subgroup_members[subgroup_int].append((pid_int, name))
 
-    return subgroup_map, subgroup_order
+    for subgroup_int, entries in subgroup_members.items():
+        entries.sort(key=lambda item: item[0])
+        for position, (pid_int, _name) in enumerate(entries, start=1):
+            subgroup_order[pid_int] = position
+
+    return (
+        subgroup_map,
+        subgroup_order,
+        {key: list(value) for key, value in subgroup_members.items()},
+    )
 
 
 class PlayerTabContext(NamedTuple):
@@ -852,22 +898,7 @@ class GroupScriptDialog(QDialog):
         self.members_combo.updateText()
 
     def _coerce_pid_to_int(self, pid_value):
-        if isinstance(pid_value, int):
-            return pid_value
-        if isinstance(pid_value, str):
-            pid_value = pid_value.strip()
-            if not pid_value:
-                return None
-            try:
-                return int(pid_value, 10)
-            except ValueError:
-                digits = re.findall(r"\d+", pid_value)
-                if digits:
-                    try:
-                        return int(digits[0], 10)
-                    except ValueError:
-                        return None
-        return None
+        return _coerce_pid_value(pid_value)
 
     def _member_sort_key(self, player_obj):
         if player_obj is None:
@@ -1192,17 +1223,24 @@ class GroupScriptDialog(QDialog):
         party_names = [leader_obj.name] + [m.name for m in member_party_objs]
         party_ids = [leader_id] + member_ids
 
-        subgroup_map, subgroup_order = _compute_subgroup_metadata(
+        subgroup_map, subgroup_order, subgroup_members = _compute_subgroup_metadata(
             member_party_objs, assignments
         )
 
+        leader_pid = _resolve_player_pid(leader_obj)
+        member_pids = [_resolve_player_pid(m) for m in member_party_objs]
+        party_pids = [leader_pid] + member_pids
+
         shared_subgroups = dict(subgroup_map)
         shared_order = dict(subgroup_order)
+        shared_members = {key: list(value) for key, value in subgroup_members.items()}
         for participant in [leader_obj] + member_party_objs:
             participant.partyname = party_names
             participant.partyID = party_ids
+            participant.partyPID = list(party_pids)
             participant.party_subgroups = dict(shared_subgroups)
             participant.party_subgroup_order = dict(shared_order)
+            participant.party_subgroup_members = dict(shared_members)
         leader_obj.leaderID = leader_id
         for m in member_party_objs:
             m.leaderID = leader_id
@@ -1894,22 +1932,7 @@ class MyWindow(QMainWindow):
             self._set_tab_color_for_player(self.players[index][0], color)
 
     def _coerce_pid_to_int(self, pid_value):
-        if isinstance(pid_value, int):
-            return pid_value
-        if isinstance(pid_value, str):
-            pid_value = pid_value.strip()
-            if not pid_value:
-                return None
-            try:
-                return int(pid_value, 10)
-            except ValueError:
-                digits = re.findall(r"\d+", pid_value)
-                if digits:
-                    try:
-                        return int(digits[0], 10)
-                    except ValueError:
-                        return None
-        return None
+        return _coerce_pid_value(pid_value)
 
     def _player_group_sort_key(self, player_obj):
         if player_obj is None:
@@ -3193,16 +3216,24 @@ class MyWindow(QMainWindow):
             member_objs = [p for p in players if p is not leader_obj]
             party_names = [leader_obj.name] + [m.name for m in member_objs]
             party_ids = [leader_obj.id] + [m.id for m in member_objs]
+            leader_pid = _resolve_player_pid(leader_obj)
+            member_pids = [_resolve_player_pid(m) for m in member_objs]
+            party_pids = [leader_pid] + member_pids
 
-            subgroup_map, subgroup_order = _compute_subgroup_metadata(member_objs)
+            subgroup_map, subgroup_order, subgroup_members = _compute_subgroup_metadata(
+                member_objs
+            )
 
             shared_subgroups = dict(subgroup_map)
             shared_order = dict(subgroup_order)
+            shared_members = {key: list(value) for key, value in subgroup_members.items()}
             for participant in [leader_obj] + member_objs:
                 participant.partyname = party_names
                 participant.partyID = party_ids
+                participant.partyPID = list(party_pids)
                 participant.party_subgroups = dict(shared_subgroups)
                 participant.party_subgroup_order = dict(shared_order)
+                participant.party_subgroup_members = dict(shared_members)
 
             leader_obj.attr51 = [m.name for m in member_objs]
             leader_obj.leaderID = leader_obj.id

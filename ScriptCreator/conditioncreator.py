@@ -1388,7 +1388,7 @@ class ConditionCreator(QDialog):
                     if user_input_type == "string":
                         script += f'parts[int({split_index})] {operator} "{user_input_value}"'
                     elif user_input_type == "int":
-                        script += f'int(parts[int({split_index})]) {operator} int({user_input_value})'
+                        script += f'int(parts[int({split_index})]) {operator} {user_input_value}'
                     elif user_input_type == "raw":
                         script += f'parts[int({split_index})] {operator} {user_input_value}'
                 if operator == "contains":
@@ -1404,7 +1404,7 @@ class ConditionCreator(QDialog):
                 if operator == "regex":
                     script += f're.search({user_input_value}, parts[int({split_index})])'
             elif argument == "pos_x" or argument == "pos_y" or argument == "level" or argument == "champion_level" or argument == "hp_percent" or argument == "mp_percent":
-                script += f'int(self.{argument}) {operator} int({user_input_value})'
+                script += f'int(self.{argument}) {operator} {user_input_value}'
             elif argument == "id" or argument == "name" or argument == "map_id" or argument == "is_resting":
                 if operator == "equals":
                     script += f'self.{argument} == "{user_input_value}"'
@@ -1418,7 +1418,7 @@ class ConditionCreator(QDialog):
                 else:
                     left_expr = "float(time.cond)"
                 if user_input_type == "int":
-                    right_expr = f"int({user_input_value})"
+                    right_expr = f"{user_input_value}"
                 elif user_input_type == "raw":
                     right_expr = user_input_value
                 else:
@@ -1427,10 +1427,10 @@ class ConditionCreator(QDialog):
             elif argument == "make_party":
                 script += f'int(self.make_party_state) == {user_input_value}'
             elif argument == "subgroup_member_index":
-                script += f'int(self.subgroup_member_index) {operator} int({user_input_value})'
+                script += f'int(self.subgroup_member_index) {operator} {user_input_value}'
             elif argument == "subgroup_variable":
                 var_name = conditions_array[i][7].strip() if len(conditions_array[i]) > 7 else ""
-                script += f'int(selfsubg.{var_name}) {operator} int({user_input_value})'
+                script += f'int(selfsubg.{var_name}) {operator} {user_input_value}'
             elif argument.startswith("attr"):
                 script += f'str(self.{argument}) {operator} "{user_input_value}"'
             else:
