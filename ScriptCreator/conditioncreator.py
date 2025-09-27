@@ -395,6 +395,7 @@ class ConditionCreator(QDialog):
             "mp_percent",
             "is_resting",
             "time.cond",
+            "make_party",
             "subgroup_variable",
         ]
         for i in range(1, 101):
@@ -423,6 +424,22 @@ class ConditionCreator(QDialog):
         text_edit_expression = QLineEdit()
         text_edit_expression.setPlaceholderText("value")
         text_edit_expression.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+        make_party_state_combo = QComboBox()
+        make_party_state_combo.addItem("incomplete", 0)
+        make_party_state_combo.addItem("complete", 2)
+        make_party_state_combo.setVisible(False)
+        make_party_state_combo.setProperty("skip_export", True)
+
+        def _sync_make_party_state(_index=None, *, combo=make_party_state_combo, editor=text_edit_expression):
+            data = combo.currentData()
+            if data is None:
+                editor.clear()
+            else:
+                editor.setText(str(data))
+
+        make_party_state_combo.currentIndexChanged.connect(_sync_make_party_state)
+        _sync_make_party_state()
         subgroup_name_edit = QLineEdit()
         subgroup_name_edit.setPlaceholderText("variable name")
         subgroup_name_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -437,6 +454,7 @@ class ConditionCreator(QDialog):
             delimeter_combo,
             var_type,
             subgroup_name_edit,
+            make_party_state_combo,
         ])
         self.condition_group_box = condition_group_box
 
@@ -451,6 +469,7 @@ class ConditionCreator(QDialog):
             condition_layout.addWidget(row_widgets[2], i, 2)
             condition_layout.addWidget(row_widgets[3], i, 3)
             condition_layout.addWidget(row_widgets[4], i, 4)
+            condition_layout.addWidget(row_widgets[8], i, 4)
             condition_layout.addWidget(row_widgets[6], i, 5)
             condition_layout.addWidget(row_widgets[5], i, 6)
             condition_layout.addWidget(row_widgets[7], i, 7)
@@ -494,7 +513,7 @@ class ConditionCreator(QDialog):
             "attack", "player_skill", "player_walk", "pets_walk",
             "start_minigame_bot", "stop_minigame_bot", "use_item", "put_item_in_trade",
             "auto_login", "relogin", "python_code", "delete_condition", "close_game",
-            "invite_members", "subgroup_variable"
+            "invite_members", "make_party", "subgroup_variable"
         ]
         for i in range(1, 101):
             elements_list.append(f"attr{i}")
@@ -754,6 +773,8 @@ class ConditionCreator(QDialog):
 
             self.action_widgets[index].append(new_equals_label)
             self.action_widgets[index].append(new_python_code)
+        elif condition == "make_party":
+            pass
         elif condition == "subgroup_variable":
             name_label = QLabel("Name:")
             name_edit = QLineEdit()
@@ -837,11 +858,13 @@ class ConditionCreator(QDialog):
 
         for row in self.condition_widgets:
             new_row = []
-            for i in range(len(row)):
-                if row[i].__class__.__name__ == "QLineEdit":
-                    new_row.append(row[i].text())
-                if row[i].__class__.__name__ == "QComboBox":
-                    new_row.append(row[i].currentText())
+            for widget in row:
+                if widget.__class__.__name__ == "QLineEdit":
+                    new_row.append(widget.text())
+                if widget.__class__.__name__ == "QComboBox":
+                    if widget.property("skip_export"):
+                        continue
+                    new_row.append(widget.currentText())
             conditions_array.append(new_row)
 
         condition_type = self.validate_script(conditions_array)
@@ -873,6 +896,8 @@ class ConditionCreator(QDialog):
                 new_row.append(row[6].text())
                 if row[7].isChecked():
                     new_row.extend([row[9].text(), row[11].text()])
+            elif action_name == "make_party":
+                new_row.append("1")
             else:
                 for widget in row[1:]:
                     if widget.__class__.__name__ == "QLineEdit":
@@ -887,6 +912,30 @@ class ConditionCreator(QDialog):
                     self._show_warning(
                         "Missing condition number",
                         "Please provide the sequential list number for cond.on / cond.off.\n",
+                    )
+                    return
+
+        for condition in conditions_array:
+            if len(condition) >= 2 and condition[1] == "make_party":
+                value_text = condition[4].strip() if len(condition) > 4 else ""
+                if not value_text:
+                    self._show_warning(
+                        "Missing make_party state",
+                        "Please choose whether to check for state 0 or 2.",
+                    )
+                    return
+                try:
+                    state_value = int(value_text)
+                except ValueError:
+                    self._show_warning(
+                        "Invalid make_party state",
+                        "Make party conditions only accept the values 0 or 2.",
+                    )
+                    return
+                if state_value not in (0, 2):
+                    self._show_warning(
+                        "Unsupported make_party state",
+                        "Make party conditions only support state 0 (waiting) or 2 (completed).",
                     )
                     return
 
@@ -1036,6 +1085,13 @@ class ConditionCreator(QDialog):
                     else:
                         comparison_value = user_input_value
                     script += f'{left_expr} {operator} {comparison_value}'
+            elif argument == "make_party":
+                try:
+                    target_state = int(user_input_value)
+                except (TypeError, ValueError):
+                    target_state = 0
+                target_state = 2 if target_state == 2 else 0
+                script += f'self.make_party({target_state})'
             elif argument == "subgroup_variable":
                 var_name = conditions_array[i][7].strip() if len(conditions_array[i]) > 7 else ""
                 try:
@@ -1139,6 +1195,8 @@ class ConditionCreator(QDialog):
                 script += 'self.close_game()'
             elif actions_array[i][0] == "invite_members":
                 script += 'self.invite_members()'
+            elif actions_array[i][0] == "make_party":
+                script += 'self.make_party(1)'
             elif actions_array[i][0] == "subgroup_variable":
                 var_name = actions_array[i][1].strip() if len(actions_array[i]) > 1 else ""
                 operation = actions_array[i][2] if len(actions_array[i]) > 2 else ""
@@ -1186,9 +1244,19 @@ class ConditionCreator(QDialog):
         subgroup_name_edit = self.condition_widgets[index][7]
         subgroup_name_edit.setVisible(False)
 
+        state_selector = self.condition_widgets[index][8]
+        state_selector.setVisible(False)
+
         operator_combo.clear()
+        operator_combo.setEnabled(True)
+        operator_combo.setVisible(True)
         value_type_combo.clear()
         value_type_combo.setEnabled(True)
+        value_type_combo.setVisible(True)
+        value_input = self.condition_widgets[index][4]
+        value_input.setEnabled(True)
+        value_input.setVisible(True)
+        value_input.setPlaceholderText("value")
         if selected_item == "recv_packet" or selected_item == "send_packet":
             operator_combo.addItems(["startswith", "contains", "endswith", "equals"])
             value_type_combo.addItems(["string", "int", "raw"])
@@ -1197,6 +1265,19 @@ class ConditionCreator(QDialog):
             operator_combo.addItems(["==", "!=", ">", "<", ">=", "<="])
             value_type_combo.addItems(["int", "raw"])
             value_type_combo.setCurrentIndex(0)
+        elif selected_item == "make_party":
+            operator_combo.setVisible(False)
+            value_type_combo.setVisible(False)
+            value_input.setVisible(False)
+            state_selector.setVisible(True)
+            current_value = value_input.text().strip()
+            if current_value == "2":
+                state_selector.setCurrentIndex(1)
+            else:
+                state_selector.setCurrentIndex(0)
+            selected_state = state_selector.currentData()
+            if selected_state is not None:
+                value_input.setText(str(selected_state))
         elif selected_item == "subgroup_variable":
             operator_combo.addItems(["==", "!=", ">", "<", ">=", "<="])
             value_type_combo.addItem("int")

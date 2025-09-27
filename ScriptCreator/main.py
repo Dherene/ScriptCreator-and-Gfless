@@ -1141,9 +1141,36 @@ class GroupScriptDialog(QDialog):
         party_names = [leader_obj.name] + [m.name for m in member_party_objs]
         party_ids = [leader_id] + member_ids
 
+        subgroup_counts = {}
+        subgroup_map = {}
+        subgroup_order = {}
+        for member in member_party_objs:
+            subgroup_index = assignments.get(member.name)
+            if subgroup_index is None:
+                subgroup_index = getattr(member, "subgroup_index", None)
+            try:
+                subgroup_int = int(subgroup_index)
+            except (TypeError, ValueError):
+                continue
+            if subgroup_int <= 0:
+                continue
+            member_id = getattr(member, "id", None)
+            try:
+                member_id_int = int(member_id)
+            except (TypeError, ValueError):
+                continue
+            position = subgroup_counts.get(subgroup_int, 0)
+            subgroup_counts[subgroup_int] = position + 1
+            subgroup_map[member_id_int] = subgroup_int
+            subgroup_order[member_id_int] = position
+
+        shared_subgroups = dict(subgroup_map)
+        shared_order = dict(subgroup_order)
         for participant in [leader_obj] + member_party_objs:
             participant.partyname = party_names
             participant.partyID = party_ids
+            participant.party_subgroups = dict(shared_subgroups)
+            participant.party_subgroup_order = dict(shared_order)
         leader_obj.leaderID = leader_id
         for m in member_party_objs:
             m.leaderID = leader_id
@@ -3135,9 +3162,34 @@ class MyWindow(QMainWindow):
             party_names = [leader_obj.name] + [m.name for m in member_objs]
             party_ids = [leader_obj.id] + [m.id for m in member_objs]
 
+            subgroup_counts = {}
+            subgroup_map = {}
+            subgroup_order = {}
+            for member in member_objs:
+                subgroup_index = getattr(member, "subgroup_index", None)
+                try:
+                    subgroup_int = int(subgroup_index)
+                except (TypeError, ValueError):
+                    continue
+                if subgroup_int <= 0:
+                    continue
+                member_id = getattr(member, "id", None)
+                try:
+                    member_id_int = int(member_id)
+                except (TypeError, ValueError):
+                    continue
+                position = subgroup_counts.get(subgroup_int, 0)
+                subgroup_counts[subgroup_int] = position + 1
+                subgroup_map[member_id_int] = subgroup_int
+                subgroup_order[member_id_int] = position
+
+            shared_subgroups = dict(subgroup_map)
+            shared_order = dict(subgroup_order)
             for participant in [leader_obj] + member_objs:
                 participant.partyname = party_names
                 participant.partyID = party_ids
+                participant.party_subgroups = dict(shared_subgroups)
+                participant.party_subgroup_order = dict(shared_order)
 
             leader_obj.attr51 = [m.name for m in member_objs]
             leader_obj.leaderID = leader_obj.id
