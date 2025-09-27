@@ -7,6 +7,7 @@ import win32gui
 import win32con
 import threading
 import warnings
+import time
 from typing import Dict, NamedTuple, Optional, Set
 from weakref import WeakKeyDictionary, proxy, ref
 # Some PyQt5/QScintilla builds emit a deprecation warning regarding
@@ -2534,6 +2535,75 @@ class MyWindow(QMainWindow):
         self.update_group_party_info()
         self.start_group_scripts()
 
+    def _update_make_party_configuration(
+        self,
+        leader_obj,
+        member_objs,
+        subgroup_assignments_by_name,
+        subgroup_size_override=None,
+    ):
+        if leader_obj is None or not hasattr(leader_obj, "set_group_var"):
+            return
+
+        assignments = subgroup_assignments_by_name or {}
+        members_with_assignments = []
+        for member in member_objs or []:
+            name = getattr(member, "name", None)
+            if not isinstance(name, str):
+                continue
+            subgroup_index = assignments.get(name)
+            if not isinstance(subgroup_index, int) or subgroup_index <= 0:
+                continue
+            member_id = getattr(member, "id", None)
+            try:
+                member_id = int(member_id) if member_id is not None else None
+            except (TypeError, ValueError):
+                member_id = None
+            members_with_assignments.append((subgroup_index, member, member_id))
+
+        config = {"subgroups": {}}
+        if subgroup_size_override is not None:
+            try:
+                config["default_size"] = int(subgroup_size_override)
+            except (TypeError, ValueError):
+                pass
+
+        if not members_with_assignments:
+            try:
+                leader_obj.set_group_var("make_party_config", config)
+                leader_obj.set_group_var("make_party_state", {})
+            except Exception:
+                pass
+            return
+
+        members_with_assignments.sort(
+            key=lambda item: (item[0], self._player_group_sort_key(item[1]))
+        )
+        subgroup_map = {}
+        for subgroup_index, member, member_id in members_with_assignments:
+            entries = subgroup_map.setdefault(subgroup_index, [])
+            entries.append(
+                {
+                    "id": member_id,
+                    "name": getattr(member, "name", ""),
+                }
+            )
+
+        for subgroup_index, entries in subgroup_map.items():
+            for idx, entry in enumerate(entries, start=1):
+                entry["position"] = idx
+            config["subgroups"][subgroup_index] = {
+                "size": len(entries),
+                "members": entries,
+            }
+
+        config["version"] = int(time.time())
+        try:
+            leader_obj.set_group_var("make_party_config", config)
+            leader_obj.set_group_var("make_party_state", {})
+        except Exception:
+            pass
+
     def _assign_group_console(self, group_info):
         leader_name = group_info.get("leader_name")
         member_names = group_info.get("member_names", [])
@@ -2637,6 +2707,13 @@ class MyWindow(QMainWindow):
                 group_record[key] = group_info[key]
         self.console_groups[console] = group_record
         self.leader_to_console[leader_obj] = console
+
+        self._update_make_party_configuration(
+            leader_obj,
+            member_objs,
+            subgroup_assignments_by_name,
+            subgroup_size_override,
+        )
 
         group_id = group_record.get("group_id")
         if group_id is None and isinstance(group_info, dict):

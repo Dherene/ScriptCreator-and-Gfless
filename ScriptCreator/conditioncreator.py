@@ -494,7 +494,7 @@ class ConditionCreator(QDialog):
             "attack", "player_skill", "player_walk", "pets_walk",
             "start_minigame_bot", "stop_minigame_bot", "use_item", "put_item_in_trade",
             "auto_login", "relogin", "python_code", "delete_condition", "close_game",
-            "invite_members", "subgroup_variable"
+            "invite_members", "make_party", "subgroup_variable"
         ]
         for i in range(1, 101):
             elements_list.append(f"attr{i}")
@@ -698,6 +698,23 @@ class ConditionCreator(QDialog):
                 group_box_layout.setColumnStretch(6, 1)
 
                 self.action_widgets[index].extend([inv_combo, v_label, v_edit, q_label, q_edit])
+        elif condition == "make_party":
+            mode_label = QLabel("mode:")
+            mode_combo = QComboBox()
+            mode_combo.addItems(["Enable", "Disable"])
+
+            self._add_label_field(
+                group_box_layout,
+                0,
+                1,
+                mode_label,
+                mode_combo,
+                field_expands=False,
+            )
+            group_box_layout.setColumnStretch(3, 1)
+
+            self.action_widgets[index].append(mode_label)
+            self.action_widgets[index].append(mode_combo)
         elif condition == "auto_login":
             # Use comboboxes similar to the Server Configuration dialog
             lang_label = QLabel("Language:")
@@ -1139,6 +1156,10 @@ class ConditionCreator(QDialog):
                 script += 'self.close_game()'
             elif actions_array[i][0] == "invite_members":
                 script += 'self.invite_members()'
+            elif actions_array[i][0] == "make_party":
+                enable_text = actions_array[i][1] if len(actions_array[i]) > 1 else "Enable"
+                enable_flag = str(enable_text).strip().lower() != "disable"
+                script += f'self.make_party({enable_flag})'
             elif actions_array[i][0] == "subgroup_variable":
                 var_name = actions_array[i][1].strip() if len(actions_array[i]) > 1 else ""
                 operation = actions_array[i][2] if len(actions_array[i]) > 2 else ""
@@ -1275,6 +1296,10 @@ class ConditionModifier(QDialog):
         self.pause_condition_button.clicked.connect(self.pause_condition)
         self.main_layout.addWidget(self.pause_condition_button, 5, 6, 1, 1)
 
+        self.make_party_button = QPushButton("Initialize Make Party")
+        self.make_party_button.clicked.connect(self.initialize_make_party)
+        self.main_layout.addWidget(self.make_party_button, 6, 6, 1, 1)
+
         self.sequential_checkbox = QCheckBox("Secuential Condition")
         sequential_default = self.settings.value(
             "condition_modifier_sequential", True, type=bool
@@ -1303,6 +1328,20 @@ class ConditionModifier(QDialog):
     def on_sequential_toggled(self, checked):
         self.settings.setValue("condition_modifier_sequential", checked)
         self.refresh()
+
+    def initialize_make_party(self):
+        if not hasattr(self.player, "make_party"):
+            return
+        try:
+            result = self.player.make_party(True)
+            if result:
+                self.player.log("[MAKE PARTY] Manual initialization triggered from GUI.")
+            else:
+                self.player.log(
+                    "[MAKE PARTY] Manual initialization could not start; verify subgroup sync."
+                )
+        except Exception as error:
+            self.player.log(f"[MAKE PARTY] Manual initialization error: {error}")
 
     def _selected_entry(self):
         row = self.table_widget.currentRow()
