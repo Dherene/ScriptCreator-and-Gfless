@@ -1,0 +1,22 @@
+recv_packet
+1
+if packet.startswith(f"sayi2 1 {self.id} 11 664 6 200 30/30") and int(self.attr1) == 16:
+        print(f"[MEMBER] {self.name} complete Wolf Quest")
+        self.api.stop_bot()
+        time.sleep(self.randomize_delay(0.75,1))
+        self.api.send_packet("qt 4 6")
+        time.sleep(self.randomize_delay(0.75,1))
+        target = [33, 109]
+        radius = 3
+        self.walk_to_point(target, radius)
+
+        # Wait until the member reaches the target area before updating the quest state.
+        max_wait = time.time() + 10
+        while time.time() < max_wait:
+            if abs(int(self.pos_x) - target[0]) <= radius and abs(int(self.pos_y) - target[1]) <= radius:
+                self.attr1 = 17
+                self.attr6 = 0
+                selfsubg.sincro = int(selfsubg.sincro) + 1
+                print(f"El valor de Sincro es: {selfsubg.sincro}")
+                break
+            time.sleep(self.randomize_delay(0.25, 0.35))

@@ -1,0 +1,10 @@
+periodical
+1
+if int(self.attr1) == 11 and self.map_id == 260:
+	print(f"[MEMBER] {self.name} Talk with Frigg.")
+	time.sleep(self.randomize_delay(0.75,1.5))
+	ID = self.Frigg["ID"]
+	self.api.send_packet(f"ncif 2 {ID}")
+	time.sleep(self.randomize_delay(1,2))
+	self.api.send_packet(f"npc_req 2 {ID}")
+	time.sleep(self.randomize_delay(8,10))

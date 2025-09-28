@@ -1,0 +1,7 @@
+recv_packet
+1
+if packet.startswith("dlgi #rstart^1 rstart 92 0") and int(self.attr6) == 1 and int(self.subgroup_member_index) == 1:
+	self.api.send_packet("#rstart^1")
+	selfsubg.entren = 2
+	print(f"35-[MEMBER][TS56] {self.name} accept enter first room")
+

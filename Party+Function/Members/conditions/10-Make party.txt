@@ -1,0 +1,6 @@
+periodical
+1
+if int(self.attr1) == 2 and int(selfsubg.sincro) == 6:
+	print(f"[MEMBER] {self.name} starting make party sequence")
+	self.make_party(1)
+	self.attr1 = 3
