@@ -1,0 +1,8 @@
+periodical
+1
+if int(self.map_id) == 1 and int(self.attr1) == 12:
+	print(f"[MEMBER] {self.name} walk to Nosville Tower")
+	time.sleep(self.randomize_delay(1,2))
+	self.walk_to_point([68,57])
+	self.attr1 = 13
+
