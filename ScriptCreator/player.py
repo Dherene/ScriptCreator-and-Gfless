@@ -893,6 +893,21 @@ class Player:
         self._make_party_condition_state = result
         return result
 
+    @property
+    def make_party_state(self) -> int:
+        """Expose the last ``make_party`` coordination result to conditions."""
+
+        return getattr(self, "_make_party_condition_state", 0)
+
+    @make_party_state.setter
+    def make_party_state(self, value) -> None:
+        """Allow conditions to reset the cached ``make_party`` state."""
+
+        try:
+            self._make_party_condition_state = int(value)
+        except (TypeError, ValueError):
+            self._make_party_condition_state = 0
+
     def _read_make_party_state(self):
         gid = self._resolve_gid(None)
         with Player._group_var_lock:
