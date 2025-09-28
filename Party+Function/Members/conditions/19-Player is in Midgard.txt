@@ -1,7 +1,0 @@
-periodical
-1
-if int(self.attr1) == 9 and self.map_id == 260:
-	print(f"[MEMBER] {self.name} is in Midgard")
-	time.sleep(self.randomize_delay(0.75,1.5))
-	self.walk_to_point([93,347], 2)
-	self.attr1 = 10

@@ -1,6 +1,0 @@
-send_packet
-1
-if packet.startswith("#pjoin^3^"):
-	time.sleep(self.randomize_delay(2,3))
-	print(f"[LEADER] {self.name} Share point of return")
-	self.api.send_packet("pjoin 5")
