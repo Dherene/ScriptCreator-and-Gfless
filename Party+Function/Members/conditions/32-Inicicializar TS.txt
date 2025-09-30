@@ -1,6 +1,0 @@
-periodical
-1
-if int(self.attr1) == 0:
-	self.attr1 = 1
-	self.attr6 = 1
-	self.attr3 = 0

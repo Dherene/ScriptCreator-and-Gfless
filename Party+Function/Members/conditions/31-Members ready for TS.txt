@@ -1,7 +1,0 @@
-periodical
-1
-if int(self.attr1) == 17 and int(selfsubg.sincro) == 12 and int(self.attr6) == 0:
-	print(f"[MEMBER] {self.name} is ready to Time Space")
-	time.sleep(self.randomize_delay(0.75,1.5))
-	self.attr6 = 1
-	self.attr3 = 0

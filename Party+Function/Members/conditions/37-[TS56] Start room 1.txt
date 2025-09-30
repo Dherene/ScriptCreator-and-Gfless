@@ -1,7 +1,0 @@
-recv_packet
-1
-if int(self.attr3) == 2 and packet.startswith("c_map") and int(self.attr6) == 1:
-	time.sleep(self.randomize_delay(1,2))
-	self.api.start_bot()
-	print(f"34-[MEMBER][TS56] {self.name} start room 1")
-	self.attr3 = 3
