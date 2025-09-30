@@ -1,0 +1,11 @@
+periodical
+0
+if int(self.map_id) >= 4800 and int(self.attr6) == 1 and int(self.attr3) == 0:
+	cond.off = 0
+	time.sleep(self.randomize_delay(1,2))
+	self.api.load_settings(r"C:\Users\valde\Desktop\scriptcreator+glfess\Party+Function\Index[ALL]Ts56.ini")
+	cond.on = 35
+	cond.on = 36
+	self.attr3 = 1
+
+	print(f"34-[MEMBER][TS56] {self.name} load setting")

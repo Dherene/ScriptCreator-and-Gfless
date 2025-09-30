@@ -1,0 +1,9 @@
+recv_packet
+0
+if int(self.attr1) == 22 and packet.startswith(f"sayi2 1 {self.id} 11 664 6 134 15/15"):
+	print(f"[MEMBER] {self.name} Quest warepard complete, go save position")
+	cond.off = 0
+	time.sleep(self.randomize_delay(0.75,1))
+	cond.on = 38
+	self.walk_to_point([19,1], 0)
+	self.attr1 = 23

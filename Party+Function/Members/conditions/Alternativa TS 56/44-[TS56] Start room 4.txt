@@ -1,0 +1,8 @@
+recv_packet
+0
+if int(self.attr3) == 8 and packet.startswith("gidx 1") and int(self.attr6) == 1:
+	self.api.start_bot()
+	cond.off = 43
+	cond.on = 45
+	self.attr3 = 9
+	print(f"42-[MEMBER][TS56] {self.name} start room 4")

@@ -1,0 +1,18 @@
+recv_packet
+0
+# Ejecutar dentro de una condición tipo recv_packet
+if packet.startswith("dlgi") and int(self.attr1) == 12:
+    pos = packet.find("#u_i")
+    if pos != -1:
+        # Extraemos solo el código de aceptación, sin incluir el resto del paquete
+        datos = packet[pos:].split(" ")[0]
+        datos = datos.replace("^", " ")  # En los logs se usa '^' en lugar de espacios
+        time.sleep(self.randomize_delay(1, 1.5))
+        cond.on = 25
+        print(f"[MEMBER] {self.name} confirm wing of return")
+        self.api.send_packet(datos)
+	
+
+
+
+

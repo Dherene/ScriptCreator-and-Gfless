@@ -1,0 +1,12 @@
+periodical
+0
+if int(self.attr1) == 23 and self.map_id == 84:
+	print(f"[MEMBER] {self.name} Is in save position")
+	cond.off = 0
+	time.sleep(self.randomize_delay(0.75,1))
+	cond.on = 39
+	cond.on = 40
+	self.walk_to_point([9,106], )
+	self.api.send_packet("qt 4 6")
+	time.sleep(self.randomize_delay(0.75,1.5))
+	self.attr1 = 24

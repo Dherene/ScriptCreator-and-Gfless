@@ -1,0 +1,5 @@
+recv_packet
+0
+if packet.startswith(f"su 1 {self.id} 3") and time.time() - self.attr1 > random.randint(2,4):
+	self.attr1 = time.time()
+	self.api.player_walk(self.pos_x + random.choice([-1,1]), self.pos_y + random.choice([-1,1]))
