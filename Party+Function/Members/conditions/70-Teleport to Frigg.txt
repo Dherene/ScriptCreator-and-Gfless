@@ -1,0 +1,11 @@
+periodical
+0
+if int(self.attr1) == 47 and self.map_id == 22:
+	print(f"[MEMBER] {self.name} Teleport to Frigg")
+	cond.off = 0
+	self.api.send_packet("qt 4 6")
+	time.sleep(self.randomize_delay(0.75,1.5))
+	cond.on = 71
+	self.walk_to_point([34,58], 2)
+	time.sleep(self.randomize_delay(2,3))
+	self.attr1 = 48

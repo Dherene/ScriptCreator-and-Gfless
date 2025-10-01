@@ -1,0 +1,10 @@
+periodical
+0
+if int(self.attr1) == 36 and self.map_id == 99:
+	print(f"[MEMBER] {self.name} Wait to members in Misty Valley")
+	cond.off = 0
+	time.sleep(self.randomize_delay(0.75,1.5))
+	cond.on = 60
+	self.walk_to_point([44,179], 1)
+	self.attr1 = 37
+	selfsubg.sincro = int(selfsubg.sincro) + 1  #deberia ser sincro=18 para activar la siguiente condition

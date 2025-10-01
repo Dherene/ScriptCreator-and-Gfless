@@ -1,0 +1,15 @@
+periodical
+0
+if int(self.attr1) == 37 and int(selfsubg.sincro) == 18:
+	print(f"[MEMBER] {self.name} Load setting and start kill Foggy Colossous")
+	cond.off = 0
+	time.sleep(self.randomize_delay(0.75,1.5))
+	cond.on = 61
+	self.use_item(4833, "equip")
+	time.sleep(self.randomize_delay(0.75,1.5))
+	self.use_item(4995, "equip")
+	time.sleep(self.randomize_delay(0.75,1.5))
+	self.api.load_settings(r"C:\Users\valde\Desktop\scriptcreator+glfess\Party+Function\Index[ALL]Colossous-Archer.ini")
+	time.sleep(self.randomize_delay(2,3))
+	self.api.start_bot()
+	self.attr1 = 38

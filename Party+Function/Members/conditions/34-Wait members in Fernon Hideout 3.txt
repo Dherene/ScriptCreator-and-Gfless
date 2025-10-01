@@ -1,0 +1,11 @@
+periodical
+0
+if int(self.attr1) == 20 and self.map_id == 15:
+	print(f"[MEMBER]{self.name} wait to members in Fernon hideout 3")
+	cond.off = 0
+	time.sleep(self.randomize_delay(0.75,1))
+	cond.on = 35
+	self.walk_to_point([56,2], 0)
+	selfsubg.sincro = int(selfsubg.sincro) + 1
+	print(f"[MEMBER] {self.name} incremento el valor de subgrupo en: {selfsubg.sincro}")
+	self.attr1 = 21

@@ -1,0 +1,10 @@
+periodical
+0
+if int(self.attr1) == 55 and self.map_id == 121:
+	print(f"[MEMBER] {self.name} Walk around Ragnar map")
+	cond.off = 0
+	time.sleep(self.randomize_delay(0.75,1.5))
+	cond.on = 85
+	cond.on = 86
+	self.walk_to_point([44,5], 2)
+	self.attr1 = 56
