@@ -1,9 +1,0 @@
-recv_packet
-0
-if int(self.attr3) == 5 and "msgi 0 537 0 0 0 0 0" in packet and int(self.attr6) == 1:
-	self.api.stop_bot()
-	cond.off = 40
-	cond.on = 42
-	self.api.player_walk(15, 0 )
-	self.attr3 = 6
-	print(f"39-[MEMBER][TS56] {self.name} end room 2")

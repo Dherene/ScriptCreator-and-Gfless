@@ -1,6 +1,0 @@
-recv_packet
-0
-if packet.startswith("msgi 0 172 0 0 0 0 0"):
-	time.sleep(self.randomize_delay(1.5,3))
-	print(f"6-[MEMBER] {self.name} trade accepted very quicly")
-	self.api.send_packet("req_exc 3")
