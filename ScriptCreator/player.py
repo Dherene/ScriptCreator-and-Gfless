@@ -1722,8 +1722,28 @@ class Player:
     def _process_walk_queue(self):
         while True:
             func, args = self.walk_queue.get()
-            if not self.api.working() or self.stop_script:
+            api = self.api
+            if api is None:
                 continue
+
+            if self.stop_script or (hasattr(api, "working") and not api.working()):
+                # the API might report "not working" during reconnects or when the
+                # script is being reset. wait briefly so we do not drop pending
+                # walk commands, but still allow a full reset to drain the queue
+                # quickly when the script remains stopped.
+                ready = False
+                for _ in range(20):
+                    if not self.stop_script:
+                        api = self.api
+                        if api is not None and (
+                            not hasattr(api, "working") or api.working()
+                        ):
+                            ready = True
+                            break
+                    time.sleep(0.05)
+                if not ready:
+                    continue
+
             try:
                 func(*args)
             except OSError as e:
