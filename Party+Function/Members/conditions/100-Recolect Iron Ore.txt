@@ -8,10 +8,15 @@ if (
     and int(self.pos_x) == self.target_x
     and int(self.pos_y) == self.target_y
 ):
+        if not hasattr(self, "_iron_req_counter"):
+            self._iron_req_counter = 0
         vnum = self.current_iron["vnum"]
         self.api.send_packet(f"ncif 2 {vnum}")
-        time.sleep(self.randomize_delay(0.75,1.5))
+        time.sleep(self.randomize_delay(0.75, 1.5))
         print(f"16-[MEMBER] {self.name} Recolecting Iron Ore")
         self.api.send_packet(f"npc_req 2 {vnum}")
-        time.sleep(self.randomize_delay(13,13.5))
-        
+        self._iron_req_counter += 1
+        time.sleep(self.randomize_delay(13, 13.5))
+        if self._iron_req_counter >= 2:
+            time.sleep(7)
+            self._iron_req_counter = 0
