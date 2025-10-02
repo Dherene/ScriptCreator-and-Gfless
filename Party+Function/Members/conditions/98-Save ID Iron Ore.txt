@@ -1,5 +1,5 @@
 recv_packet
-1
+0
 splitPacket = packet.split()
 if (
     len(splitPacket) >= 6
