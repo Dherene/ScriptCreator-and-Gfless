@@ -1,8 +1,0 @@
-recv_packet
-0
-if packet.startswith("exc_close 1") and int(self.attr90) == 3:
-	print(f"7-[MEMBER] {self.name} Sending party to {self.leadername}")
-	cond.off = 0
-	cond.on = 8
-	time.sleep(self.randomize_delay(1,2))
-	self.api.send_packet(f"pjoin 0 {self.leaderID}")

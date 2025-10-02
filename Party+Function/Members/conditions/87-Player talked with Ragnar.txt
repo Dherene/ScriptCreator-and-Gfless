@@ -1,9 +1,0 @@
-recv_packet
-0
-if packet.startswith("qsti 7.6152"):
-	print(f"[MEMBER] {self.name} talked with Ragnar")
-	cond.off = 0
-	time.sleep(self.randomize_delay(0.75,1))
-	cond.on = 88
-	cond.on = 89
-	self.attr1 = 58

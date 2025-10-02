@@ -1,8 +1,0 @@
-periodical
-0
-if int(self.map_id) == 1 and int(self.attr1) == 8:
-	print(f"[MEMBER] {self.name} Use amulet of return to talk with Frigg")
-	cond.on = 18
-	time.sleep(self.randomize_delay(2,3))
-	self.use_item(2071, "etc") #use amulet of return
-	time.sleep(self.randomize_delay(10,12)) #wait to accept amulet of return in next condition
