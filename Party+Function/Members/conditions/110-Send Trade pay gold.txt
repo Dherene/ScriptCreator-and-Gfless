@@ -1,0 +1,18 @@
+periodical
+0
+if int(self.attr1) == 70 and int(self.attr90) == 91:
+        candidate_id = str(self.id)
+        if getattr(selfgroup, "trade", "0") == "0":
+                if getattr(selfgroup, "trade_candidate", None) is None:
+                        selfgroup.trade_candidate = candidate_id
+                if getattr(selfgroup, "trade_candidate", None) == candidate_id:
+                        cond.off = 0
+                        time.sleep(self.randomize_delay(1,1.5))
+                        cond.on = 111
+                        self.attr90 = 92
+                        selfgroup.trade = "1"  # cerrar comercio para otros miembros
+                        self.attr96 = 1  # marcar a este miembro como bloqueador del comercio
+                        selfgroup.trade_candidate = None
+                        time.sleep(self.randomize_delay(1,1.5))
+                        self.api.send_packet(f"req_exc 1 {self.leaderID}")
+                        print(f"68-[MEMBER] {self.name} send gold trade request")

@@ -1,0 +1,42 @@
+periodical
+0
+import random
+if int(self.map_id) == 6 and int(self.attr1) == 64 and getattr(self, "iron_ore", []):
+    time.sleep(self.randomize_delay(1, 1.5))
+    cond.off = 0
+    if not hasattr(self, "current_iron") or not self.current_iron:
+        index = random.randrange(len(self.iron_ore))
+        self.current_iron = self.iron_ore.pop(index)
+    if "target_x" not in self.current_iron or "target_y" not in self.current_iron:
+        iron_x = self.current_iron["x"]
+        iron_y = self.current_iron["y"]
+        offsets = [
+            (-1, 0),
+            (1, 0),
+            (0, -1),
+            (0, 1),
+            (-1, -1),
+            (-1, 1),
+            (1, -1),
+            (1, 1),
+        ]
+        random.shuffle(offsets)
+        for dx, dy in offsets:
+            target_x = iron_x + dx
+            target_y = iron_y + dy
+            if target_x == iron_x and target_y == iron_y:
+                continue
+            self.current_iron["target_x"] = target_x
+            self.current_iron["target_y"] = target_y
+            break
+        else:
+            self.current_iron["target_x"] = iron_x
+            self.current_iron["target_y"] = iron_y
+    time.sleep(self.randomize_delay(1, 1.5))
+    target_x = self.current_iron.get("target_x", self.current_iron["x"])
+    target_y = self.current_iron.get("target_y", self.current_iron["y"])
+    cond.on = 100
+    cond.on = 101
+    self.walk_to_point([target_x, target_y])
+    print(f"15-[MEMBER] {self.name} Walk Iron Ore")
+    self.attr1 = 65

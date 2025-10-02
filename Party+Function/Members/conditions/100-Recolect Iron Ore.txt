@@ -1,0 +1,17 @@
+periodical
+0
+if (
+    int(self.map_id) == 6
+    and int(self.attr1) == 65
+    and hasattr(self, "current_iron")
+    and self.current_iron
+    and int(self.pos_x) == self.current_iron["target_x"]
+    and int(self.pos_y) == self.current_iron["target_y"]
+):
+        vnum = self.current_iron["vnum"]
+        self.api.send_packet(f"ncif 2 {vnum}")
+        time.sleep(self.randomize_delay(0.75,1.5))
+        print(f"16-[MEMBER] {self.name} Recolecting Iron Ore")
+        self.api.send_packet(f"npc_req 2 {vnum}")
+        time.sleep(self.randomize_delay(13,13.5))
+        
