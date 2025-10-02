@@ -11,12 +11,13 @@ if int(self.map_id) == 6 and int(self.attr1) == 64 and getattr(self, "iron_ore",
         iron_x = self.current_iron["x"]
         iron_y = self.current_iron["y"]
 
-    time.sleep(self.randomize_delay(1, 1.5))
+    time.sleep(self.randomize_delay(1,3))
     target_x = self.current_iron.get("target_x", self.current_iron["x"])
     target_y = self.current_iron.get("target_y", self.current_iron["y"])
+    self.target_x = target_x
+    self.target_y = target_y
     cond.on = 100
     cond.on = 101
-    time.sleep(self.randomize_delay(1,3))
     self.walk_to_point([target_x, target_y])
     print(f"15-[MEMBER] {self.name} Walk Iron Ore")
     self.attr1 = 65
