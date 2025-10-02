@@ -1,5 +1,5 @@
 periodical
-0
+1
 if (
     int(self.map_id) == 6
     and int(self.attr1) == 65
