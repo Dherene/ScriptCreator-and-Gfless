@@ -1,0 +1,11 @@
+periodical
+0
+if int(self.attr1) == 61 and self.map_id == 1:
+	print(f"[MEMBER] {self.name} Walk to Nosville Meadows")
+	cond.off = 0
+	time.sleep(self.randomize_delay(0.75,1.5))
+	self.api.send_packet(f"u_s 3 1 {self.id}") #usa skill Wind Walker
+	time.sleep(self.randomize_delay(0.75,1.5))
+	cond.on = 96
+	self.walk_to_point([79,2], 0)
+	self.attr1 = 62

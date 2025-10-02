@@ -1,0 +1,10 @@
+periodical
+0
+if int(self.attr1) == 35 and self.map_id == 24:
+	print(f"[MEMBER] {self.name} Walk to Misty Valley")
+	cond.off = 0
+	time.sleep(self.randomize_delay(0.75,1.5))
+	cond.on = 90
+	cond.on = 59
+	self.walk_to_point([26,24], 0)
+	self.attr1 = 36

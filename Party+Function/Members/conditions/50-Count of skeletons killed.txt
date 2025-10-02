@@ -1,0 +1,7 @@
+recv_packet
+0
+if packet.startswith(f"sayi2 1 {self.id} 11 664 6 237 10/10"):
+	print(f"[MEMBER] {self.name} killed 10 Skeletons")
+	time.sleep(self.randomize_delay(0.75,1))
+	cond.on = 52
+	selfsubg.skeleton = int(selfsubg.skeleton) + 1

@@ -1,0 +1,15 @@
+recv_packet
+0
+if packet.startswith("slinfo ") and int(self.attr1) == 43:
+        partes = packet.split()
+        if len(partes) > 22:
+                sp_id = partes[22]
+                print(f"[MEMBER] {self.name} guarda SP ID {sp_id}")
+                self.attr1 = 44
+                time.sleep(self.randomize_delay(2,3))
+                self.api.send_packet(f"sl 10 -1 12 {sp_id} 0 0 30 0")
+                time.sleep(self.randomize_delay(2,3))
+                cond.on = 67
+                time.sleep(self.randomize_delay(1,2))
+                selfsubg.sincro = int(selfsubg.sincro) + 1 #deberia ser 21 para la próxima condition
+                print(f"[MEMBER] {self.name} incremento el valor de subgrupo en: {selfsubg.sincro}")

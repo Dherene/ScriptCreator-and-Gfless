@@ -1,0 +1,10 @@
+periodical
+0
+if int(self.attr1) == 2 and int(selfsubg.sincro) == 6:
+	print(f"[MEMBER] {self.name} starting make party sequence")
+	cond.off = 0
+	time.sleep(self.randomize_delay(0.75,1.5))
+	cond.on = 11
+	cond.on = 12
+	self.make_party(1)
+	self.attr1 = 3
