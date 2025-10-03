@@ -333,6 +333,7 @@ class Player:
 
         # other
         self.map_changed = False
+        self.last_walk_failed = False
 
         # should move to shared class so map doesnt have to be loaded for each character individually
         self.map_array = []
@@ -1113,7 +1114,124 @@ class Player:
 
         return self._update_make_party_state(updater)
 
+    def _sync_party_roster(self):
+        """Refresh cached party information using shared group data."""
+
+        try:
+            roster_data = self.get_group_var("_party_roster", {})
+        except RuntimeError:
+            return
+        except Exception:
+            return
+
+        entries = []
+        if isinstance(roster_data, dict):
+            for key, value in roster_data.items():
+                if isinstance(value, dict):
+                    entries.append((key, value))
+        elif isinstance(roster_data, list):
+            for value in roster_data:
+                if isinstance(value, dict):
+                    entries.append((value.get("index"), value))
+        else:
+            return
+
+        if not entries:
+            return
+
+        party_names = list(self.partyname) if isinstance(self.partyname, list) else []
+        party_ids = list(self.partyID) if isinstance(self.partyID, list) else []
+        party_pids = list(self.partyPID) if isinstance(self.partyPID, list) else []
+
+        pid_by_slot = {}
+        for offset, pid_value in enumerate(party_pids[1:], start=0):
+            pid_int = _coerce_pid_value(pid_value)
+            if pid_int is not None:
+                pid_by_slot[offset] = pid_int
+
+        subgroup_map = getattr(self, "party_subgroups", {})
+        if not isinstance(subgroup_map, dict):
+            subgroup_map = {}
+        subgroup_members = getattr(self, "party_subgroup_members", {})
+        normalized_members = {}
+        for key, value in subgroup_members.items():
+            if isinstance(value, (list, tuple)):
+                normalized_members[key] = list(value)
+
+        names_changed = False
+        ids_changed = False
+        subgroups_changed = False
+
+        for raw_index, info in entries:
+            try:
+                slot_index = int(raw_index)
+            except (TypeError, ValueError):
+                slot_index = None
+            if slot_index is None or slot_index < 0:
+                continue
+
+            list_index = slot_index + 1
+            if list_index < 0:
+                continue
+
+            while len(party_names) <= list_index:
+                party_names.append(None)
+            while len(party_ids) <= list_index:
+                party_ids.append(None)
+
+            name_value = info.get("name") if isinstance(info, dict) else None
+            if isinstance(name_value, str) and name_value:
+                if party_names[list_index] != name_value:
+                    party_names[list_index] = name_value
+                    names_changed = True
+
+            id_value = info.get("id") if isinstance(info, dict) else None
+            try:
+                member_id = int(id_value) if id_value is not None else None
+            except (TypeError, ValueError):
+                member_id = None
+            if member_id is not None and party_ids[list_index] != member_id:
+                party_ids[list_index] = member_id
+                ids_changed = True
+
+            pid_value = pid_by_slot.get(slot_index)
+            if (
+                pid_value is not None
+                and isinstance(name_value, str)
+                and name_value
+            ):
+                subgroup_index = subgroup_map.get(pid_value)
+                if subgroup_index is not None:
+                    current_list = list(normalized_members.get(subgroup_index, []))
+                    updated = False
+                    for idx, entry in enumerate(current_list):
+                        if not isinstance(entry, (list, tuple)) or not entry:
+                            continue
+                        member_pid = _coerce_pid_value(entry[0])
+                        if member_pid == pid_value:
+                            current_name = entry[1] if len(entry) > 1 else None
+                            if current_name != name_value:
+                                current_list[idx] = (pid_value, name_value)
+                                updated = True
+                            break
+                    else:
+                        current_list.append((pid_value, name_value))
+                        updated = True
+
+                    if updated:
+                        normalized_members[subgroup_index] = current_list
+                        subgroups_changed = True
+
+        if names_changed:
+            self.partyname = party_names
+        if ids_changed:
+            self.partyID = party_ids
+        if subgroups_changed:
+            self.party_subgroup_members = normalized_members
+
     def _get_subgroup_membership_info(self, expected_size, subgroup_index):
+        self._sync_party_roster()
+
         try:
             expected = int(expected_size)
         except (TypeError, ValueError):
@@ -1145,26 +1263,104 @@ class Player:
         if player_pid is None:
             return None
 
+        roster_lookup = {}
+        try:
+            roster_snapshot = self.get_group_var("_party_roster", {})
+        except RuntimeError:
+            roster_snapshot = {}
+        except Exception:
+            roster_snapshot = {}
+        if isinstance(roster_snapshot, dict):
+            for key, value in roster_snapshot.items():
+                try:
+                    slot_index = int(key)
+                except (TypeError, ValueError):
+                    continue
+                if slot_index < 0:
+                    continue
+                if isinstance(value, dict):
+                    roster_lookup[slot_index] = dict(value)
+
+        def _to_int(value):
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return None
+
         members = []
-        for idx in range(1, len(party_pids)):
+        pids_changed = False
+        names_changed = False
+        ids_changed = False
+        max_length = max(len(party_pids), len(party_names), len(party_ids), *(
+            [max(roster_lookup.keys()) + 2] if roster_lookup else [0]
+        ))
+        for idx in range(1, max_length):
+            slot_index = idx - 1
+            roster_entry = roster_lookup.get(slot_index)
+
             name = party_names[idx] if idx < len(party_names) else None
-            pid_int = _coerce_pid_value(party_pids[idx])
-            if pid_int is None and isinstance(name, str) and name:
-                pid_int = _resolve_pid_value(party_pids[idx], name)
-                if pid_int is not None:
-                    party_pids[idx] = pid_int
-            if pid_int is None:
+            if roster_entry:
+                roster_name = roster_entry.get("name")
+                if isinstance(roster_name, str) and roster_name:
+                    if idx < len(party_names):
+                        if party_names[idx] != roster_name:
+                            party_names[idx] = roster_name
+                            names_changed = True
+                    else:
+                        while len(party_names) <= idx:
+                            party_names.append(None)
+                        party_names[idx] = roster_name
+                        names_changed = True
+                    name = roster_name
+
+            pid_value = party_pids[idx] if idx < len(party_pids) else None
+            resolved_pid = None
+            if isinstance(name, str) and name:
+                resolved_pid = _resolve_pid_value(None, name)
+            if resolved_pid is None:
+                resolved_pid = _resolve_pid_value(pid_value, None)
+            if resolved_pid is None:
                 continue
+            pid_int = _coerce_pid_value(pid_value)
+            if pid_int != resolved_pid:
+                if idx < len(party_pids):
+                    party_pids[idx] = resolved_pid
+                else:
+                    while len(party_pids) <= idx:
+                        party_pids.append(None)
+                    party_pids[idx] = resolved_pid
+                pids_changed = True
+            pid_int = resolved_pid
+
             member_id_raw = party_ids[idx] if idx < len(party_ids) else None
+            roster_id = roster_entry.get("id") if roster_entry else None
+            roster_id_int = _to_int(roster_id)
+            if roster_id_int is not None:
+                member_id_raw = roster_id_int
+                if idx < len(party_ids):
+                    if party_ids[idx] != roster_id_int:
+                        party_ids[idx] = roster_id_int
+                        ids_changed = True
+                else:
+                    while len(party_ids) <= idx:
+                        party_ids.append(None)
+                    party_ids[idx] = roster_id_int
+                    ids_changed = True
             try:
                 member_id = int(member_id_raw)
             except (TypeError, ValueError):
                 member_id = None
+
             if not isinstance(name, str) or not name:
                 name = f"Member {pid_int}"
             members.append((pid_int, name, member_id))
 
-        self.partyPID = list(party_pids)
+        if pids_changed:
+            self.partyPID = list(party_pids)
+        if names_changed:
+            self.partyname = list(party_names)
+        if ids_changed:
+            self.partyID = list(party_ids)
 
         if not members:
             return None
@@ -1800,6 +1996,7 @@ class Player:
         api = self.api
         start_map = self.map_id
         loop = asyncio.get_running_loop()
+        self.last_walk_failed = False
         try:
             while True:
                 player_pos = [self.pos_x, self.pos_y]
@@ -1826,6 +2023,7 @@ class Player:
                     elapsed = time.perf_counter() - start_time
                     point = target
                 if Path == []:
+                    self.last_walk_failed = True
                     self.log("Failed to find a path")
                     break
                 self.log(f"Path found in {elapsed:.3f} seconds")
@@ -1878,11 +2076,13 @@ class Player:
                         self.walk_queue.put((api.player_walk, (last_x, last_y)))
                         if walk_with_pet:
                             self.walk_queue.put((api.pets_walk, (last_x, last_y)))
+                    self.last_walk_failed = False
                     break
                 else:
                     await asyncio.sleep(resend)
                     continue
         except Exception as e:
+            self.last_walk_failed = True
             self.log(f"Error in walk_to_point: {e}")
         finally:
             if cond:
