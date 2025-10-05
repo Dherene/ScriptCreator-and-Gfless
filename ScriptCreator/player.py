@@ -2221,8 +2221,10 @@ class Player:
                         best_slot = slot
                         best_qty = qty
             if best_slot is None or best_qty == 0:
-                self.log("Insufficient items to exchange")
-                return False
+                self.log(
+                    f"Skipping trade item vnum {vnum} from inventory {inv_type}: not enough quantity"
+                )
+                continue
             packet_parts.extend([str(inv_type), str(best_slot), str(best_qty)])
 
         if gold > 0 or len(packet_parts) > 3:
