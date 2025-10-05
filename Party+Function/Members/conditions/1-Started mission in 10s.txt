@@ -18,7 +18,6 @@ if int(self.map_id) == 20 and int(self.attr1) == 0 and int(self.attr90) == 0:
         time.sleep(self.randomize_delay(0.75,1.5))
         self.api.send_packet("sl 0")
         time.sleep(self.randomize_delay(0.75,1.5))
-        selfsubg.sincro = 0  #inicializa variable de subgrupo
         self.attr90 = 1 #desactivar esta condición y activar la siguiente
         self.attr95 = 1  # modo de comercio: recibir objetos
         self.attr6 = 99   #random valor if attr6 = 1 activate ts 56

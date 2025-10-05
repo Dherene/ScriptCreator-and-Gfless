@@ -4,12 +4,15 @@ if packet.startswith(f"exc_list 1 {self.leaderID} -1 -1") and int(self.attr90) =
         cond.off = 0
         time.sleep(self.randomize_delay(0.75,1))
         print(f"69-[MEMBER] {self.name} registered gold trade and items")
-        self.put_items_in_trade([(1, 1010, 40), (1, 1012, 60), (2, 2026, 50)], gold=437500)
+        self.put_items_in_trade([(1, 13441, 40), (1, 1012, 200), (2, 2026, 50)], gold=437500)
         time.sleep(self.randomize_delay(2,3))
         self.api.send_packet("req_exc 3")
+        time.sleep(self.randomize_delay(2,3))
         self.attr90 = 93
-	cond.on = 112
+        cond.on = 112
+        selfgroup.trade = "0"  # liberar comercio para otros miembros
         selfgroup.trade_candidate = None
+        self.attr96 = 0  # asegurar que este miembro no quede marcado como bloqueador de comercio
         time.sleep(self.randomize_delay(2,3))
         self.attr1 = 71
         self.attr95 = 0

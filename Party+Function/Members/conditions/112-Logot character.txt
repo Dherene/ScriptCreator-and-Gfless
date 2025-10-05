@@ -14,8 +14,6 @@ if int(self.attr1) == 71:
         cond.on = 115
         cond.on = 118
         cond.on = 119
-        selfgroup.trade = "0"  # liberar comercio para otros miembros
-        self.attr96 = 0  # asegurar que este miembro no quede marcado como bloqueador de comercio
         self._old_name = self.name
         self._old_id = self.id
         time.sleep(self.randomize_delay(1,2))
