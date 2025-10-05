@@ -125,4 +125,31 @@ if isinstance(updates, dict) and updates:
     self.authorized_names = {
         name for name in authorized_names if isinstance(name, str)
     }
+    roster_payload = {}
+    for account, entry in self.authorized_members.items():
+        if not isinstance(entry, dict):
+            continue
+        slot_index = entry.get("index")
+        try:
+            slot_index = int(slot_index)
+        except (TypeError, ValueError):
+            continue
+        if slot_index < 0:
+            continue
+
+        payload = {"account": account}
+        name_value = entry.get("name")
+        if isinstance(name_value, str) and name_value:
+            payload["name"] = name_value
+        id_value = entry.get("id")
+        try:
+            numeric_id = int(id_value) if id_value is not None else None
+        except (TypeError, ValueError):
+            numeric_id = None
+        if numeric_id is not None:
+            payload["id"] = numeric_id
+
+        roster_payload[slot_index] = payload
+
+    self.set_group_var("_party_roster", roster_payload)
     self.set_group_var("id_update", {})
