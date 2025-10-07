@@ -368,6 +368,10 @@ class Player:
 
         # track condition-facing status for the make_party helper
         self._make_party_condition_state = 0
+        self.make_party_member_count = 0
+        self._active_make_party_subgroup = None
+        self._active_make_party_expected = 0
+        self._active_make_party_members = set()
 
         # internal state for periodical walking
         # track per-condition cooldowns and thread context
@@ -898,7 +902,66 @@ class Player:
     def make_party_state(self) -> int:
         """Expose the last ``make_party`` coordination result to conditions."""
 
-        return getattr(self, "_make_party_condition_state", 0)
+        cached_state = getattr(self, "_make_party_condition_state", 0)
+        if cached_state == 2:
+            return 2
+
+        try:
+            subgroup_index = int(getattr(self, "subgroup_index", 0))
+        except (TypeError, ValueError):
+            subgroup_index = 0
+
+        if subgroup_index <= 0:
+            return cached_state
+
+        completion_state = self._read_party_completion_state()
+        subgroup_entry = completion_state.get(subgroup_index)
+        if not isinstance(subgroup_entry, dict):
+            self._make_party_condition_state = 0
+            return 0
+
+        expected = subgroup_entry.get("expected")
+        count = subgroup_entry.get("count", 0)
+        try:
+            expected_int = int(expected)
+        except (TypeError, ValueError):
+            expected_int = 0
+        try:
+            count_int = int(count)
+        except (TypeError, ValueError):
+            count_int = 0
+
+        if expected_int not in (2, 3) or count_int < expected_int:
+            self._make_party_condition_state = 0
+            return 0
+
+        leader_id = subgroup_entry.get("leader_id")
+        leader_name = subgroup_entry.get("leader_name") or ""
+
+        leader_signature = self._resolve_subgroup_leader_signature(subgroup_index, expected_int)
+        if leader_signature is None:
+            return cached_state
+
+        current_leader_id, current_leader_name = leader_signature
+
+        if leader_id is not None:
+            if current_leader_id is None or leader_id != current_leader_id:
+                self._make_party_condition_state = 0
+                return 0
+        elif current_leader_id is not None:
+            self._make_party_condition_state = 0
+            return 0
+
+        if leader_name:
+            if not current_leader_name or leader_name != current_leader_name:
+                self._make_party_condition_state = 0
+                return 0
+        elif current_leader_name:
+            self._make_party_condition_state = 0
+            return 0
+
+        self._make_party_condition_state = 2
+        return 2
 
     @make_party_state.setter
     def make_party_state(self, value) -> None:
@@ -908,6 +971,14 @@ class Player:
             self._make_party_condition_state = int(value)
         except (TypeError, ValueError):
             self._make_party_condition_state = 0
+
+        if getattr(self, "_make_party_condition_state", 0) != 2:
+            try:
+                subgroup_index = int(getattr(self, "subgroup_index", 0))
+            except (TypeError, ValueError):
+                subgroup_index = 0
+            if subgroup_index > 0:
+                self._clear_party_completion_state(subgroup_index)
 
     def _read_make_party_state(self):
         gid = self._resolve_gid(None)
@@ -930,6 +1001,24 @@ class Player:
         else:
             ready_set = set()
 
+        confirmations_raw = sub_state.get("confirmations", set())
+        if isinstance(confirmations_raw, set):
+            confirmations_set = set(confirmations_raw)
+        elif isinstance(confirmations_raw, (list, tuple)):
+            confirmations_set = set(
+                str(entry).strip().lower()
+                for entry in confirmations_raw
+                if isinstance(entry, (str, int))
+            )
+        elif isinstance(confirmations_raw, dict):
+            confirmations_set = set(
+                str(key).strip().lower()
+                for key, value in confirmations_raw.items()
+                if value
+            )
+        else:
+            confirmations_set = set()
+
         try:
             expected = int(sub_state.get("expected", 0))
         except (TypeError, ValueError):
@@ -940,6 +1029,24 @@ class Player:
             members = list(members_raw)
         else:
             members = []
+
+        member_names_raw = sub_state.get("member_names", [])
+        if isinstance(member_names_raw, (list, tuple)):
+            member_names = list(member_names_raw)
+        else:
+            member_names = []
+
+        leader_id_raw = sub_state.get("leader_id")
+        try:
+            leader_id = int(leader_id_raw)
+        except (TypeError, ValueError):
+            leader_id = None
+
+        leader_name_raw = sub_state.get("leader_name")
+        if isinstance(leader_name_raw, str):
+            leader_name = leader_name_raw.strip().lower()
+        else:
+            leader_name = ""
 
         try:
             stage = int(sub_state.get("stage", 0))
@@ -955,8 +1062,12 @@ class Player:
 
         return {
             "ready": ready_set,
+            "confirmations": confirmations_set,
             "expected": expected,
             "members": members,
+            "member_names": member_names,
+            "leader_id": leader_id,
+            "leader_name": leader_name,
             "stage": stage,
             "started": started,
             "completed": completed,
@@ -976,6 +1087,46 @@ class Player:
         else:
             ready_set = set()
         sub_state["ready"] = ready_set
+
+        member_names_raw = sub_state.get("member_names")
+        if isinstance(member_names_raw, list):
+            member_names_list = member_names_raw
+        elif isinstance(member_names_raw, (tuple, set)):
+            member_names_list = list(member_names_raw)
+        else:
+            member_names_list = []
+        sub_state["member_names"] = member_names_list
+
+        leader_name_raw = sub_state.get("leader_name")
+        if isinstance(leader_name_raw, str):
+            sub_state["leader_name"] = leader_name_raw.strip().lower()
+        else:
+            sub_state["leader_name"] = ""
+
+        leader_id_raw = sub_state.get("leader_id")
+        try:
+            sub_state["leader_id"] = int(leader_id_raw)
+        except (TypeError, ValueError):
+            sub_state["leader_id"] = None
+
+        confirmations_raw = sub_state.get("confirmations")
+        if isinstance(confirmations_raw, set):
+            confirmations_set = confirmations_raw
+        elif isinstance(confirmations_raw, (list, tuple)):
+            confirmations_set = set(
+                str(entry).strip().lower()
+                for entry in confirmations_raw
+                if isinstance(entry, (str, int))
+            )
+        elif isinstance(confirmations_raw, dict):
+            confirmations_set = set(
+                str(key).strip().lower()
+                for key, value in confirmations_raw.items()
+                if value
+            )
+        else:
+            confirmations_set = set()
+        sub_state["confirmations"] = confirmations_set
 
         try:
             sub_state["expected"] = int(sub_state.get("expected", 0))
@@ -1022,7 +1173,14 @@ class Player:
         except (TypeError, ValueError):
             return self.id
 
-    def _register_make_party_ready(self, subgroup_index, expected_size, member_ids):
+    def _clear_active_make_party_context(self):
+        self._active_make_party_subgroup = None
+        self._active_make_party_expected = 0
+        self._active_make_party_members = set()
+
+    def _register_make_party_ready(
+        self, subgroup_index, expected_size, member_ids, member_names=None
+    ):
         def updater(state):
             sub_state = self._ensure_make_party_substate_mutable(state, subgroup_index)
             if sub_state.get("completed"):
@@ -1031,10 +1189,33 @@ class Player:
                 sub_state["completed"] = False
                 sub_state["stage"] = 0
                 sub_state["members"] = []
+                sub_state["member_names"] = []
                 sub_state["expected"] = 0
+                sub_state["confirmations"].clear()
 
             sub_state["expected"] = int(expected_size)
             sub_state["members"] = list(member_ids)
+            if isinstance(member_names, (list, tuple)):
+                sub_state["member_names"] = [
+                    name.strip() if isinstance(name, str) else ""
+                    for name in member_names
+                ]
+            if member_ids:
+                leader_id_raw = member_ids[0]
+                try:
+                    sub_state["leader_id"] = int(leader_id_raw)
+                except (TypeError, ValueError):
+                    sub_state["leader_id"] = None
+            if isinstance(member_names, (list, tuple)) and member_names:
+                leader_name_raw = member_names[0]
+                if isinstance(leader_name_raw, str):
+                    sub_state["leader_name"] = leader_name_raw.strip().lower()
+                else:
+                    sub_state["leader_name"] = ""
+            elif not member_ids:
+                sub_state["leader_name"] = ""
+            if not sub_state["started"]:
+                sub_state["confirmations"].clear()
 
             ready_set = sub_state["ready"]
             current_id = self._safe_party_id()
@@ -1049,11 +1230,94 @@ class Player:
                 sub_state["stage"] = 0
                 sub_state["completed"] = False
                 sub_state["last_update"] = time.time()
+                sub_state["confirmations"].clear()
                 started_now = True
 
             return added, ready_count, sub_state["expected"], bool(sub_state["started"]), started_now
 
         return self._update_make_party_state(updater)
+
+    def _register_make_party_confirmation(self, subgroup_index, confirmation_key):
+        if not confirmation_key:
+            return 0, 0
+
+        normalized_key = str(confirmation_key).strip().lower()
+        if not normalized_key:
+            return 0, 0
+
+        def updater(state):
+            sub_state = self._ensure_make_party_substate_mutable(state, subgroup_index)
+            confirmations = sub_state["confirmations"]
+            if normalized_key not in confirmations:
+                confirmations.add(normalized_key)
+                sub_state["last_update"] = time.time()
+            return len(confirmations), sub_state.get("expected", 0)
+
+        return self._update_make_party_state(updater)
+
+    def _note_make_party_confirmation(self, member_name=None, member_id=None):
+        try:
+            expected = int(getattr(self, "_active_make_party_expected", 0) or 0)
+        except (TypeError, ValueError):
+            expected = 0
+        if expected <= 0:
+            return
+
+        try:
+            subgroup_index = int(getattr(self, "_active_make_party_subgroup", 0) or 0)
+        except (TypeError, ValueError):
+            subgroup_index = 0
+        if subgroup_index <= 0:
+            try:
+                subgroup_index = int(getattr(self, "subgroup_index", 0) or 0)
+            except (TypeError, ValueError):
+                subgroup_index = 0
+        if subgroup_index <= 0:
+            return
+
+        allowed_members = set()
+        if isinstance(self._active_make_party_members, (set, list, tuple)):
+            allowed_members.update(
+                str(name).strip().lower()
+                for name in self._active_make_party_members
+                if isinstance(name, str)
+            )
+
+        try:
+            self_name_key = str(getattr(self, "name", "")).strip().lower()
+        except Exception:
+            self_name_key = ""
+
+        key_parts = []
+        if member_id is not None:
+            try:
+                key_parts.append(str(int(member_id)))
+            except (TypeError, ValueError):
+                pass
+        if isinstance(member_name, str) and member_name:
+            normalized_name = member_name.strip().lower()
+            if normalized_name and normalized_name == self_name_key:
+                normalized_name = ""
+            if normalized_name and (not allowed_members or normalized_name in allowed_members):
+                key_parts.append(normalized_name)
+            else:
+                # Ignore confirmations for unexpected members
+                pass
+
+        confirmation_key = "|".join(part for part in key_parts if part)
+        if not confirmation_key:
+            return
+
+        confirmations, expected = self._register_make_party_confirmation(
+            subgroup_index, confirmation_key
+        )
+        if expected:
+            total = 1 + confirmations
+            if total < 1:
+                total = 1
+            if total > expected:
+                total = expected
+            self.make_party_member_count = total
 
     def _wait_for_make_party_start(self, subgroup_index, expected_size):
         def ensure_started(state):
@@ -1086,6 +1350,57 @@ class Player:
             time.sleep(0.2)
         return None
 
+    def _wait_for_make_party_count(self, subgroup_index, target_count, timeout=6.0):
+        deadline = time.time() + max(1.0, float(timeout))
+        last_total = 1
+
+        while not getattr(self, "stop_script", False):
+            state = self._read_make_party_state()
+            sub_state = self._normalize_make_party_substate(state.get(subgroup_index))
+            confirmations = sub_state.get("confirmations", set())
+            if not isinstance(confirmations, set):
+                confirmations = set(confirmations)
+            confirmed_total = 1 + len(confirmations)
+            expected = sub_state.get("expected", 0)
+            if isinstance(expected, int) and expected > 0:
+                confirmed_total = min(expected, confirmed_total)
+            if confirmed_total < 1:
+                confirmed_total = 1
+            self.make_party_member_count = confirmed_total
+            last_total = confirmed_total
+            if confirmed_total >= target_count:
+                return True, confirmed_total
+            if time.time() >= deadline:
+                break
+            time.sleep(0.25)
+
+        return False, last_total
+
+    def _wait_for_make_party_confirmations(self, subgroup_index, expected_size, timeout=12.0):
+        deadline = time.time() + max(1.0, float(timeout))
+        last_count = 1
+
+        while not getattr(self, "stop_script", False):
+            state = self._read_make_party_state()
+            sub_state = self._normalize_make_party_substate(state.get(subgroup_index))
+            confirmations = sub_state.get("confirmations", set())
+            if not isinstance(confirmations, set):
+                confirmations = set(confirmations)
+            confirmed_total = 1 + len(confirmations)
+            if expected_size > 0:
+                confirmed_total = min(expected_size, confirmed_total)
+            if confirmed_total < 1:
+                confirmed_total = 1
+            self.make_party_member_count = confirmed_total
+            last_count = confirmed_total
+            if expected_size > 0 and confirmed_total >= expected_size:
+                return True, confirmed_total
+            if time.time() >= deadline:
+                break
+            time.sleep(0.25)
+
+        return False, last_count
+
     def _set_make_party_stage(self, subgroup_index, stage, *, completed=False):
         def updater(state):
             sub_state = self._ensure_make_party_substate_mutable(state, subgroup_index)
@@ -1113,6 +1428,246 @@ class Player:
             return False
 
         return self._update_make_party_state(updater)
+
+    def _update_party_completion_state(self, updater):
+        gid = self._resolve_gid(None)
+        with Player._group_var_lock:
+            group = Player._group_vars.setdefault(gid, {})
+            completion_state = group.get("_party_completion_state")
+            if not isinstance(completion_state, dict):
+                completion_state = {}
+            result = updater(completion_state)
+            group["_party_completion_state"] = completion_state
+            return result
+
+    def _read_party_completion_state(self):
+        gid = self._resolve_gid(None)
+        with Player._group_var_lock:
+            group = Player._group_vars.setdefault(gid, {})
+            completion_state = group.get("_party_completion_state")
+            if not isinstance(completion_state, dict):
+                return {}
+            return copy.deepcopy(completion_state)
+
+    def _clear_party_completion_state(self, subgroup_index=None):
+        def updater(state):
+            if subgroup_index is None:
+                state.clear()
+            else:
+                state.pop(subgroup_index, None)
+
+        return self._update_party_completion_state(updater)
+
+    def _record_party_completion(self, subgroup_index, leader_id, leader_name, expected, count):
+        if subgroup_index <= 0:
+            return
+
+        try:
+            expected_int = int(expected)
+        except (TypeError, ValueError):
+            expected_int = 0
+        try:
+            count_int = int(count)
+        except (TypeError, ValueError):
+            count_int = 0
+        if expected_int <= 0:
+            return
+        if count_int < 0:
+            count_int = 0
+        if count_int > expected_int:
+            count_int = expected_int
+
+        normalized_name = ""
+        if isinstance(leader_name, str):
+            normalized_name = leader_name.strip().lower()
+
+        def updater(state):
+            entry = state.get(subgroup_index)
+            if not isinstance(entry, dict):
+                entry = {}
+            if leader_id is not None:
+                try:
+                    entry["leader_id"] = int(leader_id)
+                except (TypeError, ValueError):
+                    entry["leader_id"] = None
+            elif "leader_id" not in entry:
+                entry["leader_id"] = None
+            entry["leader_name"] = normalized_name
+            entry["expected"] = expected_int
+            entry["count"] = count_int
+            entry["timestamp"] = time.time()
+            state[subgroup_index] = entry
+
+        self._update_party_completion_state(updater)
+
+        if count_int >= expected_int and expected_int in (2, 3):
+            self._make_party_condition_state = 2
+
+    def _resolve_subgroup_leader_signature(self, subgroup_index, expected_hint=None):
+        if subgroup_index <= 0:
+            return None
+
+        expected_candidates = []
+        if expected_hint in (2, 3):
+            expected_candidates.append(expected_hint)
+        try:
+            limit_value = int(getattr(self, "subgroup_member_limit", 0))
+        except (TypeError, ValueError):
+            limit_value = 0
+        if limit_value in (2, 3) and limit_value not in expected_candidates:
+            expected_candidates.append(limit_value)
+        for candidate in (2, 3):
+            if candidate not in expected_candidates:
+                expected_candidates.append(candidate)
+
+        for expected in expected_candidates:
+            membership = self._get_subgroup_membership_info(expected, subgroup_index)
+            if membership is None:
+                continue
+            _member_pids, member_names, _position, effective_subgroup, member_ids = membership
+            if effective_subgroup != subgroup_index:
+                continue
+            if not member_ids:
+                continue
+            leader_id = member_ids[0]
+            leader_name = member_names[0] if member_names else None
+            try:
+                leader_id_int = int(leader_id)
+            except (TypeError, ValueError):
+                leader_id_int = None
+            normalized_name = ""
+            if isinstance(leader_name, str):
+                normalized_name = leader_name.strip().lower()
+            return leader_id_int, normalized_name
+
+        return None
+
+    def _process_party_confirmation_packet(self, split_packet):
+        if not isinstance(split_packet, (list, tuple)):
+            return
+        if not split_packet:
+            return
+
+        packet_type = split_packet[0]
+        if packet_type == "sayi2":
+            if len(split_packet) < 6:
+                return
+            try:
+                event_type = int(split_packet[1])
+            except (TypeError, ValueError):
+                return
+            if event_type != 1:
+                return
+            try:
+                category = int(split_packet[3])
+                message_code = int(split_packet[4])
+            except (TypeError, ValueError):
+                return
+            if category != 10 or message_code != 237:
+                return
+            status_token = split_packet[5]
+            if status_token != "0":
+                return
+
+            inviter_id_token = split_packet[2]
+            try:
+                inviter_id = int(inviter_id_token)
+            except (TypeError, ValueError):
+                inviter_id = None
+
+            try:
+                self_id = int(getattr(self, "id", 0))
+            except (TypeError, ValueError):
+                self_id = None
+
+            if inviter_id is not None and self_id is not None and inviter_id != self_id:
+                return
+
+            confirmed_name = split_packet[6] if len(split_packet) >= 7 else None
+            confirmed_id = None
+            if len(split_packet) >= 8:
+                candidate = split_packet[7]
+                try:
+                    confirmed_id = int(candidate)
+                except (TypeError, ValueError):
+                    confirmed_id = None
+
+            self._note_make_party_confirmation(confirmed_name, confirmed_id)
+            return
+
+        if packet_type != "pinit":
+            return
+
+        if len(split_packet) < 2:
+            return
+
+        try:
+            party_count = int(split_packet[1])
+        except (TypeError, ValueError):
+            party_count = None
+
+        if party_count is not None and party_count > 0:
+            try:
+                expected = int(getattr(self, "_active_make_party_expected", 0) or 0)
+            except (TypeError, ValueError):
+                expected = 0
+            if expected > 0:
+                party_count = min(party_count, expected)
+            if party_count < 1:
+                party_count = 1
+            self.make_party_member_count = party_count
+
+        parsed_entries = []
+        for entry in split_packet[2:]:
+            if not entry:
+                continue
+            parts = entry.split("|")
+            if len(parts) < 5:
+                continue
+            name_value = parts[4] if parts[4] else None
+            member_id = None
+            id_token = parts[1] if len(parts) > 1 else None
+            if id_token:
+                try:
+                    member_id = int(id_token)
+                except (TypeError, ValueError):
+                    member_id = None
+            parsed_entries.append({"id": member_id, "name": name_value})
+            self._note_make_party_confirmation(name_value, member_id)
+
+        subgroup_hint = getattr(self, "_active_make_party_subgroup", None)
+        try:
+            subgroup_index = int(subgroup_hint) if subgroup_hint else int(getattr(self, "subgroup_index", 0))
+        except (TypeError, ValueError):
+            subgroup_index = 0
+
+        try:
+            expected_size = int(getattr(self, "_active_make_party_expected", 0) or getattr(self, "subgroup_member_limit", 0))
+        except (TypeError, ValueError):
+            expected_size = 0
+
+        if expected_size not in (2, 3) and party_count in (2, 3):
+            expected_size = party_count
+
+        if (
+            subgroup_index > 0
+            and party_count in (2, 3)
+            and expected_size in (2, 3)
+            and party_count >= expected_size
+        ):
+            leader_id = None
+            leader_name = None
+            if parsed_entries:
+                leader_entry = parsed_entries[0]
+                leader_id = leader_entry.get("id")
+                leader_name = leader_entry.get("name")
+            self._record_party_completion(
+                subgroup_index,
+                leader_id,
+                leader_name,
+                expected_size,
+                party_count,
+            )
 
     def _sync_party_roster(self):
         """Refresh cached party information using shared group data."""
@@ -1514,6 +2069,9 @@ class Player:
                 return 2 if state == 2 else 0
             return 0 if state == 2 else 2
 
+        self._clear_active_make_party_context()
+        self.make_party_member_count = 0
+
         if getattr(self, "stop_script", False):
             return self._record_make_party_result(False)
 
@@ -1565,115 +2123,232 @@ class Player:
 
         subgroup_key = effective_subgroup if effective_subgroup > 0 else subgroup_index
 
-        added, ready_count, stored_expected, started, _ = self._register_make_party_ready(
-            subgroup_key,
-            expected_size,
-            member_ids,
-        )
+        try:
+            self.make_party_member_count = 1
+            self._active_make_party_subgroup = subgroup_key
+            self._active_make_party_expected = expected_size
+            self._active_make_party_members = {
+                name.strip().lower()
+                for name in member_names
+                if isinstance(name, str) and name.strip()
+            }
 
-        if added:
-            print(
-                f"[MEMBER] {self.name} Subgroup [{subgroup_key}] have {ready_count} "
-                f"member waiting to make party"
+            added, ready_count, stored_expected, started, _ = self._register_make_party_ready(
+                subgroup_key,
+                expected_size,
+                member_ids,
+                member_names,
             )
 
-        if stored_expected not in (2, 3):
-            print("You cannot create parties with the current number of members per subgroup.")
-            return self._record_make_party_result(False)
+            if stored_expected in (2, 3):
+                self._active_make_party_expected = stored_expected
 
-        if ready_count < stored_expected or not started:
-            if not self._wait_for_make_party_start(subgroup_key, stored_expected):
+            if added:
+                print(
+                    f"[MEMBER] {self.name} Subgroup [{subgroup_key}] have {ready_count} "
+                    f"member waiting to make party"
+                )
+
+            if stored_expected not in (2, 3):
+                print(
+                    "You cannot create parties with the current number of members per subgroup."
+                )
                 return self._record_make_party_result(False)
 
-        prev_id = member_ids[position - 1] if position > 0 else None
-        next_id = member_ids[position + 1] if position < stored_expected - 1 else None
-        prev_name = member_names[position - 1] if position > 0 else None
-        next_name = member_names[position + 1] if position < stored_expected - 1 else None
-
-        final_stage = 2 if stored_expected == 2 else 4
-
-        if position == 0:
-            stage_state = self._wait_for_make_party_stage(subgroup_key, 0)
-            if stage_state is None:
-                return self._record_make_party_result(False)
-            delay = self.randomize_delay(0.75, 1.5)
-            if delay > 0:
-                time.sleep(delay)
-            if next_id is None:
-                print(f"[MEMBER] {self.name} cannot find the next member to invite.")
-                return self._record_make_party_result(False)
-            print(f"[MEMBER] {self.name} invited {next_name} to the party")
-            try:
-                api.send_packet(f"pjoin 0 {next_id}")
-            except Exception as error:
-                print(f"[MEMBER] {self.name} failed to invite {next_name}: {error}")
-                return self._record_make_party_result(False)
-            self._set_make_party_stage(subgroup_key, 1)
-
-        elif position == 1:
-            stage_state = self._wait_for_make_party_stage(subgroup_key, 1)
-            if stage_state is None:
-                return self._record_make_party_result(False)
-            delay = self.randomize_delay(1, 2)
-            if delay > 0:
-                time.sleep(delay)
-            if prev_id is None:
-                print(f"[MEMBER] {self.name} does not know who invited them to the party.")
-                return self._record_make_party_result(False)
-            print(
-                f"[MEMBER] {self.name} accepted the party invitation from {prev_name}"
-            )
-            try:
-                api.send_packet(f"#pjoin^3^{prev_id}")
-            except Exception as error:
-                print(f"[MEMBER] {self.name} failed to accept the party invitation: {error}")
-                return self._record_make_party_result(False)
-            if stored_expected == 2:
-                self._set_make_party_stage(subgroup_key, 2, completed=True)
-            else:
-                self._set_make_party_stage(subgroup_key, 2)
-                time.sleep(2)
-                if next_id is None:
-                    print(f"[MEMBER] {self.name} cannot find the next member to invite.")
+            if ready_count < stored_expected or not started:
+                if not self._wait_for_make_party_start(subgroup_key, stored_expected):
                     return self._record_make_party_result(False)
-                print(f"[MEMBER] {self.name} invited {next_name} to the party")
+
+            inviter_id = member_ids[0] if position > 0 and member_ids else None
+            inviter_name = (
+                member_names[0]
+                if position > 0 and member_names and member_names[0]
+                else None
+            )
+
+            final_stage = 2 * (stored_expected - 1)
+
+            if position == 0:
+                stage_state = self._wait_for_make_party_stage(subgroup_key, 0)
+                if stage_state is None:
+                    return self._record_make_party_result(False)
+
+                invite_targets = []
+                for idx in range(1, stored_expected):
+                    target_id = member_ids[idx]
+                    if target_id is None:
+                        target_label = (
+                            member_names[idx]
+                            if idx < len(member_names)
+                            else f"Member #{idx + 1}"
+                        )
+                        print(
+                            f"[MEMBER] {self.name} cannot find the ID for {target_label} to invite."
+                        )
+                        return self._record_make_party_result(False)
+                    target_name = (
+                        member_names[idx]
+                        if idx < len(member_names) and member_names[idx]
+                        else f"Member #{idx + 1}"
+                    )
+                    invite_targets.append((idx, target_id, target_name))
+
+                current_total = max(1, int(getattr(self, "make_party_member_count", 1) or 1))
+
+                for offset, (_member_index, target_id, target_name) in enumerate(
+                    invite_targets, start=1
+                ):
+                    invite_stage = (offset * 2) - 1
+                    accept_stage = invite_stage + 1
+                    attempt = 0
+                    target_count = min(stored_expected, 1 + offset)
+
+                    while not getattr(self, "stop_script", False):
+                        attempt += 1
+                        delay = self.randomize_delay(0.75, 1.5) if attempt == 1 else 0.0
+                        if delay > 0:
+                            time.sleep(delay)
+
+                        if attempt == 1:
+                            print(
+                                f"[MEMBER] {self.name} invited {target_name} to the party"
+                            )
+                        else:
+                            print(
+                                f"[MEMBER] {self.name} re-inviting {target_name} to the "
+                                f"party (attempt {attempt})"
+                            )
+
+                        try:
+                            api.send_packet(f"pjoin 0 {target_id}")
+                        except Exception as error:
+                            print(
+                                f"[MEMBER] {self.name} failed to invite {target_name}: {error}"
+                            )
+                            return self._record_make_party_result(False)
+
+                        self._set_make_party_stage(subgroup_key, invite_stage)
+
+                        success, confirmed_total = self._wait_for_make_party_count(
+                            subgroup_key, target_count, timeout=6.0
+                        )
+                        if success:
+                            current_total = confirmed_total
+                            if offset == len(invite_targets):
+                                self._set_make_party_stage(
+                                    subgroup_key, accept_stage, completed=True
+                                )
+                            else:
+                                self._set_make_party_stage(subgroup_key, accept_stage)
+                                wait_seconds = 5.0
+                                print(
+                                    f"[MEMBER] {self.name} waiting {wait_seconds:.0f}s before "
+                                    f"inviting the next member"
+                                )
+                                end_time = time.time() + wait_seconds
+                                while time.time() < end_time:
+                                    if getattr(self, "stop_script", False):
+                                        return self._record_make_party_result(False)
+                                    time.sleep(0.1)
+                            break
+
+                        print(
+                            f"[MEMBER] {self.name} party confirmation incomplete "
+                            f"({confirmed_total}/{stored_expected}), re-sending invitation "
+                            f"to {target_name}"
+                        )
+
+                    else:
+                        return self._record_make_party_result(False)
+
+                self.make_party_member_count = min(stored_expected, current_total)
+
+            elif position == 1:
+                stage_state = self._wait_for_make_party_stage(subgroup_key, 1)
+                if stage_state is None:
+                    return self._record_make_party_result(False)
+                delay = self.randomize_delay(2, 3)
+                if delay > 0:
+                    time.sleep(delay)
+                if inviter_id is None:
+                    print(f"[MEMBER] {self.name} does not know who invited them to the party.")
+                    return self._record_make_party_result(False)
+                inviter_label = (
+                    inviter_name if inviter_name else "the subgroup leader"
+                )
+                print(
+                    f"[MEMBER] {self.name} accepted the party invitation from {inviter_label}"
+                )
                 try:
-                    api.send_packet(f"pjoin 0 {next_id}")
+                    api.send_packet(f"#pjoin^3^{inviter_id}")
                 except Exception as error:
-                    print(f"[MEMBER] {self.name} failed to invite {next_name}: {error}")
+                    print(f"[MEMBER] {self.name} failed to accept the party invitation: {error}")
                     return self._record_make_party_result(False)
-                self._set_make_party_stage(subgroup_key, 3)
+                if stored_expected == 2:
+                    self._set_make_party_stage(subgroup_key, 2, completed=True)
+                else:
+                    self._set_make_party_stage(subgroup_key, 2)
 
-        elif position == 2:
-            stage_state = self._wait_for_make_party_stage(subgroup_key, 3)
-            if stage_state is None:
+            elif position == 2:
+                stage_state = self._wait_for_make_party_stage(subgroup_key, 3)
+                if stage_state is None:
+                    return self._record_make_party_result(False)
+                delay = self.randomize_delay(2, 3)
+                if delay > 0:
+                    time.sleep(delay)
+                if inviter_id is None:
+                    print(f"[MEMBER] {self.name} does not know who invited them to the party.")
+                    return self._record_make_party_result(False)
+                inviter_label = (
+                    inviter_name if inviter_name else "the subgroup leader"
+                )
+                print(
+                    f"[MEMBER] {self.name} accepted the party invitation from {inviter_label}"
+                )
+                try:
+                    api.send_packet(f"#pjoin^3^{inviter_id}")
+                except Exception as error:
+                    print(f"[MEMBER] {self.name} failed to accept the party invitation: {error}")
+                    return self._record_make_party_result(False)
+                self._set_make_party_stage(subgroup_key, 4, completed=True)
+
+            else:
+                print(f"[MEMBER] {self.name} has an unsupported position inside the subgroup.")
                 return self._record_make_party_result(False)
-            delay = self.randomize_delay(1, 2)
-            if delay > 0:
-                time.sleep(delay)
-            if prev_id is None:
-                print(f"[MEMBER] {self.name} does not know who invited them to the party.")
+
+            completion_state = self._wait_for_make_party_stage(subgroup_key, final_stage)
+            if completion_state is None:
                 return self._record_make_party_result(False)
-            print(
-                f"[MEMBER] {self.name} accepted the party invitation from {prev_name}"
+
+            confirmations_ok, final_count = self._wait_for_make_party_confirmations(
+                subgroup_key,
+                stored_expected,
             )
-            try:
-                api.send_packet(f"#pjoin^3^{prev_id}")
-            except Exception as error:
-                print(f"[MEMBER] {self.name} failed to accept the party invitation: {error}")
+            if not confirmations_ok:
+                print(
+                    f"[MEMBER] {self.name} party confirmation incomplete "
+                    f"({final_count}/{stored_expected})"
+                )
                 return self._record_make_party_result(False)
-            self._set_make_party_stage(subgroup_key, 4, completed=True)
 
-        else:
-            print(f"[MEMBER] {self.name} has an unsupported position inside the subgroup.")
-            return self._record_make_party_result(False)
-
-        completion_state = self._wait_for_make_party_stage(subgroup_key, final_stage)
-        if completion_state is None:
-            return self._record_make_party_result(False)
-
-        self._finalize_make_party_state(subgroup_key)
-        return self._record_make_party_result(True)
+            self.make_party_member_count = stored_expected
+            print(
+                f"[MEMBER] {self.name} party is complete "
+                f"({stored_expected}/{stored_expected})"
+            )
+            leader_identifier = member_ids[0] if member_ids else None
+            leader_name = member_names[0] if member_names else None
+            self._record_party_completion(
+                subgroup_key,
+                leader_identifier,
+                leader_name,
+                stored_expected,
+                stored_expected,
+            )
+            self._finalize_make_party_state(subgroup_key)
+            return self._record_make_party_result(True)
+        finally:
+            self._clear_active_make_party_context()
 
     def rolename(self) -> str:
         """Return a fantasy-style name up to 12 characters."""
@@ -1708,6 +2383,7 @@ class Player:
                     packet = json_msg["packet"]
                     splitPacket = packet.split()
                     #print(f"[RECV]: {packet}")
+                    self._process_party_confirmation_packet(splitPacket)
                     if splitPacket[0] == ("stat"):
                         self.current_hp = int(splitPacket[1])
                         self.max_hp = int(splitPacket[2])
