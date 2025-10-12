@@ -13,6 +13,7 @@ if packet.startswith(f"exc_list 1 {self.leaderID} -1 -1") and int(self.attr90) =
         selfgroup.trade = "0"  # liberar comercio para otros miembros
         selfgroup.trade_candidate = None
         self.attr96 = 0  # asegurar que este miembro no quede marcado como bloqueador de comercio
+        self._gold_trade_request_last_sent = 0
         time.sleep(self.randomize_delay(2,3))
         self.attr1 = 71
         self.attr95 = 0

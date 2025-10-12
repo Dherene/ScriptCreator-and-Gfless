@@ -1,0 +1,21 @@
+recv_packet
+0
+if packet.startswith(f"sayi 1 {self.id} 11 754 4") and int(self.attr1) == 43:
+        parts = packet.split()
+        if len(parts) <= 6:
+                return
+        timeT = int(parts[6]) + 2
+        time.sleep(timeT)
+        time.sleep(self.randomize_delay(0.75,1.5))
+        self.use_item(4870, "equip")
+        time.sleep(self.randomize_delay(0.75,1.5))
+        self.use_item(4997, "equip")
+        time.sleep(self.randomize_delay(1,2))
+        self.use_item(904, "equip")
+        time.sleep(self.randomize_delay(1,2))
+        self.use_item(887, "equip")
+        time.sleep(self.randomize_delay(1,1.5))
+        self.api.send_packet("sl 0")
+        cond.on = 66
+        time.sleep(self.randomize_delay(3,4))
+        self.api.send_packet("eqinfo 0 12")
