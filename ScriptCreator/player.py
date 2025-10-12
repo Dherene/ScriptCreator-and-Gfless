@@ -3238,6 +3238,78 @@ class Player:
     def split_packet(self, packet, delimeter = " "):
         return packet.split(delimeter)
 
+    def clear_group_script_state(self):
+        """Reset cached trade and roster data used by group scripts."""
+
+        defaults = {
+            "current_trader": None,
+            "trade_mode": "receive",
+            "members_received_items": set(),
+            "authorized_members": {},
+            "authorized_names": set(),
+            "authorized_roster": [],
+            "account_map": {},
+            "account_positions": {},
+            "name_to_account": {},
+            "member_ids_list": [],
+        }
+
+        def _clone(value):
+            if isinstance(value, dict):
+                return dict(value)
+            if isinstance(value, set):
+                return set(value)
+            if isinstance(value, list):
+                return list(value)
+            return value
+
+        for attr, default in defaults.items():
+            setattr(self, attr, _clone(default))
+
+        transient_attrs = ("saved_name", "saved_id", "nameacc", "_old_name", "_old_id")
+        for attr in transient_attrs:
+            if hasattr(self, attr):
+                try:
+                    delattr(self, attr)
+                except AttributeError:
+                    setattr(self, attr, None)
+
+    def clear_group_script_state(self):
+        """Reset cached trade and roster data used by group scripts."""
+
+        defaults = {
+            "current_trader": None,
+            "trade_mode": "receive",
+            "members_received_items": set(),
+            "authorized_members": {},
+            "authorized_names": set(),
+            "authorized_roster": [],
+            "account_map": {},
+            "account_positions": {},
+            "name_to_account": {},
+            "member_ids_list": [],
+        }
+
+        def _clone(value):
+            if isinstance(value, dict):
+                return dict(value)
+            if isinstance(value, set):
+                return set(value)
+            if isinstance(value, list):
+                return list(value)
+            return value
+
+        for attr, default in defaults.items():
+            setattr(self, attr, _clone(default))
+
+        transient_attrs = ("saved_name", "saved_id", "nameacc", "_old_name", "_old_id")
+        for attr in transient_attrs:
+            if hasattr(self, attr):
+                try:
+                    delattr(self, attr)
+                except AttributeError:
+                    setattr(self, attr, None)
+
     def reset_attrs(self):
         """Reset attr1 through attr99 to 0 and clear leader info."""
         current_group = getattr(self, "attr19", 0)
@@ -3260,6 +3332,8 @@ class Player:
         self.party_subgroups = {}
         self.party_subgroup_order = {}
         self.party_subgroup_members = {}
+
+        self.clear_group_script_state()
 
     def reset_group_runtime(self):
         """Stop scripts, cancel condition tasks and clear shared state."""
@@ -3369,6 +3443,8 @@ class Player:
         self._current_gid = self._unique_group_id
         self.subgroup_index = None
         self.subgroup_member_limit = 0
+
+        self.clear_group_script_state()
 
     def invite_members(self):
         """Invite all stored group members with a 3-second delay between invites."""
