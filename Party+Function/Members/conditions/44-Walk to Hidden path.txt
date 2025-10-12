@@ -5,5 +5,15 @@ if int(self.attr1) == 26 and self.map_id == 21:
 	cond.off = 0
 	time.sleep(self.randomize_delay(0.75,1.5))
 	cond.on = 45
+	cond.on = 90
+	cond.on = 121
 	self.walk_to_point([63,189], 0)
 	self.attr1 = 27
+
+elif int(self.attr1) == 26 and self.map_id == 24:
+	print(f"[MEMBER] {self.name} is in Mountain Cave 2") #volvemos a la condicion anterior y salimos de m.c 2
+	cond.off = 0
+	time.sleep(self.randomize_delay(2,3))
+	cond.on = 43
+	self.walk_to_point([45,113], 1)
+	self.attr1 = 25

@@ -8,5 +8,7 @@ if int(self.attr1) == 18 and self.map_id == 13:
 	time.sleep(self.randomize_delay(0.75,1))
 	self.use_item(4834, "equip")
 	cond.on = 33
+	cond.on = 90
+	cond.on = 121
 	self.walk_to_point([42,24], 1)
 	self.attr1 = 19

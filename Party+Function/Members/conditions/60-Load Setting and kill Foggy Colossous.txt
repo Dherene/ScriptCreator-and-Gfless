@@ -9,7 +9,7 @@ if int(self.attr1) == 37 and int(selfsubg.sincro) == 18:
 	time.sleep(self.randomize_delay(0.75,1.5))
 	self.use_item(4995, "equip")
 	time.sleep(self.randomize_delay(0.75,1.5))
-	self.api.load_settings(r"C:\Users\valde\Desktop\scriptcreator+glfess\Party+Function\Index[ALL]Colossous-Archer.ini")
+	self.api.load_settings(r"C:\Users\Braihan\Desktop\ScripterBot\Party+Function\Index[ALL]Colossous-Archer.ini")
 	time.sleep(self.randomize_delay(2,3))
 	self.api.start_bot()
 	self.attr1 = 38

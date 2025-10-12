@@ -5,6 +5,8 @@ if int(self.attr1) == 25 and self.map_id == 20:
 	cond.off = 0
 	time.sleep(self.randomize_delay(0.75,1.5))
 	cond.on = 44
+	cond.on = 90
+	cond.on = 121
 	self.api.send_packet(f"u_s 3 1 {self.id}") #usa skill Wind Walker
 	time.sleep(self.randomize_delay(0.75,1.5))
 	self.walk_to_point([220,129], 0)

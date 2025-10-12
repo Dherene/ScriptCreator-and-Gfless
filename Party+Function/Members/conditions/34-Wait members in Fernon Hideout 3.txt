@@ -6,6 +6,7 @@ if int(self.attr1) == 20 and self.map_id == 15:
 	time.sleep(self.randomize_delay(0.75,1))
 	cond.on = 35
 	cond.on = 90
+	cond.on = 121
 	self.walk_to_point([56,2], 0)
 	selfsubg.sincro = int(selfsubg.sincro) + 1
 	print(f"[MEMBER] {self.name} incremento el valor de subgrupo en: {selfsubg.sincro}")

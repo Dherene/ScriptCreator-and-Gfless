@@ -9,3 +9,4 @@ if packet.startswith(f"infoi2 166 1 {self.leadername}"):
         selfgroup.trade = "0"
         selfgroup.trade_candidate = None
         self.attr96 = 0  # liberar el bloqueo de comercio de este miembro
+        self._trade_request_last_sent = 0

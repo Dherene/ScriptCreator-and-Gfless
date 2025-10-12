@@ -2,5 +2,5 @@ recv_packet
 0
 if packet.startswith("dlgi #revival^0"):
 	print(f"[MEMBER] {self.name} accept revive")
-	time.sleep(self.randomize_delay(0.75,1.5))
+	time.sleep(self.randomize_delay(3,4))
 	self.api.send_packet("#revival^0")

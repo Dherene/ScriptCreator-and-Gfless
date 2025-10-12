@@ -1,5 +1,5 @@
 periodical
-0
+1
 import random
 
 MAX_SUBGROUP_MEMBERS = 3

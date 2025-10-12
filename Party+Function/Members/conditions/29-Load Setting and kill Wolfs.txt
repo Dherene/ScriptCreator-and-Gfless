@@ -4,7 +4,7 @@ if int(self.attr1) == 15 and int(selfsubg.sincro) == 9 and int(self.subgroup_mem
 	print(f"[MEMBER] {self.name} is Index 1 it will farm Top Krem")
 	cond.off = 0
 	time.sleep(self.randomize_delay(0.75,1.5))
-	self.api.load_settings(r"C:\Users\valde\Desktop\scriptcreator+glfess\Party+Function\Index[1]Wolf-Archer.ini")
+	self.api.load_settings(r"C:\Users\Braihan\Desktop\ScripterBot\Party+Function\Index[1]Wolf-Archer.ini")
 	time.sleep(self.randomize_delay(2,3))
 	self.api.start_bot()
 	cond.on = 30
@@ -13,7 +13,7 @@ elif int(self.attr1) == 15 and int(selfsubg.sincro) == 9 and int(self.subgroup_m
 	cond.off = 0
 	print(f"[MEMBER] {self.name} is Index 2 it will farm Middle Krem")
 	time.sleep(self.randomize_delay(0.75,1.5))
-	self.api.load_settings(r"C:\Users\valde\Desktop\scriptcreator+glfess\Party+Function\Index[2]Wolf-Archer.ini")
+	self.api.load_settings(r"C:\Users\Braihan\Desktop\ScripterBot\Party+Function\Index[2]Wolf-Archer.ini")
 	time.sleep(self.randomize_delay(2,3))
 	self.api.start_bot()
 	cond.on = 30
@@ -22,7 +22,7 @@ elif int(self.attr1) == 15 and int(selfsubg.sincro) == 9 and int(self.subgroup_m
 	cond.off = 0
 	print(f"[MEMBER] {self.name} is Index 3 it will farm Bot Krem")
 	time.sleep(self.randomize_delay(0.75,1.5))
-	self.api.load_settings(r"C:\Users\valde\Desktop\scriptcreator+glfess\Party+Function\Index[3]Wolf-Archer.ini")
+	self.api.load_settings(r"C:\Users\Braihan\Desktop\ScripterBot\Party+Function\Index[3]Wolf-Archer.ini")
 	time.sleep(self.randomize_delay(2,3))
 	self.api.start_bot()
 	cond.on = 30

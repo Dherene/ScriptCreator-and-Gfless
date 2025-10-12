@@ -3,7 +3,7 @@ periodical
 if int(self.map_id) == 20 and int(self.attr1) == 0 and int(self.attr90) == 0:
         print(f"1-[MEMBER] {self.name} will start in 5 seconds")
         cond.off = 0
-        time.sleep(self.randomize_delay(3,5))
+        time.sleep(self.randomize_delay(8,10))
         self.api.send_packet(f"n_run 5 0 1 {self.id}")
         self.api.send_packet("script 0 12 10")
         self.walk_to_point([17,92], 3)

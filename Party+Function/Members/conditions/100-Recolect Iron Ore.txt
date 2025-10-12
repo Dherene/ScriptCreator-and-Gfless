@@ -1,5 +1,5 @@
 periodical
-0
+1
 if (
     int(self.map_id) == 6
     and int(self.attr1) == 65
@@ -20,11 +20,3 @@ if (
         if self._iron_req_counter >= 2:
             time.sleep(7)
             self._iron_req_counter = 0
-            try:
-                member_slot = int(getattr(self, "subgroup_member_index", 0))
-            except (TypeError, ValueError):
-                member_slot = 0
-            if member_slot > 0:
-                setattr(selfsubg, f"iron_slot_{member_slot}", 0)
-            if hasattr(self, "current_iron"):
-                self.current_iron = {}

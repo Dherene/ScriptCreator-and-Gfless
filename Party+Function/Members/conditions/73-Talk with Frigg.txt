@@ -1,6 +1,6 @@
 periodical
 0
-if int(self.attr1) == 49 and self.map_id == 260:
+if int(self.attr1) == 48 and self.map_id == 260:
 	print(f"[MEMBER] {self.name} Talk with Frigg.")
 	cond.off = 0
 	time.sleep(self.randomize_delay(0.75,1.5))
