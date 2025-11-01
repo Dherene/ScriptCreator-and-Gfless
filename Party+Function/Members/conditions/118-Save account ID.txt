@@ -1,0 +1,36 @@
+send_packet
+0
+import time
+parts = packet.split(" ")
+
+# Tras seleccionar el nuevo personaje, esperar a que self.name/self.id se actualicen
+if packet == "select 0":
+    time.sleep(self.randomize_delay(5, 6))
+    old_name = self._old_name
+    old_id = self._old_id
+    updates = self.get_group_var("id_update", {})
+    updates[self.nameacc] = {
+        "name": self.name,
+        "id": int(self.id),
+        "old_name": old_name,
+        "old_id": int(old_id),
+    }
+    self.set_group_var("id_update", updates)
+    print(
+        f"Sent account update to leader: {old_name}/{old_id} -> {self.name}/{self.id}"
+    )
+    self.saved_name = self.name
+    self.saved_id = self.id
+    del self._old_name
+    del self._old_id
+
+# Inicio de sesión inicial: guardar cuenta actual y datos del personaje
+elif len(parts) >= 3 and parts[-2] == "GF" and parts[-1] == "0" and parts[0].startswith(("ES_", "EN_", "PL_")):
+    self.nameacc = parts[0]
+    if getattr(self, "saved_name", None) != self.name or getattr(self, "saved_id", None) != self.id:
+        self.saved_name = self.name
+        self.saved_id = self.id
+        updates = self.get_group_var("id_update", {})
+        updates[self.nameacc] = {"name": self.name, "id": int(self.id)}
+        self.set_group_var("id_update", updates)
+        print(f"Sent old account update to leader: {self.nameacc}/{self.name}/{self.id}")

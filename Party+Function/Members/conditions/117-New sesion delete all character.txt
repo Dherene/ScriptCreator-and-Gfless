@@ -1,0 +1,23 @@
+periodical
+1
+if int(self.attr1) == 0:
+        # Reset trade coordination state before creating the fresh character
+        self.attr90 = 0
+        self.attr96 = 0
+        self._trade_request_last_sent = 0
+        self._gold_trade_request_last_sent = 0
+        selfgroup.trade = "0"
+        selfgroup.trade_candidate = None
+        selfgroup.trade_locked_since = None
+        selfgroup.trade_locked_by = None
+        selfgroup.trade_timeout_releases = []
+        self.saved_name = None
+        self.saved_id = None
+        if hasattr(self, "_old_name"):
+            del self._old_name
+        if hasattr(self, "_old_id"):
+            del self._old_id
+        time.sleep(self.randomize_delay(1,2))
+        print(f"[MEMBER] {self.name} will create a new character to start bot")
+        cond.on = 113
+        self.attr1 = 71

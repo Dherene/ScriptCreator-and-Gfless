@@ -1,0 +1,52 @@
+periodical
+1
+import time
+import random
+LEVER_RC = [
+    {"x": 37, "y": 3},
+    {"x": 22, "y": 22},
+    {"x": 6,  "y": 34},
+]
+
+if int(self.attr1) == 54 and int(self.map_id) == 121:
+    if not isinstance(getattr(self, "_rc_levers", None), list) or len(self._rc_levers) != len(LEVER_RC):
+        self._rc_levers = [dict(item) for item in LEVER_RC]
+    idx = int(getattr(self, "_rc_lever_idx", 0))
+    if idx < 0:
+        idx = 0
+        self._rc_lever_idx = 0
+    if idx >= len(self._rc_levers):
+        pass
+    else:
+        target = self._rc_levers[idx]
+        now = time.monotonic()
+        tx = int(target["x"]) ; ty = int(target["y"]) 
+        lever_id = target.get("ID")
+        if lever_id is None:
+            for npc in getattr(self, "npcs", []):
+                try:
+                    if int(npc.get("x", -1)) == tx and int(npc.get("y", -1)) == ty:
+                        target["ID"] = int(npc["id"]) 
+                        lever_id = target["ID"]
+                        break
+                except Exception:
+                    continue
+        last_walk = getattr(self, "_rc_lever_last_walk_at", 0)
+        if now - last_walk >= 2.0:
+            if int(getattr(self, "_rc_logged_idx", -1)) != idx:
+                print(f"[MEMBER] {self.name} Use RC Lever {idx+1} at ({tx},{ty})")
+                self._rc_logged_idx = idx
+            rx = tx + random.choice([-1, 0, 1])
+            ry = ty + random.choice([-1, 0, 1])
+            self.api.player_walk(int(rx), int(ry))
+            self._rc_lever_last_walk_at = now
+        if abs(int(self.pos_x) - tx) <= 1 and abs(int(self.pos_y) - ty) <= 1 and lever_id is not None:
+            last_use_idx = int(getattr(self, "_rc_lever_last_use_idx", -1))
+            last_use_at = getattr(self, "_rc_lever_last_use_at", 0)
+            now2 = time.monotonic()
+            if last_use_idx != idx or (now2 - last_use_at) >= 6.5:
+                time.sleep(self.randomize_delay(0.75,1.25))
+                self.api.use_player_skill(lever_id, 0)
+                self._rc_lever_last_use_idx = idx
+                self._rc_lever_last_use_at = now2
+                time.sleep(self.randomize_delay(6.5,7))

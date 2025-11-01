@@ -1,0 +1,7 @@
+periodical
+0
+if int(self.hp_percent) <= 45:
+	print(f"[MEMBER] {self.name} is low life USE POTION")
+	time.sleep(self.randomize_delay(0.75,1))
+	self.use_item(1010, "main")
+	#self.use_item(1004, "main") potion large health

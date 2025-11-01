@@ -1,0 +1,36 @@
+recv_packet
+0
+splitPacket = packet.split()
+if len(splitPacket) >= 2 and splitPacket[0] == "in":
+    if not hasattr(self, "iron_ore"):
+        self.iron_ore = []
+
+    if not hasattr(self, "occupied_iron_positions") or not isinstance(
+        self.occupied_iron_positions, set
+    ):
+        self.occupied_iron_positions = set()
+
+    if len(splitPacket) >= 6 and splitPacket[1] == "2" and splitPacket[2] == "881":
+        vnum = int(splitPacket[3])
+        x = int(splitPacket[4])
+        y = int(splitPacket[5])
+        iron = {"vnum": vnum, "x": x, "y": y}
+        if not any(
+            t["vnum"] == vnum and t["x"] == x and t["y"] == y
+            for t in self.iron_ore
+        ):
+            self.iron_ore.append(iron)
+            print(f"Saved Iron Ore: vnum={vnum}, x={x}, y={y}")
+
+    elif len(splitPacket) >= 7 and splitPacket[1] == "1":
+        try:
+            pos_x = int(splitPacket[5])
+            pos_y = int(splitPacket[6])
+        except (IndexError, TypeError, ValueError):
+            pos_x = pos_y = None
+
+        if pos_x is not None and pos_y is not None:
+            party_names = getattr(self, "partyname", [])
+            occupant_name = splitPacket[2]
+            if occupant_name not in party_names:
+                self.occupied_iron_positions.add((pos_x, pos_y))

@@ -1,0 +1,42 @@
+recv_packet
+0
+if packet.startswith(f"exc_list 1 {self.leaderID} -1 -1") and int(self.attr90) == 92:
+        cond.off = 0
+        time.sleep(self.randomize_delay(0.75,1))
+        print(f"69-[MEMBER] {self.name} registered gold trade and items")
+        self.put_items_in_trade([(1, 1004, 40), (1, 1012, 200), (2, 2026, 50)], gold=437500)
+        time.sleep(self.randomize_delay(2,3))
+        self.api.send_packet("req_exc 3")
+        time.sleep(self.randomize_delay(2,3))
+
+        # Marcar fin del comercio
+        self.attr90 = 93
+        self._gold_trade_request_last_sent = 0
+        selfgroup.trade = "0"
+        selfgroup.trade_candidate = None
+        self.attr96 = 0
+
+        my_index = int(getattr(self, "subgroup_member_index", 0))
+        if my_index == 1:
+                print(f"[RETURN] {self.name} (index {my_index}) preparing RP transfer")
+                # Señalizar al líder que debe aceptar el RP en la segunda invitación
+                selfgroup.rp_accept_mode = True
+                selfgroup.rp_accept_from_id = str(self.id)
+                selfgroup.rp_accept_from_name = self.name
+                selfgroup.rp_leader_party_accepted_for_id = None
+                selfgroup.rp_accepted_id = None
+
+                # Preparar flags locales para el flujo de retorno
+                self._rp_second_invite_started = False
+                self._rp_second_invite_share_sent = False
+                self._rp_transfer_completed = False
+
+                time.sleep(self.randomize_delay(0.5,1))
+                self.attr1 = 74  # estado intermedio hasta completar el traspaso del RP
+                cond.on = 9      # enviar segunda invitación y compartir RP
+                cond.on = 124    # monitorear confirmación del líder
+        else:
+                # Resto de miembros: finalizar ciclo normalmente
+                time.sleep(self.randomize_delay(0.5,1))
+                self.attr1 = 71
+                cond.on = 113

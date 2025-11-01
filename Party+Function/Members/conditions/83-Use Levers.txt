@@ -1,0 +1,59 @@
+periodical
+1
+import time
+import random
+VNUM = 856
+LEVER_ORDER = [
+    {"x": 20, "y": 8},
+    {"x": 9,  "y": 33},
+    {"x": 36, "y": 47},
+    {"x": 42, "y": 18},
+    {"x": 10, "y": 65},
+    {"x": 80, "y": 73},
+    {"x": 63, "y": 99},
+    {"x": 31, "y": 89},
+    {"x": 11, "y": 101},
+]
+
+if int(self.attr1) == 53 and int(self.map_id) == 120:
+    if not isinstance(getattr(self, "_levers", None), list) or len(self._levers) != len(LEVER_ORDER):
+        self._levers = [dict(item) for item in LEVER_ORDER]
+    idx = int(getattr(self, "_lever_idx", 0))
+    if idx < 0:
+        idx = 0
+        self._lever_idx = 0
+    if idx >= len(self._levers):
+        pass
+    else:
+        target = self._levers[idx]
+        now = time.monotonic()
+        tx = int(target["x"]) ; ty = int(target["y"]) 
+        lever_id = target.get("ID")
+        if lever_id is None:
+            for npc in getattr(self, "npcs", []):
+                try:
+                    if int(npc.get("vnum", 0)) == VNUM and int(npc.get("x", -1)) == tx and int(npc.get("y", -1)) == ty:
+                        target["ID"] = int(npc["id"]) 
+                        lever_id = target["ID"]
+                        break
+                except Exception:
+                    continue
+        last_walk = getattr(self, "_lever_last_walk_at", 0)
+        if now - last_walk >= 2.0:
+            if int(getattr(self, "_lever_logged_idx", -1)) != idx:
+                print(f"[MEMBER] {self.name} Use Lever {idx+1} at ({tx},{ty})")
+                self._lever_logged_idx = idx
+            rx = tx + random.choice([-1, 0, 1])
+            ry = ty + random.choice([-1, 0, 1])
+            self.api.player_walk(int(rx), int(ry))
+            self._lever_last_walk_at = now
+        if abs(int(self.pos_x) - tx) <= 1 and abs(int(self.pos_y) - ty) <= 1 and lever_id is not None:
+            last_use_idx = int(getattr(self, "_lever_last_use_idx", -1))
+            last_use_at = getattr(self, "_lever_last_use_at", 0)
+            now2 = time.monotonic()
+            if last_use_idx != idx or (now2 - last_use_at) >= 6.5:
+                time.sleep(self.randomize_delay(0.75,1.25))
+                self.api.use_player_skill(lever_id, 0)
+                self._lever_last_use_idx = idx
+                self._lever_last_use_at = now2
+                time.sleep(self.randomize_delay(6.5,7))

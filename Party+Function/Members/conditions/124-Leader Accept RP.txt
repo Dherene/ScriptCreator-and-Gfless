@@ -1,0 +1,31 @@
+recv_packet
+0
+
+
+
+# Esta condición solo interesa durante el flujo de transferencia de RP (attr1 == 74)
+if int(self.attr1) == 74:
+        accepted_by_packet = packet.startswith("dlgi2") and "#pjoin^6^" in packet
+        accepted_by_flag = str(getattr(selfgroup, "rp_accepted_id", "")) == str(self.id)
+
+        if accepted_by_packet or accepted_by_flag:
+                if not getattr(self, "_rp_transfer_completed", False):
+                        source = "packet #pjoin^6^" if accepted_by_packet else f"flag rp_accepted_id={getattr(selfgroup, 'rp_accepted_id', '')}"
+                        print(f"[RETURN] {self.name} leader confirmed RP (via {source})")
+                        time.sleep(self.randomize_delay(1.0, 1.5))
+
+                        # Limpiar flags locales y grupales
+                        self._rp_transfer_completed = True
+                        self._rp_second_invite_started = False
+                        self._rp_second_invite_share_sent = False
+
+                        selfgroup.rp_accept_mode = False
+                        selfgroup.rp_leader_party_accepted_for_id = None
+                        selfgroup.rp_accepted_id = None
+                        selfgroup.rp_accept_from_id = None
+                        selfgroup.rp_accept_from_name = None
+
+                        # Preparar siguiente ciclo
+                        time.sleep(self.randomize_delay(0.5, 1))
+                        self.attr1 = 71
+                        cond.on = 113

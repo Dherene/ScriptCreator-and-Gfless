@@ -1,0 +1,21 @@
+recv_packet
+1
+import time
+if packet.startswith(f"tp 1 {self.id}") and int(self.attr1) == 53 and int(self.map_id) == 120:
+    now = time.monotonic()
+    last = getattr(self, "_lever_last_tp", 0)
+    if now - last < 1.0:
+        pass
+    else:
+        setattr(self, "_lever_last_tp", now)
+        idx = int(getattr(self, "_lever_idx", 0))
+        idx += 1
+        self._lever_idx = idx
+        print(f"[MEMBER] {self.name} Used lever #{idx} and teleported")
+        time.sleep(self.randomize_delay(0.5,1.0))
+        seq_len = len(getattr(self, "_levers", []))
+        if seq_len and idx >= seq_len:
+            print(f"[MEMBER] {self.name} All levers completed. Proceeding.")
+            time.sleep(self.randomize_delay(1.0,1.5))
+            cond.on = 85
+            self.attr1 = 54

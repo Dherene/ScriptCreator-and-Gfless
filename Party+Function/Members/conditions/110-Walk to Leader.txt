@@ -1,0 +1,15 @@
+periodical
+0
+import time
+1
+if int(self.map_id) == 1 and int(self.attr1) == 68:
+        print(f"1-[MEMBER] {self.name} walk to leader")
+        cond.off = 0
+        time.sleep(self.randomize_delay(1,2))
+        x = int(selfgroup.leader_x)
+        y = int(selfgroup.leader_y)
+        self.walk_to_point([x, y], 3)
+        cond.on = 111
+        self.attr1 = 70 #activar siguiente condición general
+        self.attr90 = 91 #desactivar esta condición y activar la siguiente
+        self.attr95 = 2  # modo de comercio: enviar oro

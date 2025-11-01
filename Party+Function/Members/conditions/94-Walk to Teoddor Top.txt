@@ -1,0 +1,24 @@
+periodical
+0
+if int(self.attr1) == 58 and self.map_id == 1:
+	print(f"[MEMBER] {self.name} Walk to Teoddor Top")
+	self._lever_idx = 0  #reiniciar indices de levers
+	self._levers = []
+	self._lever_last_tp = 0
+	self._lever_last_use_idx = -1
+	self._lever_last_use_at = 0
+	self._lever_last_walk_at = 0
+	self._lever_logged_idx = -1
+	self._rc_lever_idx = 0
+	self._rc_levers = []
+	self._rc_last_tp = 0
+	self._rc_lever_last_use_idx = -1
+	self._rc_lever_last_use_at = 0
+	self._rc_lever_last_walk_at = 0
+	self._rc_logged_idx = -1
+	cond.off = 0
+	time.sleep(self.randomize_delay(0.75,1.5))
+	cond.on = 95
+	cond.on = 96
+	self.walk_to_point([23,64], 2)
+	self.attr1 = 59

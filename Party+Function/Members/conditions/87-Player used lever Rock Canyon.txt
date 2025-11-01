@@ -1,0 +1,20 @@
+recv_packet
+1
+import time
+if packet.startswith(f"tp 1 {self.id}") and int(self.attr1) == 54 and int(self.map_id) == 121:
+    now = time.monotonic()
+    last = getattr(self, "_rc_last_tp", 0)
+    if now - last < 1.0:
+        pass
+    else:
+        setattr(self, "_rc_last_tp", now)
+        idx = int(getattr(self, "_rc_lever_idx", 0)) + 1
+        self._rc_lever_idx = idx
+        print(f"[MEMBER] {self.name} Used RC lever #{idx} and teleported")
+        seq_len = len(getattr(self, "_rc_levers", []))
+        if seq_len and idx >= seq_len:
+            # Completed Rock Canyon levers, advance attr1
+            time.sleep(self.randomize_delay(0.75,1.25))
+            cond.on = 88
+            cond.on = 89
+            self.attr1 = 56
