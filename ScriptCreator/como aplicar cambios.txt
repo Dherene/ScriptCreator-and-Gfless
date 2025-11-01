@@ -1,0 +1,17 @@
+con CMD
+cd "C:\Users\valde\Desktop\scriptcreator+glfess"
+
+usar
+
+
+
+aplicar cambios
+patch -p1 -b --backup --suffix=.orig --binary --ignore-whitespace --fuzz=3 < cambio.diff
+
+revertir parche
+patch -R -p1 --binary < cambio.diff
+
+
+
+
+(cambio.diff) es el archivo con los cambios

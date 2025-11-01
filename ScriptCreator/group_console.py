@@ -6,10 +6,11 @@ import builtins
 import contextvars
 import io
 import sys
+import time
 from contextlib import contextmanager
 from typing import Optional
 
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QFont, QKeySequence, QTextCursor, QTextDocument
 from PyQt5.QtWidgets import (
     QButtonGroup,
@@ -176,6 +177,15 @@ class GroupConsoleWindow(QWidget):
         self._text_edit = QPlainTextEdit(self)
         self._text_edit.setReadOnly(True)
         self._text_edit.setLineWrapMode(QPlainTextEdit.NoWrap)
+        self._text_edit.verticalScrollBar().valueChanged.connect(self._on_scroll_value_changed)
+        self._text_edit.cursorPositionChanged.connect(self._on_cursor_changed)
+        self._text_edit.selectionChanged.connect(self._on_selection_changed)
+        self._manual_scroll = False
+        self._last_manual_scroll = 0.0
+        self._selection_active = False
+        self._auto_scroll_timer = QTimer(self)
+        self._auto_scroll_timer.setInterval(1000)
+        self._auto_scroll_timer.timeout.connect(self._maybe_resume_auto_scroll)
 
         font = QFont("Consolas")
         if not font.exactMatch():
@@ -227,6 +237,7 @@ class GroupConsoleWindow(QWidget):
 
         self.append_requested.connect(self._append_text)
         self.set_leader_name(leader_name)
+        self._auto_scroll_timer.start()
 
     def set_leader_name(self, leader_name: str) -> None:
         self.setWindowTitle(f"Group Console - {leader_name}")
@@ -293,13 +304,69 @@ class GroupConsoleWindow(QWidget):
     def _append_text(self, text: str) -> None:
         if self._is_closed:
             return
+        scrollbar = self._text_edit.verticalScrollBar()
+        previous_value = scrollbar.value()
+        previous_cursor = QTextCursor(self._text_edit.textCursor())
+        insert_cursor = self._text_edit.textCursor()
+        insert_cursor.movePosition(QTextCursor.End)
+        insert_cursor.insertText(text)
+        if not self._should_hold_scroll():
+            self._text_edit.setTextCursor(insert_cursor)
+            self._text_edit.ensureCursorVisible()
+        else:
+            self._text_edit.setTextCursor(previous_cursor)
+            scrollbar.setValue(previous_value)
+
+    def _on_selection_changed(self) -> None:
+        if self._is_closed:
+            return
+        cursor = self._text_edit.textCursor()
+        self._selection_active = cursor.hasSelection()
+        if self._selection_active:
+            self._manual_scroll = True
+            self._last_manual_scroll = time.monotonic()
+
+    def _on_cursor_changed(self) -> None:
+        if self._is_closed:
+            return
+        if self._selection_active:
+            self._manual_scroll = True
+            self._last_manual_scroll = time.monotonic()
+
+    def _on_scroll_value_changed(self, value: int) -> None:
+        if self._is_closed:
+            return
+        scrollbar = self._text_edit.verticalScrollBar()
+        if value < scrollbar.maximum():
+            self._manual_scroll = True
+            self._last_manual_scroll = time.monotonic()
+        else:
+            if not self._selection_active:
+                self._manual_scroll = False
+                self._last_manual_scroll = 0.0
+
+    def _should_hold_scroll(self) -> bool:
+        if self._selection_active:
+            return True
+        if not self._manual_scroll:
+            return False
+        return (time.monotonic() - self._last_manual_scroll) < 30.0
+
+    def _maybe_resume_auto_scroll(self) -> None:
+        if self._is_closed:
+            return
+        if self._should_hold_scroll():
+            return
         cursor = self._text_edit.textCursor()
         cursor.movePosition(QTextCursor.End)
-        cursor.insertText(text)
         self._text_edit.setTextCursor(cursor)
         self._text_edit.ensureCursorVisible()
+        self._manual_scroll = False
+        self._selection_active = False
+        self._last_manual_scroll = 0.0
 
     def closeEvent(self, event):  # type: ignore[override]
         self._is_closed = True
+        self._auto_scroll_timer.stop()
         self.closed.emit()
         super().closeEvent(event)

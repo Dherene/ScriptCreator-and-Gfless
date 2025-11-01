@@ -440,8 +440,14 @@ def close_login_pipe() -> None:
     except Exception:
         pass
     if thread is not None:
-        # allow the server thread time to exit so the pipe is released
-        thread.join(timeout=2.0)
+        # ``join`` raises ``RuntimeError`` if the thread was never started,
+        # which can happen when an earlier failure stops the login pipe
+        # before the worker thread gets scheduled.  Guard against this to
+        # avoid bubbling the error up to the scripting engine and silently
+        # releasing the pipe instead.
+        if thread.is_alive():
+            # allow the server thread time to exit so the pipe is released
+            thread.join(timeout=2.0)
     # ensure no external login servers keep the pipe busy
     _terminate_login_servers()
 

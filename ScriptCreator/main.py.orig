@@ -56,12 +56,7 @@ from license_manager import prompt_for_license
 from player import Player, PeriodicCondition
 from getports import returnAllPorts, returnCorrectPID
 from funcs import randomize_time
-try:
-    from conditioncreator import ConditionModifier
-except ModuleNotFoundError:
-    import os as _os, sys as _sys
-    _sys.path.insert(0, _os.path.dirname(__file__))
-    from conditioncreator import ConditionModifier
+from conditioncreator import ConditionModifier
 from editor import Editor
 import gfless_api
 from group_console import (
@@ -218,7 +213,7 @@ class CheckableComboBox(QComboBox):
     def addItems(self, texts):
         for text in texts:
             item = QStandardItem(text)
-            item.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            item.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
             item.setData(Qt.Unchecked, Qt.CheckStateRole)
             self.model().appendRow(item)
 
@@ -686,7 +681,7 @@ class LeaderSelectionDialog(QDialog):
         super().__init__()
         self.setWindowTitle("Select Leaders")
         self.setWindowIcon(QIcon('src/icon.png'))
-        self.combo = CheckableComboBox(max_checked=None)
+        self.combo = CheckableComboBox(max_checked=4)
         self.combo.addItems(player_names)
         for i in range(self.combo.model().rowCount()):
             item = self.combo.model().item(i)
@@ -2660,14 +2655,6 @@ class MyWindow(QMainWindow):
 
         console = self.leader_to_console.get(leader_obj)
         if console is None or console not in self.console_groups:
-            for existing_console, info in self.console_groups.items():
-                if info.get("leader") is not None:
-                    continue
-                stored_name = info.get("leader_name")
-                if stored_name and isinstance(stored_name, str) and stored_name == leader_obj.name:
-                    console = existing_console
-                    break
-        if console is None or console not in self.console_groups:
             console = GroupConsoleWindow(leader_obj.name, parent=self)
             console.closed.connect(lambda c=console: self._on_group_console_closed(c))
 
@@ -2751,11 +2738,7 @@ class MyWindow(QMainWindow):
                     player_obj.subgroup_member_limit = 0
 
         group_record = dict(existing) if isinstance(existing, dict) else {}
-        group_record.update({
-            "leader": leader_obj,
-            "leader_name": getattr(leader_obj, "name", None),
-            "members": new_members,
-        })
+        group_record.update({"leader": leader_obj, "members": new_members})
         member_names = [p.name for p in member_objs]
         group_record["member_names"] = member_names
         if subgroup_assignments_by_name:
@@ -2789,51 +2772,21 @@ class MyWindow(QMainWindow):
         console.activateWindow()
 
     def _on_group_console_closed(self, console):
-        self._disband_group_console(console, keep_window=False)
-
-    def _disband_group_console(self, console, *, keep_window=False, exclude_player=None):
-        group_info = self.console_groups.get(console)
+        group_info = self.console_groups.pop(console, None)
         if not group_info:
             return
 
-        members = [
-            player_obj
-            for player_obj in list(group_info.get("members", set()))
-            if player_obj is not exclude_player
-        ]
-
+        members = list(group_info.get("members", set()))
         leader_obj = group_info.get("leader")
         if leader_obj and self.leader_to_console.get(leader_obj) is console:
             self.leader_to_console.pop(leader_obj, None)
-
-        leader_name = group_info.get("leader_name")
-        if leader_obj is not None:
-            leader_name = getattr(leader_obj, "name", leader_name)
 
         for player_obj in members:
             if getattr(player_obj, "group_console", None) is console:
                 player_obj.group_console = None
                 self._refresh_player_script_print(player_obj)
 
-        if keep_window:
-            updated_info = dict(group_info)
-            updated_info["leader"] = None
-            if leader_name is not None:
-                updated_info["leader_name"] = leader_name
-            updated_info["members"] = set()
-            updated_info["member_names"] = []
-            updated_info.pop("subgroup_assignments", None)
-            updated_info.pop("subgroup_size", None)
-            self.console_groups[console] = updated_info
-            try:
-                console.clear()
-            except Exception:
-                pass
-        else:
-            self.console_groups.pop(console, None)
-
-        if members:
-            self._reset_group_players(members)
+        self._reset_group_players(members)
 
     def _reset_group_players(self, players):
         if not players:
@@ -2917,21 +2870,15 @@ class MyWindow(QMainWindow):
             if hasattr(player_obj, "subgroup_index"):
                 player_obj.subgroup_index = None
             if info.get("leader") is player_obj:
-                if getattr(player_obj, "group_console", None) is console:
-                    player_obj.group_console = None
-                    self._refresh_player_script_print(player_obj)
-                self._disband_group_console(console, keep_window=True, exclude_player=player_obj)
+                player_obj.group_console = None
+                console.close()
+                self._refresh_player_script_print(player_obj)
             else:
                 if getattr(player_obj, "group_console", None) is console:
                     player_obj.group_console = None
                     self._refresh_player_script_print(player_obj)
-                info.setdefault("member_names", [])
-                info["member_names"] = [
-                    getattr(member, "name", "")
-                    for member in members
-                    if getattr(member, "name", None)
-                ]
-                self.console_groups[console] = info
+                if not members or info.get("leader") not in members:
+                    console.close()
             break
 
     def _format_display_name(self, raw_name, pid):

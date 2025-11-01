@@ -33,57 +33,346 @@ from group_console import console_print, use_group_console
 
 # Syllable pools for roleplay-style name generation
 PREFIXES = [
-    "Ael", "Bel", "Cor", "Dar", "El", "Fen", "Gor", "Hal",
-    "Kal", "Mor", "Thal", "Vor", "Zel", "Ryn", "Syl", "Dra",
-    "Tor", "Val", "Xan", "Lys", "Kyr", "Ori", "Jor", "Ser",
-    "Mal", "Ner", "Ery", "Alar", "Vey", "Zor",
-    "aen", "belu", "corin", "daras", "elin", "fenra", "goran", "halis",
-    "kalem", "morin", "thalor", "voren", "zelen", "rynar", "sylen", "draven",
-    "torin", "valen", "xanor", "lysin", "kyral", "orien", "joren", "serin",
-    "malor", "neris", "eryn", "alaren", "veyra", "zorin",
-    # 50 únicos de 2 letras (se quedan con mayúscula inicial)
-    "Aa", "Ab", "Ac", "Ad", "Ae", "Af", "Ag", "Ah", "Ai", "Aj",
-    "Ak", "Al", "Am", "An", "Ao", "Ap", "Aq", "Ar", "As", "At",
-    "Au", "Av", "Aw", "Ax", "Ay", "Az", "Ba", "Bb", "Bc", "Bd",
-    "Be", "Bf", "Bg", "Bh", "Bi", "Bj", "Bk", "Bl", "Bm", "Bn",
-    "Bo", "Bp", "Bq", "Br", "Bs", "Bt", "Bu", "Bv", "Bw", "Bx"
+    "ala", "ara", "avo", "aru", "aen",
+    "bel", "bar", "bov", "bur", "ben",
+    "cel", "car", "cov", "cur", "cen",
+    "del", "dar", "dov", "dur", "den",
+    "fel", "far", "fov", "fur", "fen",
+    "gel", "gar", "gov", "gur", "gen",
+    "hel", "har", "hov", "hur", "hen",
+    "jel", "jar", "jov", "jur", "jen",
+    "kel", "kar", "kov", "kur", "ken",
+    "lel", "lar", "lov", "lur", "len",
+    "mel", "mar", "mov", "mur", "men",
+    "nel", "nar", "nov", "nur", "nen",
+    "pel", "par", "pov", "pur", "pen",
+    "rel", "rar", "rov", "rur", "ren",
+    "sel", "sar", "sov", "sur", "sen",
+    "tel", "tar", "tov", "tur", "ten",
+    "vel", "var", "vov", "vur", "ven",
+    "wel", "war", "wov", "wur", "wen",
+    "yel", "yar", "yov", "yur", "yen",
+    "zel", "zar", "zov", "zur", "zen",
+    "ba", "be", "b", "bo", "bu",
+    "ca", "ce", "ci", "co", "cu",
+    "da", "de", "di", "do", "du",
+    "fa", "fe", "fi", "fo", "fu",
+    "ga", "ge", "gi", "go", "gu",
+    "ha", "he", "hi", "ho", "hu",
+    "ja", "je", "ji", "jo", "ju",
+    "ka", "ke", "ki", "ko", "ku",
+    "la", "le", "li", "lo", "lu",
+    "ma", "me", "mi", "mo", "mu",
+    "na", "ne", "ni", "no", "nu",
+    "pa", "pe", "pi", "po", "pu",
+    "ra", "re", "ri", "ro", "ru",
+    "sa", "se", "si", "so", "su",
+    "ta", "te", "ti", "to", "tu",
+    "va", "ve", "vi", "vo", "vu",
+    "wa", "we", "wi", "wo", "wu",
+    "ya", "ye", "yi", "yo", "yu",
+    "za", "ze", "zi", "zo", "zu",
+    "xa", "xe", "xi", "xo", "xu",
+    "ab", "ac", "ad", "af", "ag",
+    "ah", "aj", "ak", "al", "am",
+    "an", "ap", "ar", "as", "at",
+    "av", "aw", "ay", "az", "ax",
+    "eb", "ec", "ed", "ef", "eg",
+    "eh", "ej", "ek", "el", "em",
+    "en", "ep", "er", "es", "et",
+    "ev", "ew", "ey", "ez", "ex",
+    "ib", "ic", "id", "if", "ig",
+    "ih", "ij", "ik", "il", "im",
+    "in", "ip", "ir", "is", "it",
+    "iv", "iw", "iy", "iz", "ix",
+    "ob", "oc", "od", "of", "og",
+    "oh", "oj", "ok", "ol", "om",
+    "on", "op", "or", "os", "ot",
+    "ov", "ow", "oy", "oz", "ox",
+    "ub", "uc", "ud", "uf", "ug",
+    "uh", "uj", "uk", "ul", "um",
+    "un", "up", "ur", "us", "ut",
+    "uv", "uw", "uy", "uz", "ux",
+    "bran", "cren", "dril", "fron", "gral",
+    "klor", "mrat", "prun", "slen", "truk",
+    "brak", "crim", "drol", "flan", "grin",
+    "klan", "mrod", "plar", "srok", "trak",
+    "blad", "clen", "drak", "flin", "gran",
+    "kron", "mrek", "plan", "slar", "tron",
+    "blen", "cral", "drun", "fram", "grim",
+    "kran", "mrod", "plen", "slan", "tren",
+    "brin", "cran", "drek", "fral", "gron",
+    "kram", "mrun", "plin", "slen", "trun",
+    "blon", "clan", "drim", "fram", "gren",
+    "krin", "mrek", "plon", "slan", "tren",
+    "brak", "crin", "dron", "frik", "grun",
+    "klin", "mron", "plam", "sron", "trik",
+    "blar", "clon", "drak", "flon", "grem",
+    "krul", "mrek", "plur", "slon", "trum",
+    "brum", "crek", "drun", "fron", "grak",
+    "klim", "mrum", "plon", "slem", "trom",
+    "brak", "clen", "drum", "fram", "gron",
+    "krim", "mrek", "plin", "slak", "tren",
+    "balt", "carn", "dorl", "furn", "gark",
+    "halt", "jarn", "kork", "lurk", "mark",
+    "nelt", "pern", "rirk", "sorn", "tulk",
+    "valk", "wern", "yirk", "zork", "xulk",
+    "abal", "ebar", "iban", "obak", "ubal",
+    "adar", "elar", "idar", "olar", "ular",
+    "amak", "emal", "imak", "omal", "umak",
+    "asal", "esal", "isal", "osal", "usal",
+    "trak", "trek", "trik", "trok", "truk",
+    "plan", "plen", "plin", "plon", "plun",
+    "brat", "bret", "brit", "brot", "brut",
+    "klap", "klep", "klip", "klop", "klup",
+    "snar", "sner", "snir", "snor", "snur",
+    "zlak", "zlek", "zlik", "zlok", "zluk",
+    "pram", "prem", "prim", "prom", "prum",
+    "vlam", "vlem", "vlim", "vlom", "vlum",
+    "crat", "cret", "crit", "crot", "crut",
+    "flan", "flen", "flin", "flon", "flun",
+    "grad", "gred", "grid", "grod", "grud",
+    "shak", "shek", "shik", "shok", "shuk",
+    "dram", "drem", "drim", "drom", "drum",
+    "spat", "spet", "spit", "spot", "sput",
+    "blar", "bler", "blir", "blor", "blur",
+    "frap", "frep", "frip", "frop", "frup",
+    "treg", "trig", "trog", "trug", "trag",
+    "plek", "plik", "plok", "pluk", "plak",
+    "brek", "brik", "brok", "bruk", "brak",
+    "kleg", "klig", "klog", "klug", "klag",
+    "snep", "snip", "snop", "snup", "snap",
+    "zlet", "zlit", "zlot", "zlut", "zlat",
+    "prem", "prim", "prom", "prum", "pram",
+    "vlek", "vlik", "vlok", "vluk", "vlak"
 ]
 
 ROOTS = [
-    "adan", "bar", "cor", "dun", "el", "far", "gar", "har", "ion",
-    "anor", "bel", "dros", "fal", "grim", "lor", "mir", "tor", "ul",
-    "thal", "rin", "vor", "sar", "mor", "kar", "nor", "tir", "zan",
-    "ryn", "gol", "fen",
-    "Adel", "Borin", "Calar", "Durel", "Emin", "Faron", "Galor", "Helin",
-    "Iron", "Jarel", "Korin", "Lunor", "Miran", "Narel", "Orrin", "Phael",
-    "Quen", "Ralos", "Selor", "Tarin", "Ulric", "Varon", "Worin", "Xarel",
-    "Ymir", "Zeran", "Thoren", "Brynn", "Cyran", "Drael",
-    # 50 únicos de 2 letras en minúscula
-    "ca", "cb", "cc", "cd", "ce", "cf", "cg", "ch", "ci", "cj",
-    "ck", "cl", "cm", "cn", "co", "cp", "cq", "cr", "cs", "ct",
-    "cu", "cv", "cw", "cx", "cy", "cz", "da", "db", "dc", "dd",
-    "de", "df", "dg", "dh", "di", "dj", "dk", "dl", "dm", "dn",
-    "do", "dp", "dq", "dr", "ds", "dt", "du", "dv", "dw", "dx"
+    "ava", "ael", "aro", "asu", "ani",
+    "bal", "bea", "bon", "bus", "bex",
+    "cal", "cea", "cor", "cus", "cox",
+    "dal", "dea", "dor", "dus", "dex",
+    "fal", "fea", "for", "fus", "fex",
+    "gal", "gea", "gor", "gus", "gex",
+    "hal", "hea", "hor", "hus", "hex",
+    "jal", "jea", "jor", "jus", "jex",
+    "kal", "kea", "kor", "kus", "kex",
+    "lal", "lea", "lor", "lus", "lex",
+    "mal", "mea", "mor", "mus", "mex",
+    "nal", "nea", "nor", "nus", "nex",
+    "pal", "pea", "por", "pus", "pex",
+    "ral", "rea", "ror", "rus", "rex",
+    "sal", "sea", "sor", "sus", "sax",
+    "tal", "tea", "tor", "tus", "tex",
+    "val", "vea", "vor", "vus", "vex",
+    "wal", "wea", "wor", "wus", "wex",
+    "yal", "yea", "yor", "yus", "yex",
+    "zal", "zea", "zor", "zus", "zex",
+    "ba", "be", "bi", "bo", "bu",
+    "Ca", "Ce", "Ci", "Co", "Cu",
+    "Da", "De", "Di", "Do", "Du",
+    "Fa", "Fe", "Fi", "Fo", "Fu",
+    "Ga", "Ge", "Gi", "Go", "Gu",
+    "Ha", "He", "Hi", "Ho", "Hu",
+    "Ja", "Je", "Ji", "Jo", "Ju",
+    "Ka", "Ke", "Ki", "Ko", "Ku",
+    "La", "Le", "Li", "Lo", "Lu",
+    "Ma", "Me", "Mi", "Mo", "Mu",
+    "Na", "Ne", "Ni", "No", "Nu",
+    "Pa", "Pe", "Pi", "Po", "Pu",
+    "Ra", "Re", "Ri", "Ro", "Ru",
+    "Sa", "Se", "Si", "So", "Su",
+    "Ta", "Te", "Ti", "To", "Tu",
+    "Va", "Ve", "Vi", "Vo", "Vu",
+    "Wa", "We", "Wi", "Wo", "Wu",
+    "Ya", "Ye", "Yi", "Yo", "Yu",
+    "Za", "Ze", "Zi", "Zo", "Zu",
+    "Xa", "Xe", "Xi", "Xo", "Xu",
+    "ab", "ac", "ad", "af", "ag",
+    "ah", "aj", "ak", "al", "am",
+    "an", "ap", "ar", "as", "at",
+    "av", "aw", "ay", "az", "ax",
+    "eb", "ec", "ed", "ef", "eg",
+    "eh", "ej", "ek", "el", "em",
+    "en", "ep", "er", "es", "et",
+    "ev", "ew", "ey", "ez", "ex",
+    "ib", "ic", "id", "if", "ig",
+    "ih", "ij", "ik", "il", "im",
+    "in", "ip", "ir", "is", "it",
+    "iv", "iw", "iy", "iz", "ix",
+    "ob", "oc", "od", "of", "og",
+    "oh", "oj", "ok", "ol", "om",
+    "on", "op", "or", "os", "ot",
+    "ov", "ow", "oy", "oz", "ox",
+    "ub", "uc", "ud", "uf", "ug",
+    "uh", "uj", "uk", "ul", "um",
+    "un", "up", "ur", "us", "ut",
+    "uv", "uw", "uy", "uz", "ux",
+    "bran", "cren", "dril", "fron", "gral",
+    "klor", "mrat", "prun", "slen", "truk",
+    "brak", "crim", "drol", "flan", "grin",
+    "klan", "mrod", "plar", "srok", "trak",
+    "blad", "clen", "drak", "flin", "gran",
+    "kron", "mrek", "plan", "slar", "tron",
+    "blen", "cral", "drun", "fram", "grim",
+    "kran", "mrod", "plen", "slan", "tren",
+    "brin", "cran", "drek", "fral", "gron",
+    "kram", "mrun", "plin", "slen", "trun",
+    "blon", "clan", "drim", "fram", "gren",
+    "krin", "mrek", "plon", "slan", "tren",
+    "brak", "crin", "dron", "frik", "grun",
+    "klin", "mron", "plam", "sron", "trik",
+    "blar", "clon", "drak", "flon", "grem",
+    "krul", "mrek", "plur", "slon", "trum",
+    "brum", "crek", "drun", "fron", "grak",
+    "klim", "mrum", "plon", "slem", "trom",
+    "brak", "clen", "drum", "fram", "gron",
+    "krim", "mrek", "plin", "slak", "tren",
+    "balt", "carn", "dorl", "furn", "gark",
+    "halt", "jarn", "kork", "lurk", "mark",
+    "nelt", "pern", "rirk", "sorn", "tulk",
+    "valk", "wern", "yirk", "zork", "xulk",
+    "abal", "ebar", "iban", "obak", "ubal",
+    "adar", "elar", "idar", "olar", "ular",
+    "amak", "emal", "imak", "omal", "umak",
+    "asal", "esal", "isal", "osal", "usal",
+    "trak", "trek", "trik", "trok", "truk",
+    "plan", "plen", "plin", "plon", "plun",
+    "brat", "bret", "brit", "brot", "brut",
+    "klap", "klep", "klip", "klop", "klup",
+    "snar", "sner", "snir", "snor", "snur",
+    "zlak", "zlek", "zlik", "zlok", "zluk",
+    "pram", "prem", "prim", "prom", "prum",
+    "vlam", "vlem", "vlim", "vlom", "vlum",
+    "crat", "cret", "crit", "crot", "crut",
+    "flan", "flen", "flin", "flon", "flun",
+    "grad", "gred", "grid", "grod", "grud",
+    "shak", "shek", "shik", "shok", "shuk",
+    "dram", "drem", "drim", "drom", "drum",
+    "spat", "spet", "spit", "spot", "sput",
+    "blar", "bler", "blir", "blor", "blur",
+    "frap", "frep", "frip", "frop", "frup",
+    "treg", "trig", "trog", "trug", "trag",
+    "plek", "plik", "plok", "pluk", "plak",
+    "brek", "brik", "brok", "bruk", "brak",
+    "kleg", "klig", "klog", "klug", "klag",
+    "snep", "snip", "snop", "snup", "snap",
+    "zlet", "zlit", "zlot", "zlut", "zlat",
+    "prem", "prim", "prom", "prum", "pram",
+    "vlek", "vlik", "vlok", "vluk", "vlak"
+    
 ]
 
 SUFFIXES = [
-    "dor", "ion", "mir", "nar", "ric", "thas", "wen",
-    "as", "eth", "ian", "or", "uth", "ys", "en", "ir", "oth",
-    "el", "ar", "is", "al", "orim", "us", "ael", "ior",
-    "ien", "yr", "os", "ethar", "orn", "iel",
-    "Ael", "Ien", "Orn", "Eth", "Ul", "Yth", "On", "Er",
-    "As", "Ior", "Uth", "Ius", "Oth", "An", "Um", "Yr",
-    "Es", "Aris", "Is", "Olin", "Eus", "Ir", "Aur", "Enn",
-    "Orim", "Ath", "Ith", "Eal", "Uel", "Oros",
-    # 50 únicos de 2 letras en minúscula
-    "ea", "eb", "ec", "ed", "ee", "ef", "eg", "eh", "ei", "ej",
-    "ek", "el", "em", "en", "eo", "ep", "eq", "er", "es", "et",
-    "eu", "ev", "ew", "ex", "ey", "ez", "fa", "fb", "fc", "fd",
-    "fe", "ff", "fg", "fh", "fi", "fj", "fk", "fl", "fm", "fn",
-    "fo", "fp", "fq", "fr", "fs", "ft", "fu", "fv", "fw", "fx"
+    "ari", "alu", "ane", "avo", "aya",
+    "bel", "bir", "ban", "bov", "bay",
+    "cel", "cir", "can", "cov", "cay",
+    "del", "dir", "dan", "dov", "day",
+    "fel", "fir", "fan", "fov", "fay",
+    "gel", "gir", "gan", "gov", "gay",
+    "hel", "hir", "han", "hov", "hay",
+    "jel", "jir", "jan", "jov", "jay",
+    "kel", "kir", "kan", "kov", "kay",
+    "lel", "lir", "lan", "lov", "lay",
+    "mel", "mir", "man", "mov", "may",
+    "nel", "nir", "nan", "nov", "nay",
+    "pel", "pir", "pan", "pov", "pay",
+    "rel", "rir", "ran", "rov", "ray",
+    "sel", "sir", "san", "sov", "say",
+    "tel", "tir", "tan", "tov", "tay",
+    "vel", "vir", "van", "vov", "vay",
+    "wel", "wir", "wan", "wov", "way",
+    "yel", "yir", "yan", "yov", "yay",
+    "zel", "zir", "zan", "zov", "zay",
+    "ba", "be", "bi", "bo", "bu",
+    "Ca", "Ce", "Ci", "Co", "Cu",
+    "Da", "De", "Di", "Do", "Du",
+    "Fa", "Fe", "Fi", "Fo", "Fu",
+    "Ga", "Ge", "Gi", "Go", "Gu",
+    "Ha", "He", "Hi", "Ho", "Hu",
+    "Ja", "Je", "Ji", "Jo", "Ju",
+    "Ka", "Ke", "Ki", "Ko", "Ku",
+    "La", "Le", "Li", "Lo", "Lu",
+    "Ma", "Me", "Mi", "Mo", "Mu",
+    "Na", "Ne", "Ni", "No", "Nu",
+    "Pa", "Pe", "Pi", "Po", "Pu",
+    "Ra", "Re", "Ri", "Ro", "Ru",
+    "Sa", "Se", "Si", "So", "Su",
+    "Ta", "Te", "Ti", "To", "Tu",
+    "Va", "Ve", "Vi", "Vo", "Vu",
+    "Wa", "We", "Wi", "Wo", "Wu",
+    "Ya", "Ye", "Yi", "Yo", "Yu",
+    "Za", "Ze", "Zi", "Zo", "Zu",
+    "Xa", "Xe", "Xi", "Xo", "Xu",
+    "ab", "ac", "ad", "af", "ag",
+    "ah", "aj", "ak", "al", "am",
+    "an", "ap", "ar", "as", "at",
+    "av", "aw", "ay", "az", "ax",
+    "eb", "ec", "ed", "ef", "eg",
+    "eh", "ej", "ek", "el", "em",
+    "en", "ep", "er", "es", "et",
+    "ev", "ew", "ey", "ez", "ex",
+    "ib", "ic", "id", "if", "ig",
+    "ih", "ij", "ik", "il", "im",
+    "in", "ip", "ir", "is", "it",
+    "iv", "iw", "iy", "iz", "ix",
+    "ob", "oc", "od", "of", "og",
+    "oh", "oj", "ok", "ol", "om",
+    "on", "op", "or", "os", "ot",
+    "ov", "ow", "oy", "oz", "ox",
+    "ub", "uc", "ud", "uf", "ug",
+    "uh", "uj", "uk", "ul", "um",
+    "un", "up", "ur", "us", "ut",
+    "uv", "uw", "uy", "uz", "ux",
+    "bran", "cren", "dril", "fron", "gral",
+    "klor", "mrat", "prun", "slen", "truk",
+    "brak", "crim", "drol", "flan", "grin",
+    "klan", "mrod", "plar", "srok", "trak",
+    "blad", "clen", "drak", "flin", "gran",
+    "kron", "mrek", "plan", "slar", "tron",
+    "blen", "cral", "drun", "fram", "grim",
+    "kran", "mrod", "plen", "slan", "tren",
+    "brin", "cran", "drek", "fral", "gron",
+    "kram", "mrun", "plin", "slen", "trun",
+    "blon", "clan", "drim", "fram", "gren",
+    "krin", "mrek", "plon", "slan", "tren",
+    "brak", "crin", "dron", "frik", "grun",
+    "klin", "mron", "plam", "sron", "trik",
+    "blar", "clon", "drak", "flon", "grem",
+    "krul", "mrek", "plur", "slon", "trum",
+    "brum", "crek", "drun", "fron", "grak",
+    "klim", "mrum", "plon", "slem", "trom",
+    "brak", "clen", "drum", "fram", "gron",
+    "krim", "mrek", "plin", "slak", "tren",
+    "balt", "carn", "dorl", "furn", "gark",
+    "halt", "jarn", "kork", "lurk", "mark",
+    "nelt", "pern", "rirk", "sorn", "tulk",
+    "valk", "wern", "yirk", "zork", "xulk",
+    "abal", "ebar", "iban", "obak", "ubal",
+    "adar", "elar", "idar", "olar", "ular",
+    "amak", "emal", "imak", "omal", "umak",
+    "asal", "esal", "isal", "osal", "usal",
+    "trak", "trek", "trik", "trok", "truk",
+    "plan", "plen", "plin", "plon", "plun",
+    "brat", "bret", "brit", "brot", "brut",
+    "klap", "klep", "klip", "klop", "klup",
+    "snar", "sner", "snir", "snor", "snur",
+    "zlak", "zlek", "zlik", "zlok", "zluk",
+    "pram", "prem", "prim", "prom", "prum",
+    "vlam", "vlem", "vlim", "vlom", "vlum",
+    "crat", "cret", "crit", "crot", "crut",
+    "flan", "flen", "flin", "flon", "flun",
+    "grad", "gred", "grid", "grod", "grud",
+    "shak", "shek", "shik", "shok", "shuk",
+    "dram", "drem", "drim", "drom", "drum",
+    "spat", "spet", "spit", "spot", "sput",
+    "blar", "bler", "blir", "blor", "blur",
+    "frap", "frep", "frip", "frop", "frup",
+    "treg", "trig", "trog", "trug", "trag",
+    "plek", "plik", "plok", "pluk", "plak",
+    "brek", "brik", "brok", "bruk", "brak"
+
 ]
-
-
 
 def _coerce_pid_value(pid_value):
     if isinstance(pid_value, int):
@@ -2352,7 +2641,16 @@ class Player:
 
     def rolename(self) -> str:
         """Return a fantasy-style name up to 12 characters."""
-        name = random.choice(PREFIXES) + random.choice(ROOTS) + random.choice(SUFFIXES)
+        prefix = random.choice(PREFIXES).lower()
+        if random.random() < 0.33:
+            prefix = prefix.capitalize()
+        root = random.choice(ROOTS).lower()
+        if random.random() < 0.10:
+            root = root.capitalize()
+        suffix = random.choice(SUFFIXES).lower()
+        if random.random() < 0.10:
+            suffix = suffix.capitalize()
+        name = prefix + root + suffix
         return name[:12]
 
     def packetlogger(self):
@@ -2625,7 +2923,7 @@ class Player:
             except Exception as e:
                 self.log(f"Error executing walk command: {e}")
     
-    async def walk_to_point(self, point, radius=0, walk_with_pet=True, skip=4, timeout=3, proximity=2):
+    async def walk_to_point(self, point, radius=0, walk_with_pet=True, skip='auto', timeout=3, proximity=2):
         """Walk the player to ``point`` using non-blocking asyncio primitives.
 
         ``point`` may be a sequence ``[x, y]`` or an object exposing ``x`` and
@@ -2676,6 +2974,8 @@ class Player:
         try:
             while True:
                 player_pos = [self.pos_x, self.pos_y]
+                # Random detour logic removed; proceed directly to pathfinding
+                # blocked_nodes feature removed
                 start_time = time.perf_counter()
                 Path = await loop.run_in_executor(
                     self._path_executor,
@@ -2703,12 +3003,117 @@ class Player:
                     self.log("Failed to find a path")
                     break
                 self.log(f"Path found in {elapsed:.3f} seconds")
-                lastpath = len(Path) - 1
+                # Random detour logic removed
+                if False:
+                    sx, sy = int(player_pos[0]), int(player_pos[1])
+                    gx, gy = int(point[0]), int(point[1])
+                    vx, vy = gx - sx, gy - sy
+                    vlen = math.hypot(vx, vy) or 1.0
+                    dxn, dyn = vx / vlen, vy / vlen
+                    found_detour = False
+                    for _ in range(8):
+                        dist = random.randint(3, 8)
+                        angle = random.uniform(0, 2 * math.pi)
+                        ox = int(round(math.cos(angle) * dist))
+                        oy = int(round(math.sin(angle) * dist))
+                        if ox == 0 and oy == 0:
+                            continue
+                        # avoid heading towards the same direction as goal
+                        dot = (ox * dxn + oy * dyn) / (math.hypot(ox, oy) or 1.0)
+                        if dot > 0.5:
+                            continue
+                        tx, ty = sx + ox, sy + oy
+                        dpath = await loop.run_in_executor(
+                            self._path_executor, findPath, [sx, sy], [tx, ty], self.map_array, self.map_id
+                        )
+                        if dpath:
+                            # compress detour path to turning points
+                            dcoords = []
+                            for n in dpath:
+                                if hasattr(n, "x") and hasattr(n, "y"):
+                                    dcoords.append((int(n.x), int(n.y)))
+                                else:
+                                    dcoords.append((int(n[0]), int(n[1])))
+                            dway = []
+                            if dcoords:
+                                p = dcoords[0]
+                                ld = None
+                                def _sg(v):
+                                    return -1 if v < 0 else (1 if v > 0 else 0)
+                                for c in dcoords[1:]:
+                                    sgn = (_sg(c[0] - p[0]), _sg(c[1] - p[1]))
+                                    if ld is None:
+                                        ld = sgn
+                                    elif sgn != ld:
+                                        dway.append(p)
+                                        ld = sgn
+                                    p = c
+                                dway.append(dcoords[-1])
+                            # walk the detour sequence
+                            for wx, wy in dway:
+                                if self.stop_script or self.map_id != start_map:
+                                    return
+                                with self.walk_lock:
+                                    self.walk_queue.put((api.player_walk, (wx, wy)))
+                                    if walk_with_pet:
+                                        self.walk_queue.put((api.pets_walk, (wx, wy)))
+                                startTimer = time.time()
+                                resend = max(0.5, timeout / 3)
+                                deadline = startTimer + timeout * 4
+                                last_send = startTimer
+                                while True:
+                                    if self.map_id != start_map:
+                                        return
+                                    if math.hypot(self.pos_x - wx, self.pos_y - wy) <= proximity:
+                                        break
+                                    now = time.time()
+                                    if now >= deadline:
+                                        break
+                                    if self.stop_script:
+                                        raise SystemExit
+                                    if now - last_send >= resend:
+                                        with self.walk_lock:
+                                            self.walk_queue.put((api.player_walk, (wx, wy)))
+                                            if walk_with_pet:
+                                                self.walk_queue.put((api.pets_walk, (wx, wy)))
+                                        last_send = now
+                                    await asyncio.sleep(0.05)
+                            found_detour = True
+                            break
+                    # Random detour logic removed
+                # Build waypoints: if skip is 'auto' or <= 0, compress path into turning points to minimize nodes.
+                def _sign(v):
+                    return -1 if v < 0 else (1 if v > 0 else 0)
+                # Extract coordinates from Path in a uniform way
+                coords = []
+                for n in Path:
+                    if hasattr(n, "x") and hasattr(n, "y"):
+                        coords.append((int(n.x), int(n.y)))
+                    else:
+                        coords.append((int(n[0]), int(n[1])))
+                auto = (isinstance(skip, str) and skip.lower() == 'auto') or (isinstance(skip, int) and skip <= 0)
+                waypoints = []
+                if coords:
+                    prev = coords[0]
+                    last_dir = None
+                    for cur in coords[1:]:
+                        d = (_sign(cur[0] - prev[0]), _sign(cur[1] - prev[1]))
+                        if last_dir is None:
+                            last_dir = d
+                        elif d != last_dir:
+                            waypoints.append(prev)
+                            last_dir = d
+                        prev = cur
+                    # always end at destination
+                    waypoints.append(coords[-1])
+                effective_skip = 1 if auto else max(1, int(skip))
+                lastpath = len(waypoints if auto else Path) - 1
                 success = True
-                for i in range(0, len(Path), skip):
+                seq = (waypoints if auto else Path)
+                for i in range(0, len(seq), effective_skip):
                     if self.stop_script or self.map_id != start_map:
                         return
-                    node = Path[i]
+                    node = seq[i]
                     if hasattr(node, "x") and hasattr(node, "y"):
                         x, y = node.x, node.y
                     else:
@@ -2743,7 +3148,7 @@ class Player:
                     if not success:
                         break
                 if success:
-                    last_node = Path[lastpath]
+                    last_node = (waypoints if (isinstance(skip, str) and skip.lower() == 'auto') or (isinstance(skip, int) and skip <= 0) else Path)[lastpath]
                     if hasattr(last_node, "x") and hasattr(last_node, "y"):
                         last_x, last_y = last_node.x, last_node.y
                     else:
@@ -2937,6 +3342,18 @@ class Player:
         max_i = int(max_val * decimals)
 
         return random.randint(min_i, max_i) / decimals
+
+    def can_reach_point(self, x, y, from_pos=None):
+        try:
+            sx, sy = (int(self.pos_x), int(self.pos_y)) if from_pos is None else (int(from_pos[0]), int(from_pos[1]))
+            dx, dy = int(x), int(y)
+            if self.map_array not in (None, []):
+                path = findPath([sx, sy], [dx, dy], mapArray=self.map_array)
+            else:
+                path = findPath([sx, sy], [dx, dy], map_id=int(self.map_id))
+            return bool(path)
+        except Exception:
+            return False
 
     def queries(self, delay=1, player_info = True, inventory = True, skills = True, entities = True):
         time.sleep(delay)

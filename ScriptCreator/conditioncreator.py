@@ -1082,14 +1082,14 @@ class ConditionCreator(QDialog):
                     script += f'self.api.recv_packet("{action[1]}")'
                 elif action[2] == "int":
                     script += f'self.api.recv_packet(int({action[1]}))'
-                if action[2] == "raw":
+                elif action[2] == "raw":
                     script += f'self.api.recv_packet({action[1]})'
             elif name in {"start_bot", "stop_bot", "continue_bot", "start_minigame_bot", "stop_minigame_bot"}:
                 script += f'self.api.{name}()'
             elif name == "attack":
-                script += f'self.api.attack({action[1]})'
+                script += f'self.api.attack_monster({action[1]})'
             elif name == "player_skill":
-                script += f'self.api.player_skill({action[1]}, {action[2]})'
+                script += f'self.api.use_player_skill({action[1]}, {action[2]})'
             elif name == "load_settings":
                 script += f'self.api.load_settings({action[1]})'
             elif name == "walk_to_point":

@@ -4,9 +4,9 @@
 a = Analysis(
     ['main.py'],
     pathex=[],
-    binaries=[('C:\\Users\\valde\\Desktop\\scriptcreator+glfess\\ScriptCreator\\\\', '.')],
+    binaries=[],
     datas=[],
-    hiddenimports=[],
+    hiddenimports=['PIL', 'PIL.Image', 'PIL.PngImagePlugin', 'PIL._imaging', 'requests', 'urllib3', 'certifi', 'idna', 'charset_normalizer'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
