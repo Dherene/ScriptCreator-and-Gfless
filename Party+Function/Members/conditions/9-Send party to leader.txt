@@ -1,0 +1,39 @@
+recv_packet
+0
+if packet.startswith("exc_close 1") and int(self.attr90) == 3:
+	print(f"7-[MEMBER] {self.name} Sending party to {self.leadername}")
+	cond.off = 0
+	cond.on = 10
+	time.sleep(self.randomize_delay(1,2))
+	self.api.send_packet(f"pjoin 0 {self.leaderID}")
+
+# ===== Second invite flow for RP transfer (only executed when attr1 == 74) =====
+if int(self.attr1) == 74:
+	# Paso 1: Enviar segunda invitación al líder después de abandonar la party
+	if not getattr(self, "_rp_second_invite_started", False):
+		print(f"[RETURN] {self.name} preparing second party invite for RP transfer")
+		time.sleep(self.randomize_delay(0.8, 1.2))
+		self.api.send_packet("pleave")
+		print(f"[RETURN] {self.name} left party (second invite flow)")
+		time.sleep(self.randomize_delay(0.8, 1.2))
+		self.api.send_packet(f"pjoin 0 {self.leaderID}")
+		print(f"[RETURN] {self.name} sent second party invite to leader")
+		self._rp_second_invite_started = True
+
+	# Paso 2: El líder aceptó la segunda invite (#pjoin^3^) -> compartir RP
+	if packet.startswith("dlgi2") and "#pjoin^3^" in packet and getattr(self, "_rp_second_invite_started", False):
+		if not getattr(self, "_rp_second_invite_share_sent", False):
+			print(f"[RETURN] {self.name} detected leader acceptance of second invite")
+			time.sleep(self.randomize_delay(0.8, 1.2))
+			self.api.send_packet("pjoin 5")
+			print(f"[RETURN] {self.name} shared return point to leader")
+			self._rp_second_invite_share_sent = True
+
+	# Paso 2 (fallback): usar flag grupal si el líder no envió #pjoin^3^ pero registró aceptación
+	if getattr(self, "_rp_second_invite_started", False) and not getattr(self, "_rp_second_invite_share_sent", False):
+		accepted_for_id = str(getattr(selfgroup, "rp_leader_party_accepted_for_id", ""))
+		if accepted_for_id == str(self.id):
+			print(f"[RETURN] {self.name} sharing RP via fallback flag (accepted_for_id={accepted_for_id})")
+			time.sleep(self.randomize_delay(0.8, 1.2))
+			self.api.send_packet("pjoin 5")
+			self._rp_second_invite_share_sent = True

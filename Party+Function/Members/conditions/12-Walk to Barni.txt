@@ -1,0 +1,10 @@
+periodical
+0
+if int(self.attr1) == 5 and self.map_id == 1 and int(self.make_party_state) == 2:
+	print(f"[MEMBER] {self.name} walk to Barni")
+	cond.off = 0
+	time.sleep(self.randomize_delay(0.75,1.5))
+	self.walk_to_point([115,79], 2)
+	cond.on = 13
+	cond.on = 14
+	self.attr1 = 6

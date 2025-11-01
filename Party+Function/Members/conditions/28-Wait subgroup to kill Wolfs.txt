@@ -1,0 +1,111 @@
+recv_packet
+0
+# Manejar aceptación de punto de retorno compartido directamente en esta condición
+if "#pjoin^6^" in packet and packet.startswith("dlgi2") and int(self.attr1) == 14:
+	return_owner = getattr(selfgroup, "return_point_owner", None)
+	return_owner_name = getattr(selfgroup, "return_point_owner_name", "unknown")
+	# Solo aceptar si NO soy el dueño del punto
+	if return_owner != str(self.id):
+		print(f"[RETURN-28] {self.name} received return point packet: {packet[:80]}")
+		print(f"[RETURN] {self.name} received return point share from party member {return_owner_name}")
+		time.sleep(self.randomize_delay(0.3,0.5))
+		# Extraer el ID del remitente del paquete
+		parts = packet.split("^")
+		sender_id = ""
+		for i, part in enumerate(parts):
+			if part == "6" and i + 1 < len(parts):
+				sender_id = parts[i + 1].split()[0]
+				break
+		if sender_id:
+			print(f"[DEBUG] {self.name} extracted sender_id: {sender_id}")
+			self.api.send_packet(f"#pjoin^6^{sender_id}")
+			print(f"[RETURN] {self.name} confirmed acceptance of return point from {return_owner_name}")
+			# Incrementar contador de aceptaciones
+			if not hasattr(selfsubg, "return_point_accepted_count"):
+				selfsubg.return_point_accepted_count = 0
+			selfsubg.return_point_accepted_count = int(getattr(selfsubg, "return_point_accepted_count", 0)) + 1
+			print(f"[RETURN] Acceptance count: {selfsubg.return_point_accepted_count}/3")
+			# Incrementar sincro por cada aceptación
+			selfsubg.sincro = int(selfsubg.sincro) + 1
+			print(f"[MEMBER] {self.name} incremento el valor de subgrupo en: {selfsubg.sincro}")
+			# Chequear si todos han aceptado
+			if selfsubg.return_point_accepted_count >= 3:
+				print(f"[RETURN] {self.name} all members accepted (count: {selfsubg.return_point_accepted_count}/3), proceeding")
+				# Continuar a condición 29 solo para este miembro; no resetear contadores aún
+				self.attr1 = 15
+				cond.off = 0
+				cond.on = 29
+		else:
+			print(f"[ERROR] {self.name} could not extract sender_id from packet")
+	else:
+		print(f"[RETURN-28] {self.name} is the owner, ignoring own share packet")
+
+# Lógica periodical: ejecutar una vez cuando llega a mapa 20
+if int(self.attr1) == 14 and self.map_id == 20 and not getattr(self, "_map20_initialized", False):
+	print(f"[MEMBER] {self.name} Waiting to rest of member to kill Wolfs")
+	self._map20_initialized = True
+	
+	# Incrementar contador de miembros en mapa 20
+	if not hasattr(selfsubg, "members_in_map20"):
+		selfsubg.members_in_map20 = 0
+	selfsubg.members_in_map20 = int(getattr(selfsubg, "members_in_map20", 0)) + 1
+	print(f"[RETURN] {self.name} arrived at map 20. Count: {selfsubg.members_in_map20}/3")
+	
+	# Esperar a que todos los 3 miembros estén en mapa 20
+	while True:
+		members_ready = int(getattr(selfsubg, "members_in_map20", 0))
+		if members_ready >= 3:
+			print(f"[RETURN] {self.name} - All 3 members in map 20, proceeding")
+			break
+		time.sleep(0.5)
+	
+	# Verificar si hay dueño de punto de retorno
+	return_owner = getattr(selfgroup, "return_point_owner", None)
+	return_owner_name = getattr(selfgroup, "return_point_owner_name", "unknown")
+	
+	if return_owner is None:
+		# Todos murieron, no hay punto de retorno para compartir
+		print(f"[RETURN] {self.name} - No return point owner (all members died), skipping share")
+		# Continuar directamente
+		selfsubg.members_in_map20 = 0
+		self.attr1 = 15
+		cond.off = 0
+		cond.on = 29
+		selfsubg.sincro = int(selfsubg.sincro) + 1
+		print(f"[MEMBER] {self.name} incremento el valor de subgrupo en: {selfsubg.sincro}")
+	else:
+		# Hay dueño, proceder con compartir y aceptar
+		print(f"[RETURN] {self.name} - Return point owner exists: {return_owner_name}")
+		# Inicializar contador de aceptaciones si no existe
+		if not hasattr(selfsubg, "return_point_accepted_count"):
+			selfsubg.return_point_accepted_count = 0
+		# Compartir punto de retorno si este miembro es el dueño
+		if return_owner == str(self.id):
+			print(f"[RETURN] {self.name} is return point owner, sharing with party members")
+			self.api.send_packet("pjoin 5")
+			print(f"[RETURN] {self.name} sent 'pjoin 5' to share return point with party")
+			# El dueño cuenta como aceptado automáticamente
+			selfsubg.return_point_accepted_count = int(getattr(selfsubg, "return_point_accepted_count", 0)) + 1
+			print(f"[RETURN] Owner auto-accepted. Count: {selfsubg.return_point_accepted_count}/3")
+			# Incrementar sincro por cada aceptación
+			selfsubg.sincro = int(selfsubg.sincro) + 1
+			print(f"[MEMBER] {self.name} incremento el valor de subgrupo en: {selfsubg.sincro}")
+			# Chequear si todos han aceptado
+			if selfsubg.return_point_accepted_count >= 3:
+				print(f"[RETURN] {self.name} all members accepted (count: {selfsubg.return_point_accepted_count}/3), proceeding")
+				# Continuar a condición 29 solo para este miembro; no resetear contadores aún
+				self.attr1 = 15
+				cond.off = 0
+				cond.on = 29
+		else:
+			print(f"[RETURN] {self.name} is NOT return point owner, waiting to accept from {return_owner_name}")
+
+# Chequear si todos han aceptado (se ejecuta en cada llamada recv_packet)
+if int(self.attr1) == 14 and self.map_id == 20 and getattr(self, "_map20_initialized", False):
+	accepted = int(getattr(selfsubg, "return_point_accepted_count", 0))
+	if accepted >= 3:
+		print(f"[RETURN] {self.name} all members accepted (count: {accepted}/3), proceeding")
+		# Continuar a condición 29 solo para este miembro; no resetear contadores aún
+		self.attr1 = 15
+		cond.off = 0
+		cond.on = 29

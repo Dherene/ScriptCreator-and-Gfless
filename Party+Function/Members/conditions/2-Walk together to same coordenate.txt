@@ -1,0 +1,13 @@
+periodical
+0
+if int(self.attr1) == 0 and int(self.attr5) == 1:
+	time.sleep(self.randomize_delay(0.75,1.5))
+	cond.off = 0
+	self.walk_to_point([40,94], 1)
+	time.sleep(self.randomize_delay(0.75,1.5))
+	cond.on = 3
+	cond.on = 4
+	self.attr1 = 1
+	self.attr5 = 0 #desactiva esta condición
+	selfsubg.sincro = int(selfsubg.sincro) + 1  #incrementa variable subgrupo+1 la siguiente condition empieza con sincro =3
+	print(f"[MEMBER] {self.name} incremento el valor de subgrupo en: {selfsubg.sincro}")

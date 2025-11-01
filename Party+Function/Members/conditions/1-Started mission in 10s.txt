@@ -1,0 +1,21 @@
+periodical
+0
+if int(self.map_id) == 20 and int(self.attr1) == 0 and int(self.attr5) == 0:
+        print(f"1-[MEMBER] {self.name} will start in 5 seconds")
+        cond.off = 0
+        time.sleep(self.randomize_delay(2,3))
+        self.api.send_packet(f"n_run 5 0 1 {self.id}")
+        self.api.send_packet("script 0 12 10")
+        cond.on = 2
+        self.api.send_packet("wear 0 0")
+        time.sleep(self.randomize_delay(0.75,1.5))
+        self.api.send_packet("wear 3 0")
+        time.sleep(self.randomize_delay(0.75,1.5))
+        self.api.send_packet("wear 9 0")
+        time.sleep(self.randomize_delay(0.75,1.5))
+        self.api.send_packet("wear 13 0")
+        time.sleep(self.randomize_delay(0.75,1.5))
+        self.api.send_packet("sl 0")
+        time.sleep(self.randomize_delay(8,10))
+        print(f"[MEMBER] {self.name} Equiped items")
+        self.attr5 = 1

@@ -1,0 +1,10 @@
+recv_packet
+0
+if packet.startswith("qsti 6.6141"):
+	print(f"[MEMBER] {self.name} talked with Frigg")
+	cond.off = 0
+	time.sleep(self.randomize_delay(0.5,0.75))
+	cond.on = 77
+	cond.on = 123 #reject revive
+	time.sleep(self.randomize_delay(0.75,1))
+	self.attr1 = 50

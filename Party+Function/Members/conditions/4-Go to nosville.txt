@@ -1,0 +1,14 @@
+periodical
+0
+if int(self.attr1) == 2 and int(selfsubg.sincro) == 3:
+	print(f"[MEMBER] {self.name} Complete party and going nosville.")
+	cond.off = 0
+	time.sleep(self.randomize_delay(0.75,1.5))
+	ID = self.Tower["ID"]
+	self.api.send_packet(f"ncif 2 {ID}")
+	time.sleep(self.randomize_delay(1,2))
+	self.api.send_packet(f"n_run 16 0 2 {ID}")
+	cond.on = 5
+	time.sleep(self.randomize_delay(2,3))
+	time.sleep(self.randomize_delay(0.75,1.5))
+	self.attr1 = 3

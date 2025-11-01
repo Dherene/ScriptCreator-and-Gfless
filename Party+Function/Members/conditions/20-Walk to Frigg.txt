@@ -1,0 +1,15 @@
+periodical
+0
+import time
+if int(self.attr1) == 11 and self.map_id == 260:
+	print(f"[MEMBER] {self.name} Walk to Frigg.")
+	cond.off = 18
+	time.sleep(self.randomize_delay(0.75,1.5))
+	cond.on = 21
+	cond.on = 93 #accept revive
+	cond.on = 122 #use potion
+	Xfrig = int(self.Frigg["x"])
+	Yfrig = int(self.Frigg["y"])
+	self.walk_to_point([Xfrig, Yfrig], 1)
+	time.sleep(self.randomize_delay(0.75,1.5))
+

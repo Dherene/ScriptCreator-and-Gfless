@@ -1,0 +1,19 @@
+periodical
+0
+
+if (
+    int(self.attr1) == 14
+    and int(self.map_id) == 1
+    and abs(int(self.pos_x) - 68) <= 1
+    and abs(int(self.pos_y) - 57) <= 1
+):
+    print(f"[MEMBER] {self.name} use Nosville Tower")
+    ID = self.Nosvilletower["ID"]
+    cond.off = 0
+    self.api.send_packet(f"ncif 2 {ID}")
+    time.sleep(self.randomize_delay(1,2))
+    cond.on = 28
+    cond.on = 29
+    self.api.send_packet(f"n_run 16 1 2 {ID}")
+
+    time.sleep(self.randomize_delay(2,3))

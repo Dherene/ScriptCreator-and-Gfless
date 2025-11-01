@@ -1,0 +1,25 @@
+periodical
+0
+if int(self.attr1) == 46 and self.map_id == 22: #normalmente attr1 inicia con 47 en la anterior condicion
+	print(f"[MEMBER] {self.name} Teleport to Frigg")
+	cond.off = 0
+	self.api.send_packet("qt 4 6")
+	time.sleep(self.randomize_delay(0.75,1.5))
+	selfsubg.sincro = 0
+	cond.on = 122 #tomar pociones
+	cond.on = 71
+	self.walk_to_point([34,58], 2)
+	time.sleep(self.randomize_delay(2,3))
+	self.attr1 = 48
+
+
+elif int(self.attr1) == 46 and self.map_id == 1:
+	print(f"[MEMBER] {self.name} Member died, go to talk with Frigg")
+	cond.off = 0
+	self.api.send_packet("qt 4 6")
+	time.sleep(self.randomize_delay(0.75,1.5))
+	selfsubg.sincro = 0
+	cond.on = 122 #tomar pociones
+	cond.on = 71
+	time.sleep(self.randomize_delay(2,3))
+	self.attr1 = 48

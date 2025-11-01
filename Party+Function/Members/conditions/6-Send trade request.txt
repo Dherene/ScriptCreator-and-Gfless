@@ -1,0 +1,26 @@
+periodical
+0
+current_time = time.monotonic()
+last_request = getattr(self, "_trade_request_last_sent", 0.0)
+is_trade_candidate = int(getattr(self, "attr96", 0)) == 1
+
+if int(self.attr1) == 3 and int(self.attr90) in (1, 2):
+        if int(self.attr90) == 1:
+                candidate_id = str(self.id)
+                if getattr(selfgroup, "trade_candidate", None) == candidate_id and getattr(selfgroup, "trade", "0") == "0":
+                        selfgroup.trade = "1"
+                        self.attr96 = 1
+                        cond.off = 0
+                        time.sleep(self.randomize_delay(0.75,1.5))
+                        cond.on = 7
+                        self.attr90 = 2
+                        time.sleep(self.randomize_delay(0.75,1.5))
+                        self.api.send_packet(f"req_exc 1 {self.leaderID}")
+                        self._trade_request_last_sent = current_time
+                        print(f"2-[MEMBER] {self.name} sending trade request")
+
+        elif int(self.attr90) == 2 and is_trade_candidate:
+                if current_time - last_request >= 10 and getattr(selfgroup, "trade", "0") == "1":
+                        self.api.send_packet(f"req_exc 1 {self.leaderID}")
+                        self._trade_request_last_sent = current_time
+                        print(f"2-[MEMBER] {self.name} resending trade request (waiting acceptance)")

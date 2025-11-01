@@ -1,0 +1,15 @@
+periodical
+0
+if int(self.attr1) == 19 and self.map_id == 14:
+	print(f"[MEMBER] {self.name} Walk to Fernon hideout 3")
+	cond.off = 0
+	time.sleep(self.randomize_delay(0.75,1))
+	self.use_item(4989, "equip")
+	time.sleep(self.randomize_delay(0.75,1))
+	self.use_item(4998, "equip")
+	time.sleep(self.randomize_delay(0.75,1))
+	cond.on = 34
+	cond.on = 93
+	cond.on = 122
+	self.walk_to_point([42,24], 1)
+	self.attr1 = 20

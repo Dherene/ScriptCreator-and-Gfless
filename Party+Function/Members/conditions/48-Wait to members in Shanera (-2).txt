@@ -1,0 +1,13 @@
+periodical
+0
+if int(self.attr1) == 30 and self.map_id == 30:
+	print(f"[MEMBER] {self.name} Wait to members in Shanera (-2)")
+	cond.off = 0
+	time.sleep(self.randomize_delay(0.75,1.5))
+	cond.on = 49
+	cond.on = 93
+	self.walk_to_point([59,5], 2)
+	self.attr1 = 31
+	selfsubg.skeleton = 0
+	selfsubg.golem = 0
+	selfsubg.sincro = int(selfsubg.sincro) + 1  #deberia ser sincro=15 para activar la siguiente condition

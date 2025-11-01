@@ -1,0 +1,21 @@
+recv_packet
+0
+if packet.startswith("qsti 6.6136"):
+	print(f"[MEMBER] {self.name} talked with Frigg")
+	cond.off = 21
+	cond.off = 122 #disable use potion
+	cond.off = 93 #disable accept revive
+	# Resetear dueño del punto de retorno para nuevo ciclo
+	if hasattr(selfgroup, "return_point_owner"):
+		print(f"[RETURN] Resetting return point owner (was: {getattr(selfgroup, 'return_point_owner_name', 'unknown')})")
+		selfgroup.return_point_owner = None
+		selfgroup.return_point_owner_name = None
+	# Resetear flag de inicialización de mapa 20
+	self._map20_initialized = False
+
+	time.sleep(self.randomize_delay(0.5,0.75))
+	cond.on = 23
+	cond.on = 24
+	cond.on = 123 #reject revive
+	time.sleep(self.randomize_delay(0.75,1))
+	self.attr1 = 12

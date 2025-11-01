@@ -1,0 +1,20 @@
+periodical
+0
+import time
+
+Xfrig = int(self.Frigg["x"])
+Yfrig = int(self.Frigg["y"])
+
+if int(self.attr1) == 11 and self.map_id == 260 and abs(int(self.pos_x) - Xfrig) <= 10 and abs(int(self.pos_y) - Yfrig) <= 10:
+    print(f"[MEMBER] {self.name} Talk with Frigg.")
+    cond.off = 20
+    time.sleep(self.randomize_delay(0.75,1.5))
+    ID = self.Frigg["ID"]
+    cond.on = 22
+    self.api.use_player_skill(ID, 0)
+    cond.on = 123
+    #noseusa self.api.send_packet(f"ncif 2 {ID}")
+    #noseusa time.sleep(self.randomize_delay(1,2))
+    #noseusa time.sleep(self.randomize_delay(1,2))
+    #noseusa self.api.send_packet(f"npc_req 2 {ID}")
+    time.sleep(self.randomize_delay(2,3))

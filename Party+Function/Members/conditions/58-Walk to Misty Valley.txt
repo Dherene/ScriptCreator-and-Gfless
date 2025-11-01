@@ -1,0 +1,11 @@
+periodical
+0
+if int(self.attr1) == 35 and self.map_id == 24:
+	print(f"[MEMBER] {self.name} Walk to Misty Valley")
+	cond.off = 0
+	time.sleep(self.randomize_delay(0.75,1.5))
+	cond.on = 93
+	cond.on = 59
+	cond.on = 122
+	self.walk_to_point([26,24], 1)
+	#self.attr1 = 36 no se usó para fixear un error que se enviaban dos comandos de walk po point cond 57 y esta (avces)
