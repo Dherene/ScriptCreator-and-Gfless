@@ -1,0 +1,19 @@
+send_packet
+1
+if packet.startswith("#pjoin^3^"):
+	# Si estamos esperando recibir el RP, no compartir automáticamente
+	if bool(getattr(selfgroup, "rp_accept_mode", False)):
+		print(f"[LEADER] {self.name} in RP-ACCEPT mode, skip auto-share")
+		return
+	# Cooldown para evitar spam por múltiples #pjoin^3^ consecutivos
+	try:
+		now = time.monotonic()
+		last_ts = float(getattr(self, "_last_rp_auto_share_ts", 0))
+		if (now - last_ts) < 2.5:
+			return
+		self._last_rp_auto_share_ts = now
+	except Exception:
+		pass
+	time.sleep(self.randomize_delay(2,3))
+	print(f"[LEADER] {self.name} Share point of return")
+	self.api.send_packet("pjoin 5")

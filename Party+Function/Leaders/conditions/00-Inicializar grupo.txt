@@ -1,0 +1,127 @@
+periodical
+1
+import json
+if selfgroup.get("trade") is None:
+    selfgroup.trade = "0"
+if selfgroup.get("trade_candidate") is None:
+    selfgroup.trade_candidate = None
+
+# Inicializa coordenadas del líder en el subgrupo una sola vez
+if selfgroup.get("leader_x") is None:
+    selfgroup.leader_x = int(self.pos_x)
+if selfgroup.get("leader_y") is None:
+    selfgroup.leader_y = int(self.pos_y)
+
+# Rehidratación de listas autorizadas tras reconexión del líder
+# Si el líder se creó de nuevo (nuevo PID) y aún no tiene estructuras
+# pero existe un roster persistido en variables de grupo, reconstruir.
+try:
+    roster = self.get_group_var("_party_roster", {})
+    last_snapshot = getattr(selfgroup, "roster_log_snapshot", None)
+    last_log_ts = getattr(selfgroup, "roster_log_ts", 0.0)
+    now = time.time()
+    serialized_roster = json.dumps(roster, sort_keys=True) if isinstance(roster, dict) else None
+    should_log = serialized_roster != last_snapshot
+    if isinstance(roster, dict) and roster:
+        if should_log:
+            print(f"[LEADER] Bootstrapping roster: {roster}")
+        # Inicializar estructuras
+        self.account_map = {}
+        self.name_to_account = {}
+        self.partyID = []
+        self.authorized_members = {}
+        self.account_positions = {}
+        self.member_ids_list = []
+        # Calcular tamaño máximo por índice
+        indices = []
+        for k in roster.keys():
+            try:
+                indices.append(int(k))
+            except (TypeError, ValueError):
+                continue
+        size = (max(indices) + 1) if indices else 0
+        attr51_list = [None] * size
+        member_ids_list = [None] * size
+        authorized_names = set()
+        seen_ids = set()
+        for idx_key, payload in roster.items():
+            try:
+                idx = int(idx_key)
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(payload, dict):
+                continue
+            account = payload.get("account")
+            name = payload.get("name")
+            id_value = payload.get("id")
+            try:
+                id_int = int(id_value) if id_value is not None else None
+            except (TypeError, ValueError):
+                id_int = None
+            if isinstance(account, str):
+                self.account_positions[account] = idx
+                self.account_map[account] = name
+                entry = self.authorized_members.get(account, {})
+                entry["index"] = idx
+                entry["account"] = account
+                if isinstance(name, str) and name:
+                    entry["name"] = name
+                    self.name_to_account[name] = account
+                    authorized_names.add(name)
+                    if idx < len(attr51_list):
+                        attr51_list[idx] = name
+                if id_int is not None:
+                    entry["id"] = id_int
+                    if idx < len(member_ids_list):
+                        member_ids_list[idx] = id_int
+                    if id_int not in seen_ids:
+                        seen_ids.add(id_int)
+                        self.partyID.append(id_int)
+                self.authorized_members[account] = entry
+        self.attr51 = attr51_list
+        self.member_ids_list = member_ids_list
+        self.attr52 = member_ids_list
+        self.authorized_names = {n for n in authorized_names if isinstance(n, str)}
+        if should_log:
+            self.members_received_items = set()  # Reset to avoid stale pay/receive mode
+            self.current_trader = None
+            self.trade_mode = "receive"
+            # Reset group trade state only when roster snapshot changes
+            selfgroup.trade = "0"
+            selfgroup.trade_candidate = None
+            selfgroup.trade_locked_since = None
+            selfgroup.trade_locked_by = None
+            selfgroup.trade_timeout_releases = []
+            # Limpiar flags de RP del ciclo anterior
+            selfgroup.rp_leader_party_accepted_for_id = None
+            selfgroup.rp_accepted_id = None
+            selfgroup.rp_accept_mode = False
+            print(f"[LEADER] Bootstrapped {len(self.authorized_members)} members, reset trade state")
+        selfgroup.roster_log_snapshot = serialized_roster
+        if should_log:
+            selfgroup.roster_log_ts = now
+    else:
+        if should_log:
+            print("[LEADER] No roster to bootstrap")
+            selfgroup.roster_log_ts = now
+        selfgroup.roster_log_snapshot = serialized_roster
+except Exception as e:
+    print(f"[LEADER] Bootstrap error: {e}")
+    pass
+# Selección de candidato por el líder (round-robin por IDs válidos)
+try:
+    if getattr(selfgroup, "trade", "0") == "0" and getattr(selfgroup, "trade_candidate", None) is None:
+        members = [mid for mid in getattr(self, "member_ids_list", []) if isinstance(mid, int)]
+        if members:
+            rr_val = getattr(selfgroup, "trade_rr_idx", 0)
+            try:
+                rr = int(rr_val)
+            except Exception:
+                rr = 0
+            idx = rr % len(members)
+            selected_id = members[idx]
+            selfgroup.trade_candidate = str(selected_id)
+            selfgroup.trade_rr_idx = (idx + 1) % len(members)
+            print(f"[LEADER-DEBUG] Selected trade_candidate={selected_id} (rr_idx={rr}, next={selfgroup.trade_rr_idx})")
+except Exception as e:
+    print(f"[LEADER-ERROR] Candidate select error: {e}")
