@@ -1,9 +1,0 @@
-periodical
-0
-if int(self.attr1) == 66 and self.map_id == 1:
-	print(f"[MEMBER] {self.name} Walk to Teoddor Top")
-	cond.off = 0
-	time.sleep(self.randomize_delay(0.75,1.5))
-	cond.on = 105
-	self.walk_to_point([24,65], 0)
-	self.attr1 = 67

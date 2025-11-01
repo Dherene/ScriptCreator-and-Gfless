@@ -1,9 +1,0 @@
-periodical
-0
-if int(self.attr1) == 42 and self.map_id == 22:
-	print(f"[MEMBER] {self.name} Prepare config to enter in Ghosts Cave")
-	cond.off = 0
-	cond.on = 120 #activamos condición para esperar X seconds transformation, antes de continuar
-	self.attr1 = 43
-	time.sleep(self.randomize_delay(1,2))
-	self.api.send_packet("sl 0")

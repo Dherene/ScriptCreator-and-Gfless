@@ -1,7 +1,0 @@
-recv_packet
-0
-import time
-if packet.strip() == "svrlist" and int(self.attr1) == 72:
-        print(f"75-[MEMBER] {self.name} inicó track svr list")
-        self._svrlist_login_started = time.monotonic()
-        self._svrlist_login_pending = True
